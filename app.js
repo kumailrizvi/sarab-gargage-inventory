@@ -172,11 +172,7 @@ async function loadRemoteData(){
     state.vehicles = seedVehicles.map(v => ({...v}));
     await saveVehicles();
   }
-  hydrateStaffFromJobs();
-  if(state.staff.length === 0){
-    state.staff = seedStaff.map(x => ({...x}));
-    await saveStaff();
-  }
+  // Staff list comes only from the staff table. If empty, dropdown stays empty until you add a person.
 }
 function loadData(){ if(USE_SUPABASE) return; loadLocalData(); if(normalizeJobs()) set(KEYS.jobs, state.jobs); }
 async function saveParts(){
@@ -278,10 +274,10 @@ function defaultStaffName(){
 function normalizeStaffName(name){ return String(name || '').trim().replace(/\s+/g, ' '); }
 function staffNames(){
   const names = new Map();
-  [...(state.staff || []), ...seedStaff].forEach(x => { const n = normalizeStaffName(x.name); if(n) names.set(n.toLowerCase(), n); });
-  state.jobs.forEach(j => { const n = normalizeStaffName(j.doneBy); if(n && n !== '—') names.set(n.toLowerCase(), n); });
-  const d = normalizeStaffName(defaultStaffName());
-  if(d) names.set(d.toLowerCase(), d);
+  (state.staff || []).forEach(x => {
+    const n = normalizeStaffName(typeof x === 'string' ? x : x.name);
+    if(n) names.set(n.toLowerCase(), n);
+  });
   return [...names.values()].sort((a,b)=>a.localeCompare(b));
 }
 function staffOptionsHTML(){ return staffNames().map(n => `<option value="${esc(n)}"></option>`).join(''); }
@@ -304,12 +300,7 @@ async function addStaffFromPrompt(){
   toast(`${clean} added to staff list`);
 }
 function hydrateStaffFromJobs(){
-  state.staff = state.staff || [];
-  const existing = new Set(state.staff.map(x => normalizeStaffName(x.name).toLowerCase()).filter(Boolean));
-  state.jobs.forEach(j => {
-    const n = normalizeStaffName(j.doneBy);
-    if(n && !existing.has(n.toLowerCase())){ state.staff.push({ id:id('staff'), name:n, createdAt:new Date().toISOString() }); existing.add(n.toLowerCase()); }
-  });
+  // Intentionally disabled: old job names should not repopulate the employee dropdown.
 }
 function stats(){
   const totalUnits = state.parts.reduce((a,p)=>a+Number(p.qty||0),0);
@@ -427,7 +418,7 @@ function updateFleetPlateSuggestions(){
 function jobHTML(){
   const upcomingId = nextJobCardId();
   return `<div class="page-head"><div><h1>Job Card</h1><p class="muted">Create a new job card or edit an existing one. Selected parts will automatically reduce inventory.</p></div></div>
-  <div class="job-layout"><section class="panel"><form id="jobForm" class="grid"><input id="jobEditId" type="hidden" value=""><div class="job-card-tools"><div><span class="muted">Mode</span><div class="mode-buttons"><button id="newJobModeBtn" type="button" class="mini-btn">Create New</button><label class="edit-job-select">Edit Existing<select id="jobEditSelect"><option value="">Choose job card...</option>${jobCardOptionsHTML()}</select></label></div></div><div class="job-id-preview"><span>Job Card ID</span><b id="jobCardPreview">${esc(upcomingId)}</b></div></div><div class="grid two"><label>Customer name<input id="jobCustomer" placeholder="Walk-in customer"></label><label>Phone<input id="jobPhone" placeholder="+971..."></label><label>Car model<input id="jobCar" required placeholder="Toyota Corolla"></label><label>Choose from fleet <select id="jobFleetSelect"><option value="">Type manually / not in fleet</option>${fleetVehicleOptionsHTML()}</select></label><div class="plate-fields wide job-plate-row"><label>Plate code<input id="jobPlateCode" required placeholder="R" maxlength="8"></label><label>License number<input id="jobPlateNumber" required placeholder="14534"></label></div><div id="jobFleetMatches" class="fleet-match-box wide"><span class="muted">Type a plate or choose from fleet above.</span></div><label>Date<input id="jobDate" type="date" value="${today()}" required></label><label>Job status<select id="jobStatus">${JOB_STATUSES.map(x=>`<option>${x}</option>`).join('')}</select></label><div class="staff-row-clean wide"><label>Done by / Staff name<select id="jobDoneBySelect" required><option value="">Choose employee</option>${staffNames().map(n=>`<option value="${esc(n)}" ${n===defaultStaffName()?'selected':''}>${esc(n)}</option>`).join('')}</select></label><button type="button" class="mini-btn add-staff-btn" onclick="addStaffFromPrompt()">${I('plus','icon-sm')} Add person</button></div></div><label>What job was done?<textarea id="jobDescription" required placeholder="Oil change, brake pad replacement, AC repair..."></textarea></label><div class="section-title"><h3>Parts Used</h3><button id="addLineBtn" class="mini-btn" type="button">${I('plus','icon-sm')} Add another part</button></div><div id="partLines" class="part-lines"></div><div class="section-title custom-title"><div><h3>Custom Charges</h3><p class="muted small-note">Use this for car wash, diagnosis, towing, polishing, or anything not in inventory.</p></div><button id="addCustomBtn" class="mini-btn" type="button">${I('plus','icon-sm')} Add custom charge</button></div><div id="customCharges" class="custom-lines"></div><div class="section-title labour-title"><div><h3>Labor</h3><p class="muted small-note">Add this after selecting parts and any extra charges.</p></div></div><div class="grid two labour-grid"><label>Labor hours<input id="jobLabourHours" type="number" min="0" step="0.25" value="0" placeholder="2.5"></label><label>Labor charge (AED)<input id="jobLabour" type="number" min="0" step="0.01" value="0" placeholder="50"></label></div><div id="jobSummary" class="summary-box"></div><button class="btn primary large-btn" type="submit">${I('clipboard')} Save Job Card & Update Inventory</button></form></section><aside class="panel"><h3>Simple Rule</h3><p class="muted">Example: if stock has 10 oil filters and you use 1 in this job card, the system automatically changes stock to 9.</p><div class="cost-card"><small>Inventory Cost Value</small><strong>${money(stats().costValue)}</strong></div><h3>Low Stock Now</h3>${state.parts.filter(p=>Number(p.qty)<=Number(p.threshold)).slice(0,6).map(p=>`<div class="pill orange">${esc(p.name)} · ${p.qty} left</div>`).join('') || '<p class="muted">No low stock items.</p>'}</aside></div>`;
+  <div class="job-layout"><section class="panel"><form id="jobForm" class="grid"><input id="jobEditId" type="hidden" value=""><div class="job-card-tools"><div><span class="muted">Mode</span><div class="mode-buttons"><button id="newJobModeBtn" type="button" class="mini-btn">Create New</button><label class="edit-job-select">Edit Existing<select id="jobEditSelect"><option value="">Choose job card...</option>${jobCardOptionsHTML()}</select></label></div></div><div class="job-id-preview"><span>Job Card ID</span><b id="jobCardPreview">${esc(upcomingId)}</b></div></div><div class="grid two"><label>Customer name<input id="jobCustomer" placeholder="Walk-in customer"></label><label>Phone<input id="jobPhone" placeholder="+971..."></label><label>Car model<input id="jobCar" required placeholder="Toyota Corolla"></label><label>Choose from fleet <select id="jobFleetSelect"><option value="">Type manually / not in fleet</option>${fleetVehicleOptionsHTML()}</select></label><div class="plate-fields wide job-plate-row"><label>Plate code<input id="jobPlateCode" required placeholder="R" maxlength="8"></label><label>License number<input id="jobPlateNumber" required placeholder="14534"></label></div><div id="jobFleetMatches" class="fleet-match-box wide"><span class="muted">Type a plate or choose from fleet above.</span></div><label>Date<input id="jobDate" type="date" value="${today()}" required></label><label>Job status<select id="jobStatus">${JOB_STATUSES.map(x=>`<option>${x}</option>`).join('')}</select></label><div class="staff-row-clean wide"><label>Done by / Staff name<select id="jobDoneBySelect" required><option value="">Choose employee</option>${staffNames().map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('')}</select></label><button type="button" class="mini-btn add-staff-btn" onclick="addStaffFromPrompt()">${I('plus','icon-sm')} Add person</button></div></div><label>What job was done?<textarea id="jobDescription" required placeholder="Oil change, brake pad replacement, AC repair..."></textarea></label><div class="section-title"><h3>Parts Used</h3><button id="addLineBtn" class="mini-btn" type="button">${I('plus','icon-sm')} Add another part</button></div><div id="partLines" class="part-lines"></div><div class="section-title custom-title"><div><h3>Custom Charges</h3><p class="muted small-note">Use this for car wash, diagnosis, towing, polishing, or anything not in inventory.</p></div><button id="addCustomBtn" class="mini-btn" type="button">${I('plus','icon-sm')} Add custom charge</button></div><div id="customCharges" class="custom-lines"></div><div class="section-title labour-title"><div><h3>Labor</h3><p class="muted small-note">Add this after selecting parts and any extra charges.</p></div></div><div class="grid two labour-grid"><label>Labor hours<input id="jobLabourHours" type="number" min="0" step="0.25" value="0" placeholder="2.5"></label><label>Labor charge (AED)<input id="jobLabour" type="number" min="0" step="0.01" value="0" placeholder="50"></label></div><div id="jobSummary" class="summary-box"></div><button class="btn primary large-btn" type="submit">${I('clipboard')} Save Job Card & Update Inventory</button></form></section><aside class="panel"><h3>Simple Rule</h3><p class="muted">Example: if stock has 10 oil filters and you use 1 in this job card, the system automatically changes stock to 9.</p><div class="cost-card"><small>Inventory Cost Value</small><strong>${money(stats().costValue)}</strong></div><h3>Low Stock Now</h3>${state.parts.filter(p=>Number(p.qty)<=Number(p.threshold)).slice(0,6).map(p=>`<div class="pill orange">${esc(p.name)} · ${p.qty} left</div>`).join('') || '<p class="muted">No low stock items.</p>'}</aside></div>`;
 }
 
 function plateHistoryData(){
@@ -747,7 +738,8 @@ async function saveJob(e){
   const partsTotal=lines.reduce((a,l)=>a+(l.qty*l.price),0);
   const customTotal=customCharges.reduce((a,c)=>a+c.amount,0);
   const total=partsTotal+labour+customTotal;
-  const selectedDoneBy = $('jobDoneBySelect')?.value || defaultStaffName();
+  const selectedDoneBy = $('jobDoneBySelect')?.value || '';
+  if(!selectedDoneBy) return toast('Choose or add a staff name first');
   const doneByName = await addStaffName(selectedDoneBy);
   const job={
     id: oldJob?.id || id('j'),
@@ -762,7 +754,7 @@ async function saveJob(e){
     labourHours,
     customCharges,
     description:$('jobDescription').value.trim(),
-    doneBy: doneByName || defaultStaffName(),
+    doneBy: doneByName,
     lines,
     total,
     createdAt: oldJob?.createdAt || new Date().toISOString(),
