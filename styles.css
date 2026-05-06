@@ -506,3 +506,6 @@ label{font-weight:700;font-size:14px;display:grid;gap:7px}input,select,textarea{
   .dash-job-row { grid-template-columns: 1fr; gap: 10px; }
   .dash-job-status { max-width: 260px; }
 }
+
+/* v34 smaller fleet sidebar icon */
+.fleet-nav-icon{width:28px;height:28px;}
