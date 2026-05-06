@@ -413,3 +413,27 @@ label{font-weight:700;font-size:14px;display:grid;gap:7px}input,select,textarea{
 .staff-picker-wrap select#jobDoneBySelect {
   width: 100%;
 }
+
+/* v32 clean single staff picker: remove duplicate old field layout */
+.staff-row-clean {
+  display: grid;
+  grid-template-columns: minmax(320px, 520px) auto;
+  gap: 14px;
+  align-items: end;
+  margin-top: 4px;
+}
+.staff-row-clean label {
+  width: 100%;
+}
+.staff-row-clean select#jobDoneBySelect {
+  width: 100%;
+  min-height: 52px;
+}
+.staff-row-clean .add-staff-btn {
+  min-height: 52px;
+  padding-inline: 18px;
+}
+@media(max-width:800px){
+  .staff-row-clean { grid-template-columns: 1fr; }
+  .staff-row-clean .add-staff-btn { width: 100%; }
+}
