@@ -577,15 +577,55 @@ function exportPlateHistoryCSV(){
   if(!plateQuery) return toast('Search a plate first');
   if(!exactPlateJobs.length) return toast('No plate history to export');
   const rows=[['Date','Status','Done By','Customer','Phone','Plate','Car','Job','Part','Qty','Item Price AED','Parts Line Total AED','Custom Charge','Custom Charge AED','Labor Hours','Labor Charge AED','Total AED']];
+
+  let grandPartsLineTotal = 0;
+  let grandCustomTotal = 0;
+  let grandLaborHours = 0;
+  let grandLaborCharge = 0;
+  let grandTotal = 0;
+
   exactPlateJobs.forEach(j=>{
     const customNames=(j.customCharges||[]).map(c=>c.name).join('; ');
     const customTotal=(j.customCharges||[]).reduce((a,c)=>a+Number(c.amount||0),0);
+    const laborHours=Number(j.labourHours||0);
+    const laborCharge=Number(j.labour||0);
+    const jobTotal=Number(j.total||0);
+
+    grandCustomTotal += customTotal;
+    grandLaborHours += laborHours;
+    grandLaborCharge += laborCharge;
+    grandTotal += jobTotal;
+
     if(j.lines.length){
-      j.lines.forEach(l=>rows.push([j.date,jobStatus(j),j.doneBy||'',j.customer,j.phone,j.plate,j.car,j.description,l.name,l.qty,l.price,Number(l.qty)*Number(l.price||0),customNames,customTotal,j.labourHours||0,j.labour,j.total]));
+      j.lines.forEach((l, index)=>{
+        const lineTotal = Number(l.qty||0)*Number(l.price||0);
+        grandPartsLineTotal += lineTotal;
+        rows.push([
+          j.date,
+          jobStatus(j),
+          j.doneBy||'',
+          j.customer,
+          j.phone,
+          j.plate,
+          j.car,
+          j.description,
+          l.name,
+          l.qty,
+          l.price,
+          lineTotal,
+          index===0 ? customNames : '',
+          index===0 ? customTotal : '',
+          index===0 ? laborHours : '',
+          index===0 ? laborCharge : '',
+          index===0 ? jobTotal : ''
+        ]);
+      });
     } else {
-      rows.push([j.date,jobStatus(j),j.doneBy||'',j.customer,j.phone,j.plate,j.car,j.description,'',0,0,0,customNames,customTotal,j.labourHours||0,j.labour,j.total]);
+      rows.push([j.date,jobStatus(j),j.doneBy||'',j.customer,j.phone,j.plate,j.car,j.description,'',0,0,0,customNames,customTotal,laborHours,laborCharge,jobTotal]);
     }
   });
+
+  rows.push(['TOTAL','','','','','','','','','', '', grandPartsLineTotal, '', grandCustomTotal, grandLaborHours, grandLaborCharge, grandTotal]);
   downloadCSV(`sarab-plate-history-${plateQuery.replace(/\s+/g,'-')}.csv`, rows);
 }
 
