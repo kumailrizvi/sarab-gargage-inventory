@@ -106,7 +106,6 @@ function hydrateStaticIcons(){ document.querySelectorAll('[data-icon]').forEach(
 
 async function init(){
   hydrateStaticIcons(); bindGlobal();
-  if($('authHint')) $('authHint').textContent = USE_SUPABASE ? 'Use the login you create in Supabase / signup.' : 'Local demo login: admin@garage.com / admin123';
   if(USE_SUPABASE){
     await loadSupabaseSession();
     if(state.user){ await loadRemoteData(); showApp(); } else showAuth();
@@ -116,7 +115,8 @@ async function init(){
   }
 }
 function bindGlobal(){
-  $('loginTab').onclick=()=>toggleAuth('login'); $('signupTab').onclick=()=>toggleAuth('signup');
+  $('loginTab').onclick=()=>toggleAuth('login');
+  if($('signupTab')) $('signupTab').onclick=(e)=>{ e.preventDefault(); toast('Sign up is disabled for now. Ask admin to create the login.'); };
   $('loginForm').onsubmit=login; $('signupForm').onsubmit=signup; $('logoutBtn').onclick=logout;
   $('partForm').onsubmit=savePartFromForm; $('restockForm').onsubmit=saveRestock;
   $('mobileMenu').onclick=()=> $('sidebar').classList.toggle('open');
@@ -195,7 +195,7 @@ function renderInventoryResults(){
 function inventoryHTML(){
   const cats=['All',...new Set(state.parts.map(p=>p.category))];
   const filtered=filteredInventoryParts();
-  return `<div class="page-head"><div><h1>Inventory</h1><p class="muted">Add, search, edit, delete and restock garage parts.</p></div><button class="btn primary" onclick="openPartDialog()">${I('plus','icon-sm')} Add Part</button></div>
+  return `<div class="page-head"><div><h1>Inventory</h1><p class="muted">Add, search, edit, delete, import and restock garage parts.</p></div><div class="head-actions"><button class="btn light" onclick="importInventoryCSV()">${I('download','icon-sm')} Import CSV</button><button class="btn primary" onclick="openPartDialog()">${I('plus','icon-sm')} Add Part</button></div></div>
   <section class="panel"><div class="filters"><input id="searchInput" placeholder="Search by part, SKU, supplier, car..." value="${esc(state.filters.q)}" autocomplete="off"><select id="categoryFilter">${cats.map(c=>`<option ${c===state.filters.category?'selected':''}>${c}</option>`).join('')}</select><select id="stockFilter">${['All','Low','In Stock','Finished'].map(x=>`<option ${x===state.filters.stock?'selected':''}>${x}</option>`).join('')}</select><button class="btn light" onclick="exportInventory()">${I('download','icon-sm')} CSV</button></div><div id="inventoryResults">${inventoryTable(filtered, false)}</div></section>`;
 }
 function inventoryTable(parts, compact=false){
@@ -317,6 +317,86 @@ async function toggleOrdered(partId){
 function csvEscape(v){ return `"${String(v??'').replace(/"/g,'""')}"`; }
 function downloadCSV(name, rows){ const csv=rows.map(r=>r.map(csvEscape).join(',')).join('\n'); const blob=new Blob([csv],{type:'text/csv;charset=utf-8'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=name; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); }
 function exportInventory(){ downloadCSV('sarab-inventory.csv', [['Part Name','SKU','Category','Stock','Ordered?','Low Stock Alert','Location','Supplier','Fits','Buying Cost AED','Selling Price AED','Inventory Cost Value AED'], ...state.parts.map(p=>[p.name,p.sku,p.category,p.qty,p.ordered?'Yes':'No',p.threshold,p.location,p.supplier,p.fits,p.cost,p.price,Number(p.qty)*Number(p.cost)])]); }
+
+function parseCSV(text){
+  const rows=[];
+  let row=[], cell='', quoted=false;
+  for(let i=0;i<text.length;i++){
+    const ch=text[i], next=text[i+1];
+    if(ch==='"'){
+      if(quoted && next==='"'){ cell+='"'; i++; }
+      else quoted=!quoted;
+    } else if(ch===',' && !quoted){ row.push(cell.trim()); cell=''; }
+    else if((ch==='\n' || ch==='\r') && !quoted){
+      if(ch==='\r' && next==='\n') i++;
+      row.push(cell.trim()); cell='';
+      if(row.some(v=>v!=='')) rows.push(row);
+      row=[];
+    } else cell+=ch;
+  }
+  row.push(cell.trim());
+  if(row.some(v=>v!=='')) rows.push(row);
+  return rows;
+}
+function normalizeHeader(h){ return String(h||'').toLowerCase().replace(/[^a-z0-9]/g,''); }
+function firstValue(obj, keys, fallback=''){
+  for(const key of keys){
+    const value=obj[normalizeHeader(key)];
+    if(value !== undefined && value !== '') return value;
+  }
+  return fallback;
+}
+function toNumber(value, fallback=0){
+  const n=Number(String(value ?? '').replace(/[^0-9.-]/g,''));
+  return Number.isFinite(n) ? n : fallback;
+}
+function importInventoryCSV(){
+  const input=document.createElement('input');
+  input.type='file';
+  input.accept='.csv,text/csv';
+  input.onchange=async()=>{
+    const file=input.files?.[0];
+    if(!file) return;
+    try{
+      const text=await file.text();
+      const rows=parseCSV(text);
+      if(rows.length < 2) return toast('CSV is empty or missing rows');
+      const headers=rows[0].map(normalizeHeader);
+      let imported=0, updated=0, skipped=0;
+      rows.slice(1).forEach(cols=>{
+        const obj={}; headers.forEach((h,i)=>obj[h]=cols[i] ?? '');
+        const name=firstValue(obj,['Part Name','Name','Part']);
+        const sku=firstValue(obj,['SKU','Part SKU','Code']);
+        if(!name || !sku){ skipped++; return; }
+        const qty=toNumber(firstValue(obj,['Stock','Stock Quantity','Qty','Quantity']),0);
+        const existing=state.parts.find(p=>String(p.sku).toLowerCase()===String(sku).toLowerCase());
+        const part={
+          id: existing?.id || id('p'),
+          name,
+          sku,
+          category:firstValue(obj,['Category'], existing?.category || 'Other'),
+          location:firstValue(obj,['Location','Shelf','Location Shelf'], existing?.location || ''),
+          qty,
+          threshold:toNumber(firstValue(obj,['Low Stock Alert','Low Alert','Threshold'], existing?.threshold ?? 5),5),
+          cost:toNumber(firstValue(obj,['Buying Cost AED','Buying Cost','Cost','Cost AED'], existing?.cost ?? 0),0),
+          price:toNumber(firstValue(obj,['Selling Price AED','Selling Price','Price','Price AED'], existing?.price ?? 0),0),
+          supplier:firstValue(obj,['Supplier'], existing?.supplier || ''),
+          fits:firstValue(obj,['Fits','Fits These Cars','Car','Compatible Cars'], existing?.fits || ''),
+          ordered:String(firstValue(obj,['Ordered?','Ordered'], existing?.ordered ? 'Yes' : '')).toLowerCase().startsWith('y'),
+          createdAt: existing?.createdAt || new Date().toISOString()
+        };
+        if(Number(part.qty)>0) part.ordered=false;
+        const idx=state.parts.findIndex(p=>p.id===part.id);
+        if(idx>=0){ state.parts[idx]=part; updated++; }
+        else { state.parts.unshift(part); imported++; }
+      });
+      await saveParts();
+      toast(`CSV imported: ${imported} new, ${updated} updated, ${skipped} skipped`);
+      render();
+    }catch(err){ console.error(err); toast('Could not import CSV'); }
+  };
+  input.click();
+}
 function exportJobs(){
   const rows=[['Date','Customer','Phone','Plate','Car','Job','Part','Qty','Item Price AED','Parts Line Total AED','Custom Charge','Custom Charge AED','Labor Hours','Labor Charge AED','Total AED']];
   state.jobs.forEach(j=>{
@@ -357,5 +437,5 @@ function exportMonthlyReport(){
 }
 async function resetDemo(){ if(!confirm('Reset all demo data?')) return; if(USE_SUPABASE){ await sb.from('parts').delete().neq('id','__never__'); await sb.from('jobs').delete().neq('id','__never__'); state.parts=seedParts.map(p=>({...p})); state.jobs=seedJobs.map(j=>({...j})); await saveParts(); await saveJobs(); } else { set(KEYS.parts, seedParts); set(KEYS.jobs, seedJobs); } state.filters={q:'',category:'All',stock:'All'}; toast('Demo data reset'); render(); }
 
-window.toggleOrdered=toggleOrdered; window.go=go; window.openPartDialog=openPartDialog; window.closePartDialog=closePartDialog; window.openRestockDialog=openRestockDialog; window.closeRestockDialog=closeRestockDialog; window.viewPartUsage=viewPartUsage; window.viewJob=viewJob; window.closeJobDialog=closeJobDialog; window.deleteJob=deleteJob; window.deletePart=deletePart; window.exportInventory=exportInventory; window.exportJobs=exportJobs; window.exportUsage=exportUsage; window.exportMonthlyReport=exportMonthlyReport; window.resetDemo=resetDemo;
+window.toggleOrdered=toggleOrdered; window.go=go; window.openPartDialog=openPartDialog; window.closePartDialog=closePartDialog; window.openRestockDialog=openRestockDialog; window.closeRestockDialog=closeRestockDialog; window.viewPartUsage=viewPartUsage; window.viewJob=viewJob; window.closeJobDialog=closeJobDialog; window.deleteJob=deleteJob; window.deletePart=deletePart; window.exportInventory=exportInventory; window.importInventoryCSV=importInventoryCSV; window.exportJobs=exportJobs; window.exportUsage=exportUsage; window.exportMonthlyReport=exportMonthlyReport; window.resetDemo=resetDemo;
 init();
