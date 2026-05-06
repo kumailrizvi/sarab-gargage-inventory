@@ -441,7 +441,16 @@ async function deleteFleetVehicle(vehicleId){
   render();
 }
 function exportFleet(){
-  downloadCSV('sarab-fleet.csv', [['Model Number','Plate Code','License Number','Number Plate','Customer','Status','Vehicle Type','Outsource Rent Rate AED','Client Rate AED','Notes'], ...state.vehicles.map(v=>{ const parts=splitPlate(v.plate); return [v.modelNumber,v.plateCode || parts.code,v.plateNumber || parts.license,v.plate,v.customer,v.status,v.ownership,v.rentRate,v.clientRate,v.notes]; })]);
+  downloadCSV('sarab-fleet.csv', [
+    ['Model Number','Plate Code','License Number','Number Plate','Customer','Status','Vehicle Type','Outsource Rent Rate AED','Client Rate AED','Total AED','Notes'],
+    ...state.vehicles.map(v=>{
+      const parts=splitPlate(v.plate);
+      const rent=Number(v.ownership === 'Outsource' ? v.rentRate || 0 : 0);
+      const client=Number(v.status === 'In Use' ? v.clientRate || 0 : 0);
+      const total=client-rent;
+      return [v.modelNumber,v.plateCode || parts.code,v.plateNumber || parts.license,v.plate,v.customer,v.status,v.ownership,rent,client,total,v.notes];
+    })
+  ]);
 }
 
 function exportHTML(){ return `<div class="page-head"><div><h1>Export CSV</h1><p class="muted">Download records for Excel, accounting, backup, or Supabase migration.</p></div></div><div class="export-grid"><section class="card export-card"><h2>Inventory CSV</h2><p class="muted">All parts, quantities, cost value and shelf location.</p><button class="btn primary full" onclick="exportInventory()">${I('download','icon-sm')} Export Inventory</button></section><section class="card export-card"><h2>Jobs CSV</h2><p class="muted">All jobs, cars, labour, totals and parts used.</p><button class="btn primary full" onclick="exportJobs()">${I('download','icon-sm')} Export Jobs</button></section><section class="card export-card"><h2>Parts Used CSV</h2><p class="muted">Every part used against every vehicle/job.</p><button class="btn primary full" onclick="exportUsage()">${I('download','icon-sm')} Export Parts Used</button></section><section class="card export-card"><h2>Fleet CSV</h2><p class="muted">All fleet vehicles, status, rent rate and client rate.</p><button class="btn primary full" onclick="exportFleet()">${I('download','icon-sm')} Export Fleet</button></section></div>`; }
