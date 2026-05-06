@@ -57,4 +57,9 @@ Yes. Once deployed, send him the Vercel URL and his login. Anything he adds or c
 
 ## Important note
 
-This is set up for a small internal garage team. Any logged-in user can add, edit, delete inventory and jobs. That is okay for trusted staff, but for a larger business you should add admin/mechanic roles later.
+This is set up for a small internal garage team. Any logged-in user can add, edit, delete inventory, jobs, and fleet vehicles. That is okay for trusted staff, but for a larger business you should add admin/mechanic roles later.
+
+
+## v18 update
+
+This version adds staff name tracking on each job and a Fleet module. If you already ran the old schema, run the updated `supabase-schema.sql` again so the `vehicles` table and policies are created.

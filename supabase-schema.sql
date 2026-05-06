@@ -13,8 +13,15 @@ create table if not exists public.jobs (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.vehicles (
+  id text primary key,
+  data jsonb not null,
+  updated_at timestamptz not null default now()
+);
+
 alter table public.parts enable row level security;
 alter table public.jobs enable row level security;
+alter table public.vehicles enable row level security;
 
 -- Internal garage app: any logged-in user can see and manage shared garage records.
 -- Do not use this for public/customer-facing apps without stricter roles.
@@ -48,4 +55,20 @@ for update to authenticated using (true) with check (true);
 
 drop policy if exists "garage users can delete jobs" on public.jobs;
 create policy "garage users can delete jobs" on public.jobs
+for delete to authenticated using (true);
+
+drop policy if exists "garage users can read vehicles" on public.vehicles;
+create policy "garage users can read vehicles" on public.vehicles
+for select to authenticated using (true);
+
+drop policy if exists "garage users can add vehicles" on public.vehicles;
+create policy "garage users can add vehicles" on public.vehicles
+for insert to authenticated with check (true);
+
+drop policy if exists "garage users can update vehicles" on public.vehicles;
+create policy "garage users can update vehicles" on public.vehicles
+for update to authenticated using (true) with check (true);
+
+drop policy if exists "garage users can delete vehicles" on public.vehicles;
+create policy "garage users can delete vehicles" on public.vehicles
 for delete to authenticated using (true);
