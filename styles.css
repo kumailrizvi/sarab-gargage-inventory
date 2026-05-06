@@ -237,3 +237,45 @@ label{font-weight:700;font-size:14px;display:grid;gap:7px}input,select,textarea{
 .job-title-with-status { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 3px; }
 .job-row-status .pill { margin: 0; }
 @media(max-width:800px){ .status-mini-grid{grid-template-columns:1fr 1fr;} }
+
+/* v25 UI spacing cleanup: tighter part selection rows + cleaner dashboard gaps */
+.quick { margin-top: 22px; margin-bottom: 24px; }
+.plate-history-panel { margin-top: 24px; margin-bottom: 30px; }
+.dashboard-stack { margin-top: 30px; gap: 30px; }
+.page > .panel + .panel { margin-top: 24px; }
+.part-lines { gap: 14px; margin: 12px 0 22px; }
+.part-line {
+  grid-template-columns: minmax(0, 1fr) 140px 140px;
+  align-items: start;
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: 16px;
+}
+.part-line label { gap: 8px; }
+.part-line select,
+.part-line input { min-height: 48px; }
+.part-line .lineQty { text-align: center; font-weight: 750; }
+.line-price-note {
+  margin-top: 6px;
+  color: var(--green-dark);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+.part-line .btn.danger {
+  min-height: 48px;
+  align-self: end;
+  padding-left: 18px;
+  padding-right: 18px;
+}
+.history-search {
+  margin-top: 18px;
+  margin-bottom: 18px;
+}
+.history-summary { margin: 16px 0 18px; }
+.history-table { margin-top: 10px; }
+.compact-empty { padding: 20px 24px; text-align: left; }
+@media(max-width:900px){
+  .part-line { grid-template-columns: 1fr; }
+  .part-line .btn.danger { width: 100%; }
+}
