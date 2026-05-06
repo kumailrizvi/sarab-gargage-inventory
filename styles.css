@@ -380,3 +380,28 @@ label{font-weight:700;font-size:14px;display:grid;gap:7px}input,select,textarea{
   .staff-picker-wrap { grid-template-columns: 1fr; }
   .add-staff-btn { width: 100%; }
 }
+
+/* v30 real staff dropdown */
+.staff-picker-wrap {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+.staff-select-row {
+  display: grid;
+  grid-template-columns: 230px minmax(0, 1fr);
+  gap: 10px;
+}
+.staff-select-row select,
+.staff-select-row input {
+  min-height: 48px;
+}
+.add-staff-btn {
+  min-height: 48px;
+  white-space: nowrap;
+}
+@media(max-width:800px){
+  .staff-picker-wrap{grid-template-columns:1fr;}
+  .staff-select-row{grid-template-columns:1fr;}
+}
