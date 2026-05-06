@@ -90,3 +90,21 @@ label{font-weight:700;font-size:14px;display:grid;gap:7px}input,select,textarea{
 @media(max-width:800px){.order-flag{font-size:11px;padding:6px 8px}}
 .custom-title{margin-top:14px}.small-note{font-size:13px;margin-top:3px}.custom-lines{display:grid;gap:12px;margin:12px 0}.custom-line{display:grid;grid-template-columns:1fr 180px auto;gap:10px;align-items:end;background:#fafafa;border:1px solid var(--line);border-radius:14px;padding:12px}
 @media(max-width:800px){.custom-line{grid-template-columns:1fr}}
+
+.auth-tabs button.disabled,
+.auth-tabs button:disabled {
+  background: #e8f2ed !important;
+  color: #8aa196 !important;
+  cursor: not-allowed !important;
+  opacity: 0.65;
+  box-shadow: none !important;
+}
+
+.auth-card input.muted-login-input {
+  color: #6b7280 !important;
+  font-weight: 500 !important;
+}
+
+.auth-card input {
+  font-weight: 500;
+}

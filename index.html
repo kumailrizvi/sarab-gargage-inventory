@@ -23,14 +23,14 @@
       <img class="brand-logo login-logo" src="assets/logo.png" alt="Sarab Al Madina" />
       <div class="auth-tabs">
         <button id="loginTab" class="active" type="button">Login</button>
-        <button id="signupTab" type="button">Sign up</button>
+        <button id="signupTab" class="disabled" type="button" disabled aria-disabled="true">Sign up</button>
       </div>
 
       <form id="loginForm" class="form-stack">
-        <label>Email<input id="loginEmail" type="email" value="admin@garage.com" required /></label>
+        <label>Email<input id="loginEmail" class="muted-login-input" type="email" value="admin@garage.com" required /></label>
         <label>Password<input id="loginPassword" type="password" value="admin123" required /></label>
         <button class="btn primary full" type="submit">Login</button>
-        <p class="hint" id="authHint">Demo login: admin@garage.com / admin123</p>
+        <!-- <p class="hint" id="authHint">Demo login: admin@garage.com / admin123</p> -->
       </form>
 
       <form id="signupForm" class="form-stack hidden">
