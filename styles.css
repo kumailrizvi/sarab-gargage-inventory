@@ -405,3 +405,11 @@ label{font-weight:700;font-size:14px;display:grid;gap:7px}input,select,textarea{
   .staff-picker-wrap{grid-template-columns:1fr;}
   .staff-select-row{grid-template-columns:1fr;}
 }
+
+/* v31 remove extra staff text box */
+.staff-select-row {
+  grid-template-columns: 1fr !important;
+}
+.staff-picker-wrap select#jobDoneBySelect {
+  width: 100%;
+}
