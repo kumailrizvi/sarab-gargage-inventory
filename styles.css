@@ -279,3 +279,35 @@ label{font-weight:700;font-size:14px;display:grid;gap:7px}input,select,textarea{
   .part-line { grid-template-columns: 1fr; }
   .part-line .btn.danger { width: 100%; }
 }
+
+/* v26 job status editing */
+.status-inline,
+.status-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 7px;
+}
+.job-status-select {
+  width: auto;
+  min-width: 150px;
+  min-height: 34px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1.5px solid #b9dfca;
+  color: var(--green-dark);
+  background: #fff;
+  font-weight: 750;
+  font-size: 13px;
+}
+.job-status-select:focus {
+  border-color: var(--green);
+  box-shadow: 0 0 0 3px rgba(21,150,93,.10);
+}
+.pill.blue { background:#dbeafe; color:#1d4ed8; }
+.pill.gray { background:#eef2f5; color:#475569; }
+.modal-status-edit { margin-bottom: 8px; }
+@media(max-width:800px){
+  .job-status-select { width: 100%; min-width: 0; }
+}
