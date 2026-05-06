@@ -254,9 +254,47 @@ function inventoryTable(parts, compact=false){
 }
 function lastUsed(partId){ const j=state.jobs.find(job=>job.lines.some(l=>l.partId===partId)); if(!j) return '<span class="muted">Never</span>'; return j.date===today()?'<span class="ok">Today</span>':esc(j.date); }
 function jobRow(j){ return `<div class="job-row"><div><b>${esc(j.plate)}</b><small class="muted">${esc(j.car)}</small></div><div><b>${esc(j.description||'Job done')}</b><small class="muted">Status: ${esc(jobStatus(j))} · Done by: ${esc(j.doneBy || '—')} · Parts used: ${j.lines.map(l=>`${esc(l.name)} x ${l.qty}`).join(', ') || 'No parts'}</small></div><button class="mini-btn" onclick="viewJob('${j.id}')">History</button></div>`; }
+
+function fleetVehicleOptionsHTML(){
+  return state.vehicles.length
+    ? state.vehicles.map(v => `<option value="${esc(v.id)}">${esc(v.plate)} — ${esc(v.modelNumber)}${v.customer ? ` · ${esc(v.customer)}` : ''}</option>`).join('')
+    : '';
+}
+function matchingFleetVehiclesForJob(){
+  const code = $('jobPlateCode') ? $('jobPlateCode').value : '';
+  const number = $('jobPlateNumber') ? $('jobPlateNumber').value : '';
+  const query = combinePlate(code, number).toLowerCase();
+  if(!query) return [];
+  return state.vehicles.filter(v => {
+    const haystack = [v.plate, v.modelNumber, v.customer].join(' ').toLowerCase();
+    return haystack.includes(query) || String(v.plate || '').toLowerCase().replace(/\s+/g,'').includes(query.replace(/\s+/g,''));
+  }).slice(0, 5);
+}
+function fillJobFromFleet(vehicleId){
+  const v = state.vehicles.find(x => x.id === vehicleId);
+  if(!v) return;
+  const parts = splitPlate(v.plate);
+  if($('jobPlateCode')) $('jobPlateCode').value = v.plateCode || parts.code || '';
+  if($('jobPlateNumber')) $('jobPlateNumber').value = v.plateNumber || parts.license || '';
+  if($('jobCar')) $('jobCar').value = v.modelNumber || '';
+  if($('jobCustomer')) $('jobCustomer').value = v.customer || $('jobCustomer').value || 'Walk-in';
+  if($('jobFleetSelect')) $('jobFleetSelect').value = vehicleId;
+  updateFleetPlateSuggestions();
+  toast(`Selected fleet vehicle ${v.plate}`);
+}
+function updateFleetPlateSuggestions(){
+  const box = $('jobFleetMatches');
+  if(!box) return;
+  const matches = matchingFleetVehiclesForJob();
+  if(!matches.length){
+    box.innerHTML = '<span class="muted">No matching fleet vehicle yet. You can still type a new plate manually.</span>';
+    return;
+  }
+  box.innerHTML = `<span class="muted">Fleet match found:</span> ${matches.map(v => `<button type="button" class="fleet-match-btn" onclick="fillJobFromFleet('${v.id}')">${esc(v.plate)} · ${esc(v.modelNumber)}</button>`).join('')}`;
+}
 function jobHTML(){
   return `<div class="page-head"><div><h1>Log Job</h1><p class="muted">When a car comes in, log the job here. Selected parts will automatically reduce inventory.</p></div></div>
-  <div class="job-layout"><section class="panel"><form id="jobForm" class="grid"><div class="grid two"><label>Customer name<input id="jobCustomer" placeholder="Walk-in customer"></label><label>Phone<input id="jobPhone" placeholder="+971..."></label><label>Car model<input id="jobCar" required placeholder="Toyota Corolla"></label><div class="plate-fields"><label>Plate code<input id="jobPlateCode" required placeholder="R" maxlength="8"></label><label>License number<input id="jobPlateNumber" required placeholder="14534"></label></div><label>Date<input id="jobDate" type="date" value="${today()}" required></label><label>Job status<select id="jobStatus">${JOB_STATUSES.map(x=>`<option>${x}</option>`).join('')}</select></label><label>Done by / Staff name<input id="jobDoneBy" required placeholder="Kumail / John" value="${esc(defaultStaffName())}"></label></div><label>What job was done?<textarea id="jobDescription" required placeholder="Oil change, brake pad replacement, AC repair..."></textarea></label><div class="section-title"><h3>Parts Used</h3><button id="addLineBtn" class="mini-btn" type="button">${I('plus','icon-sm')} Add another part</button></div><div id="partLines" class="part-lines"></div><div class="section-title custom-title"><div><h3>Custom Charges</h3><p class="muted small-note">Use this for car wash, diagnosis, towing, polishing, or anything not in inventory.</p></div><button id="addCustomBtn" class="mini-btn" type="button">${I('plus','icon-sm')} Add custom charge</button></div><div id="customCharges" class="custom-lines"></div><div class="section-title labour-title"><div><h3>Labor</h3><p class="muted small-note">Add this after selecting parts and any extra charges.</p></div></div><div class="grid two labour-grid"><label>Labor hours<input id="jobLabourHours" type="number" min="0" step="0.25" value="0" placeholder="2.5"></label><label>Labor charge (AED)<input id="jobLabour" type="number" min="0" step="0.01" value="0" placeholder="50"></label></div><div id="jobSummary" class="summary-box"></div><button class="btn primary large-btn" type="submit">${I('clipboard')} Save Job & Update Inventory</button></form></section><aside class="panel"><h3>Simple Rule</h3><p class="muted">Example: if stock has 10 oil filters and you use 1 in this job, the system automatically changes stock to 9.</p><div class="cost-card"><small>Inventory Cost Value</small><strong>${money(stats().costValue)}</strong></div><h3>Low Stock Now</h3>${state.parts.filter(p=>Number(p.qty)<=Number(p.threshold)).slice(0,6).map(p=>`<div class="pill orange">${esc(p.name)} · ${p.qty} left</div>`).join('') || '<p class="muted">No low stock items.</p>'}</aside></div>`;
+  <div class="job-layout"><section class="panel"><form id="jobForm" class="grid"><div class="grid two"><label>Customer name<input id="jobCustomer" placeholder="Walk-in customer"></label><label>Phone<input id="jobPhone" placeholder="+971..."></label><label>Car model<input id="jobCar" required placeholder="Toyota Corolla"></label><label>Choose from fleet <select id="jobFleetSelect"><option value="">Type manually / not in fleet</option>${fleetVehicleOptionsHTML()}</select></label><div class="plate-fields wide job-plate-row"><label>Plate code<input id="jobPlateCode" required placeholder="R" maxlength="8"></label><label>License number<input id="jobPlateNumber" required placeholder="14534"></label></div><div id="jobFleetMatches" class="fleet-match-box wide"><span class="muted">Type a plate or choose from fleet above.</span></div><label>Date<input id="jobDate" type="date" value="${today()}" required></label><label>Job status<select id="jobStatus">${JOB_STATUSES.map(x=>`<option>${x}</option>`).join('')}</select></label><label>Done by / Staff name<input id="jobDoneBy" required placeholder="Kumail / John" value="${esc(defaultStaffName())}"></label></div><label>What job was done?<textarea id="jobDescription" required placeholder="Oil change, brake pad replacement, AC repair..."></textarea></label><div class="section-title"><h3>Parts Used</h3><button id="addLineBtn" class="mini-btn" type="button">${I('plus','icon-sm')} Add another part</button></div><div id="partLines" class="part-lines"></div><div class="section-title custom-title"><div><h3>Custom Charges</h3><p class="muted small-note">Use this for car wash, diagnosis, towing, polishing, or anything not in inventory.</p></div><button id="addCustomBtn" class="mini-btn" type="button">${I('plus','icon-sm')} Add custom charge</button></div><div id="customCharges" class="custom-lines"></div><div class="section-title labour-title"><div><h3>Labor</h3><p class="muted small-note">Add this after selecting parts and any extra charges.</p></div></div><div class="grid two labour-grid"><label>Labor hours<input id="jobLabourHours" type="number" min="0" step="0.25" value="0" placeholder="2.5"></label><label>Labor charge (AED)<input id="jobLabour" type="number" min="0" step="0.01" value="0" placeholder="50"></label></div><div id="jobSummary" class="summary-box"></div><button class="btn primary large-btn" type="submit">${I('clipboard')} Save Job & Update Inventory</button></form></section><aside class="panel"><h3>Simple Rule</h3><p class="muted">Example: if stock has 10 oil filters and you use 1 in this job, the system automatically changes stock to 9.</p><div class="cost-card"><small>Inventory Cost Value</small><strong>${money(stats().costValue)}</strong></div><h3>Low Stock Now</h3>${state.parts.filter(p=>Number(p.qty)<=Number(p.threshold)).slice(0,6).map(p=>`<div class="pill orange">${esc(p.name)} · ${p.qty} left</div>`).join('') || '<p class="muted">No low stock items.</p>'}</aside></div>`;
 }
 function plateHistoryData(){
   const plateQuery = String(state.vehicleHistoryQuery || '').trim().toUpperCase();
@@ -467,7 +505,7 @@ function bindPageEvents(){
   if($('reportMonth')) $('reportMonth').onchange=e=>{state.reportMonth=e.target.value; render();};
   if($('plateHistorySearch')) $('plateHistorySearch').oninput=e=>{state.vehicleHistoryQuery=e.target.value; renderPlateHistoryResults();};
   if($('fleetForm')){ $('fleetForm').onsubmit=saveFleetVehicle; if($('fleetSearch')) $('fleetSearch').oninput=e=>{state.fleetFilter=e.target.value; renderFleetResults();}; }
-  if($('jobForm')){ $('addLineBtn').onclick=()=>addPartLine(); $('addCustomBtn').onclick=()=>addCustomCharge(); $('jobLabour').oninput=updateJobSummary; $('jobLabourHours').oninput=updateJobSummary; addPartLine(); addCustomCharge('', 0); updateJobSummary(); $('jobForm').onsubmit=saveJob; }
+  if($('jobForm')){ $('addLineBtn').onclick=()=>addPartLine(); $('addCustomBtn').onclick=()=>addCustomCharge(); $('jobLabour').oninput=updateJobSummary; $('jobLabourHours').oninput=updateJobSummary; if($('jobFleetSelect')) $('jobFleetSelect').onchange=e=>{ if(e.target.value) fillJobFromFleet(e.target.value); }; if($('jobPlateCode')) $('jobPlateCode').oninput=updateFleetPlateSuggestions; if($('jobPlateNumber')) $('jobPlateNumber').oninput=updateFleetPlateSuggestions; addPartLine(); addCustomCharge('', 0); updateFleetPlateSuggestions(); updateJobSummary(); $('jobForm').onsubmit=saveJob; }
 }
 function addPartLine(selected='', qty=1){
   const wrap=$('partLines');
