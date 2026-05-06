@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sarab Al Madina Garage Inventory</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="toast" class="toast hidden" role="status"></div>
+
+  <main id="authScreen" class="auth-page hidden">
+    <section class="auth-left">
+      <img class="brand-logo auth-logo" src="assets/logo.png" alt="Sarab Al Madina" />
+      <h1>Garage inventory made simple.</h1>
+      <p>For mechanics and staff: add parts, log jobs, and the stock updates automatically.</p>
+      <div class="steps-mini">
+        <span>1. Car comes in</span><b>→</b><span>2. Log job</span><b>→</b><span>3. Pick parts</span><b>→</b><span>4. Stock reduces</span>
+      </div>
+    </section>
+
+    <section class="auth-card">
+      <img class="brand-logo login-logo" src="assets/logo.png" alt="Sarab Al Madina" />
+      <div class="auth-tabs">
+        <button id="loginTab" class="active" type="button">Login</button>
+        <button id="signupTab" type="button">Sign up</button>
+      </div>
+
+      <form id="loginForm" class="form-stack">
+        <label>Email<input id="loginEmail" type="email" value="admin@garage.com" required /></label>
+        <label>Password<input id="loginPassword" type="password" value="admin123" required /></label>
+        <button class="btn primary full" type="submit">Login</button>
+        <p class="hint" id="authHint">Demo login: admin@garage.com / admin123</p>
+      </form>
+
+      <form id="signupForm" class="form-stack hidden">
+        <label>Name<input id="signupName" placeholder="Sarab Al Madina Team" required /></label>
+        <label>Email<input id="signupEmail" type="email" required /></label>
+        <label>Password<input id="signupPassword" type="password" minlength="6" required /></label>
+        <button class="btn primary full" type="submit">Create account</button>
+        <p class="hint">After Supabase is connected, this creates a real shared login.</p>
+      </form>
+    </section>
+  </main>
+
+  <div id="appShell" class="app hidden">
+    <aside class="sidebar" id="sidebar">
+      <div>
+        <div class="side-logo-box"><img class="brand-logo" src="assets/logo.png" alt="Sarab Al Madina" /></div>
+        <nav id="navList">
+          <button class="nav active" data-view="dashboard"><span data-icon="gauge"></span>Dashboard</button>
+          <button class="nav" data-view="inventory"><span data-icon="box"></span>Inventory</button>
+          <button class="nav" data-view="job"><span data-icon="clipboard"></span>Log Job</button>
+          <button class="nav" data-view="used"><span data-icon="wrench"></span>Parts Used</button>
+          <button class="nav" data-view="reports"><span data-icon="chart"></span>Reports</button>
+          <button class="nav" data-view="export"><span data-icon="download"></span>Export CSV</button>
+          <button class="nav" data-view="settings"><span data-icon="settings"></span>Settings</button>
+        </nav>
+      </div>
+      <div class="side-bottom">
+        <button id="logoutBtn" class="btn white full" type="button">Logout</button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div class="top-left">
+          <button id="mobileMenu" class="hamburger" type="button" aria-label="Open menu"><span data-icon="menu"></span></button>
+          <img class="brand-logo top-logo" src="assets/logo.png" alt="Sarab Al Madina" />
+          <h2>Sarab Al Madina Garage Inventory</h2>
+        </div>
+        <div class="userbox">
+          <div class="avatar"><span data-icon="user"></span></div>
+          <div><strong id="userName">Sarab Al Madina Team</strong><small>Garage Inventory</small></div>
+        </div>
+      </header>
+
+      <section id="page" class="page"></section>
+      <footer>© 2026 Sarab Al Madina Group of Companies. All rights reserved.</footer>
+    </main>
+  </div>
+
+  <dialog id="partDialog" class="modal">
+    <form id="partForm" method="dialog" class="modal-card">
+      <div class="modal-head"><h3 id="partDialogTitle">Add Part</h3><button type="button" class="icon-btn" onclick="closePartDialog()">×</button></div>
+      <input id="partId" type="hidden" />
+      <div class="grid two">
+        <label>Part name<input id="partName" required placeholder="Oil Filter" /></label>
+        <label>SKU<input id="partSku" required placeholder="OF-1001" /></label>
+        <label>Category<select id="partCategory"><option>Engine</option><option>Braking</option><option>Electrical</option><option>Suspension</option><option>Fluids</option><option>Transmission</option><option>Body</option><option>Tyres</option><option>Other</option></select></label>
+        <label>Location / shelf<input id="partLocation" placeholder="Rack A-01" /></label>
+        <label>Stock quantity<input id="partQty" type="number" min="0" step="1" required /></label>
+        <label>Low stock alert<input id="partThreshold" type="number" min="0" step="1" required /></label>
+        <label>Buying cost (AED)<input id="partCost" type="number" min="0" step="0.01" required /></label>
+        <label>Selling price (AED)<input id="partPrice" type="number" min="0" step="0.01" required /></label>
+        <label class="wide">Supplier<input id="partSupplier" placeholder="Bosch / Toyota / Local supplier" /></label>
+        <label class="wide">Fits these cars<input id="partFits" placeholder="Toyota Corolla 2018-2024" /></label>
+      </div>
+      <div class="modal-actions"><button type="button" class="btn light" onclick="closePartDialog()">Cancel</button><button class="btn primary" type="submit">Save Part</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="restockDialog" class="modal">
+    <form id="restockForm" method="dialog" class="modal-card small">
+      <div class="modal-head"><h3>Restock Part</h3><button type="button" class="icon-btn" onclick="closeRestockDialog()">×</button></div>
+      <label>Choose part<select id="restockPart"></select></label>
+      <label>Add quantity<input id="restockQty" type="number" min="1" step="1" value="1" required /></label>
+      <div class="modal-actions"><button type="button" class="btn light" onclick="closeRestockDialog()">Cancel</button><button class="btn primary" type="submit">Add Stock</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="jobDialog" class="modal">
+    <div class="modal-card small">
+      <div class="modal-head"><h3 id="jobDialogTitle">Job Details</h3><button type="button" class="icon-btn" onclick="closeJobDialog()">×</button></div>
+      <div id="jobDialogBody"></div>
+      <div class="modal-actions"><button type="button" class="btn light" onclick="closeJobDialog()">Close</button></div>
+    </div>
+  </dialog>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
