@@ -331,7 +331,7 @@ function dashboardHTML(s){
   return `<div class="kpis">${kpi('Total Parts',s.totalUnits,'All units in inventory','box',false,"goInventory('All')")}${kpi('Low Stock',s.lowCount,'Parts need restocking','warning',s.lowCount>0,"goInventory('Low')")}${kpi('Jobs Today',s.todayJobs,'Jobs logged today','clipboard',false,"goJobs()")}${kpi('Parts Used Today',s.partsUsedToday,'Total parts used','wrench',false,"goJobs()")}${statusSummaryCard()}</div>
   <section class="panel quick"><div class="section-title"><h3>Quick Actions</h3></div><div class="quick-grid"><button class="btn primary large-btn" onclick="openPartDialog()">${I('plus')} Add Part</button><button class="btn primary large-btn" onclick="go('job')">${I('clipboard')} Job Card</button><button class="btn primary large-btn" onclick="openRestockDialog()">${I('cart')} Restock</button><button class="btn primary large-btn" onclick="go('export')">${I('file')} Export CSV</button></div></section>
   ${plateHistoryPanelHTML('Quickly search a plate number from the dashboard and see all work done for that vehicle.')}
-  <div class="dashboard-stack"><section class="panel"><div class="section-title"><h3>Inventory Overview</h3><div class="section-actions"><button class="mini-btn" onclick="exportDashboardInventory()">CSV</button><button class="mini-btn" onclick="go('inventory')">View All Inventory</button></div></div>${inventoryTable(state.parts.slice(0,5), true)}</section><section class="panel"><div class="section-title"><h3>Recent Jobs</h3><div class="section-actions"><button class="mini-btn" onclick="exportDashboardJobs()">CSV</button><button class="mini-btn" onclick="go('used')">View All Jobs</button></div></div>${recentJobs.length?`<div class="jobs-list compact-jobs">${recentJobs.map(jobRow).join('')}</div>`:'<div class="empty">No jobs logged yet.</div>'}</section></div>`;
+  <div class="dashboard-stack"><section class="panel"><div class="section-title"><h3>Inventory Overview</h3><div class="section-actions"><button class="mini-btn" onclick="exportDashboardInventory()">CSV</button><button class="mini-btn" onclick="go('inventory')">View All Inventory</button></div></div>${inventoryTable(state.parts.slice(0,5), true)}</section><section class="panel recent-jobs-panel"><div class="section-title"><h3>Recent Jobs</h3><div class="section-actions"><button class="mini-btn" onclick="exportDashboardJobs()">CSV</button><button class="mini-btn" onclick="go('used')">View All Jobs</button></div></div>${recentJobs.length?`<div class="recent-job-list-clean">${recentJobs.map(dashboardJobRow).join('')}</div>`:'<div class="empty">No jobs logged yet.</div>'}</section></div>`;
 }
 function filteredInventoryParts(){
   return state.parts.filter(p=>{
@@ -373,6 +373,17 @@ function lastUsed(partId){ const j=state.jobs.find(job=>job.lines.some(l=>l.part
 function jobRow(j){
   const jid = ensureJobCardId(j);
   return `<div class="job-row"><div><b>${esc(j.plate)}</b><small class="muted">${esc(j.car)}</small><small class="job-card-id">${esc(jid)}</small></div><div><b>${esc(j.description||'Job card')}</b><small class="muted">Done by: ${esc(j.doneBy || '—')} · Parts used: ${j.lines.map(l=>`${esc(l.name)} x ${l.qty}`).join(', ') || 'No parts'}</small><div class="status-inline">${statusPill(jobStatus(j))}${statusSelect(j.id, jobStatus(j))}</div></div><div class="job-row-actions"><button class="mini-btn" onclick="loadJobCardForEdit('${j.id}')">Edit</button><button class="mini-btn" onclick="viewJob('${j.id}')">History</button></div></div>`;
+}
+
+function dashboardJobRow(j){
+  const jid = ensureJobCardId(j);
+  const parts = j.lines && j.lines.length ? j.lines.map(l=>`${esc(l.name)} x ${l.qty}`).join(', ') : 'No parts';
+  return `<div class="dash-job-row">
+    <div class="dash-job-plate"><b>${esc(j.plate)}</b><small>${esc(j.car || 'No car model')}</small><small class="job-card-id">${esc(jid)}</small></div>
+    <div class="dash-job-main"><b>${esc(j.description || 'Job card')}</b><small>Done by: ${esc(j.doneBy || '—')}</small><small>Parts: ${parts}</small></div>
+    <div class="dash-job-status">${statusPill(jobStatus(j))}${statusSelect(j.id, jobStatus(j))}</div>
+    <div class="dash-job-actions"><button class="mini-btn" onclick="loadJobCardForEdit('${j.id}')">Edit</button><button class="mini-btn" onclick="viewJob('${j.id}')">History</button></div>
+  </div>`;
 }
 
 

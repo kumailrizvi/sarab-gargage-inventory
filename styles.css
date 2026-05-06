@@ -437,3 +437,72 @@ label{font-weight:700;font-size:14px;display:grid;gap:7px}input,select,textarea{
   .staff-row-clean { grid-template-columns: 1fr; }
   .staff-row-clean .add-staff-btn { width: 100%; }
 }
+
+/* v33 cleaner dashboard recent jobs spacing */
+.recent-jobs-panel {
+  margin-top: 4px;
+}
+.recent-job-list-clean {
+  display: grid;
+  gap: 12px;
+}
+.dash-job-row {
+  display: grid;
+  grid-template-columns: 170px minmax(260px, 1fr) 210px auto;
+  gap: 18px;
+  align-items: center;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #fff;
+}
+.dash-job-row b {
+  display: block;
+  font-size: 15px;
+  line-height: 1.25;
+}
+.dash-job-row small {
+  display: block;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.35;
+  margin-top: 3px;
+}
+.dash-job-plate .job-card-id {
+  color: var(--green-dark);
+  font-weight: 800;
+  margin-top: 6px;
+}
+.dash-job-main {
+  min-width: 0;
+}
+.dash-job-main small {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.dash-job-status {
+  display: grid;
+  gap: 8px;
+  align-items: center;
+}
+.dash-job-status .status-select,
+.dash-job-status select {
+  width: 100%;
+  min-height: 42px;
+  font-size: 13px;
+  padding: 8px 10px;
+}
+.dash-job-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  white-space: nowrap;
+}
+@media(max-width:1200px){
+  .dash-job-row { grid-template-columns: 150px minmax(220px, 1fr) 190px; }
+  .dash-job-actions { grid-column: 1 / -1; justify-content: flex-start; }
+}
+@media(max-width:800px){
+  .dash-job-row { grid-template-columns: 1fr; gap: 10px; }
+  .dash-job-status { max-width: 260px; }
+}
