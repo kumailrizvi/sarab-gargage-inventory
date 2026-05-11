@@ -1097,6 +1097,30 @@ function pickReplacementFromFleet(input){
   }
   stageReplacementCellInput(input);
 }
+function replacementCellKeydown(event, input){
+  if(!guardReplacementEdit()){ event.preventDefault(); return; }
+  const key = event.key;
+  if(key === 'Enter'){
+    event.preventDefault();
+    toggleReplacementTick(input);
+    return;
+  }
+  if((input.value === '✓') && key && key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey){
+    input.value = '';
+    input.classList.remove('is-tick','has-value');
+  }
+}
+function clearVisibleReplacementCells(){
+  const month=state.replacementMonth || today().slice(0,7);
+  if(!canEditReplacementMonth(month)){ toast('This month is locked. Use Override PIN to edit.'); return; }
+  const cells=[...document.querySelectorAll('.rep-cell')];
+  if(!cells.length){ toast('No visible replacement cells to clear'); return; }
+  if(!confirm('Clear all visible replacement cells for the selected filters/month? Click Save after clearing.')) return;
+  if(!state.replacementUndoStack) state.replacementUndoStack=[];
+  state.replacementUndoStack.push(currentReplacementCellSnapshot());
+  cells.forEach(cell=>{ cell.value=''; stageReplacementCellInput(cell); });
+  toast('Visible replacement cells cleared. Click Save to keep it.');
+}
 
 
 function replacementLockId(month){ return `rep_lock_${month}`.replace(/[^a-zA-Z0-9_-]/g,'_'); }
@@ -1178,16 +1202,16 @@ function replacementsHTML(){
     ${fleetSubnavHeader('replacements')}
     <section class="panel replacements-panel"><div class="section-title"><div><h3>Replacements</h3><p class="muted small-note">Choose all clients or one client. Use ✓ for normal use, or type/select a replacement plate from the existing fleet list.</p></div></div>
       <div class="replacement-lockbar ${locked?'locked':''}"><div><b>${locked ? 'Month locked' : 'Month open'}</b><span>${locked ? `Locked by ${esc(lock?.lockedBy || '—')} on ${esc((lock?.lockedAt || '').slice(0,10))}` : 'You can edit and save this replacement register.'}</span></div><div>${locked && !editable ? `<button class="btn light" onclick="unlockReplacementMonth()">Override PIN</button>` : `<button class="btn light" onclick="lockReplacementMonth()">Lock Month</button>`}</div></div>
-      <div class="filters replacement-filters upgraded"><label>Client<select id="replacementClient"><option value="">All clients</option>${clients.map(c=>`<option value="${esc(c)}" ${state.replacementClient===c?'selected':''}>${esc(c)}</option>`).join('')}</select></label><label>Search vehicle<input id="replacementVehicleSearch" placeholder="Plate, model, client..." value="${esc(state.replacementVehicleSearch || '')}" autocomplete="off"></label><label>Month<input id="replacementMonth" type="month" value="${esc(state.replacementMonth)}"></label><button class="btn light" onclick="markVisibleReplacementDays()" ${!editable?'disabled':''}>Fill blanks with ✓</button><button class="btn light" onclick="undoReplacementFill()" ${!editable?'disabled':''}>Undo</button><button class="btn primary" onclick="saveReplacementTable()" ${!editable?'disabled':''}>Save</button></div>
+      <div class="filters replacement-filters upgraded"><label>Client<select id="replacementClient"><option value="">All clients</option>${clients.map(c=>`<option value="${esc(c)}" ${state.replacementClient===c?'selected':''}>${esc(c)}</option>`).join('')}</select></label><label>Search vehicle<input id="replacementVehicleSearch" placeholder="Plate, model, client..." value="${esc(state.replacementVehicleSearch || '')}" autocomplete="off"></label><label>Month<input id="replacementMonth" type="month" value="${esc(state.replacementMonth)}"></label><button class="btn light" onclick="markVisibleReplacementDays()" ${!editable?'disabled':''}>Fill blanks with ✓</button><button class="btn light" onclick="clearVisibleReplacementCells()" ${!editable?'disabled':''}>Clear all</button><button class="btn light" onclick="undoReplacementFill()" ${!editable?'disabled':''}>Undo</button><button class="btn primary" onclick="saveReplacementTable()" ${!editable?'disabled':''}>Save</button></div>
       ${replacementFleetDatalist()}${vehicles.length ? replacementMatrix(vehicles, days, editable) : '<div class="empty">No vehicles found for this filter.</div>'}
     </section>`;
 }
 function replacementMatrix(vehicles, days, editable=true){
   const month=state.replacementMonth || today().slice(0,7);
   const dayHeads=Array.from({length:days},(_,i)=>`<th class="rep-day-head">${i+1}</th>`).join('');
-  return `<div class="replacement-help-line"><span><b>Tip:</b> each row is one vehicle. Click a day cell to mark ✓. Double click or start typing to enter a replacement plate.</span><span>${vehicles.length} vehicle${vehicles.length===1?'':'s'} shown</span></div>
+  return `<div class="replacement-help-line"><span><b>Tip:</b> each row is one vehicle. Double-click a day cell to mark ✓, or just type a replacement plate. Press Enter to toggle ✓.</span><span>${vehicles.length} vehicle${vehicles.length===1?'':'s'} shown</span></div>
   <div class="replacement-scroll"><table class="replacement-table fixed-replacement-table"><thead><tr><th class="sticky-col rep-vehicle-head">Client / Vehicle</th><th class="sticky-col-2">Plate</th>${dayHeads}</tr></thead><tbody>
-  ${vehicles.map(v=>`<tr><td class="sticky-col rep-vehicle"><b>${esc(fleetClientName(v))}</b><small>${esc(modelWithoutYear(v.modelNumber)||'Vehicle')} ${v.year?`· ${esc(v.year)}`:''}</small></td><td class="sticky-col-2"><span class="fleet-plate">${esc(v.plate || '—')}</span></td>${Array.from({length:days},(_,i)=>{ const d=i+1; const val=replacementValue(month,v.id,d); const isTick=val==='✓'; return `<td class="rep-cell-wrap ${!editable?'locked-cell':''}"><input class="rep-cell ${isTick?'is-tick':''} ${val?'has-value':''}" data-vehicle="${esc(v.id)}" data-day="${d}" value="${esc(val)}" placeholder="" title="Click for ✓ or type replacement plate" list="replacementFleetOptions" onclick="if(!this.value) toggleReplacementTick(this)" ondblclick="this.value=''; this.focus(); stageReplacementCellInput(this)" oninput="stageReplacementCellInput(this)" onchange="pickReplacementFromFleet(this)" ${!editable?'disabled':''}></td>`; }).join('')}</tr>`).join('')}
+  ${vehicles.map(v=>`<tr><td class="sticky-col rep-vehicle"><b>${esc(fleetClientName(v))}</b><small>${esc(modelWithoutYear(v.modelNumber)||'Vehicle')} ${v.year?`· ${esc(v.year)}`:''}</small></td><td class="sticky-col-2"><span class="fleet-plate">${esc(v.plate || '—')}</span></td>${Array.from({length:days},(_,i)=>{ const d=i+1; const val=replacementValue(month,v.id,d); const isTick=val==='✓'; return `<td class="rep-cell-wrap ${!editable?'locked-cell':''}"><input class="rep-cell ${isTick?'is-tick':''} ${val?'has-value':''}" data-vehicle="${esc(v.id)}" data-day="${d}" value="${esc(val)}" placeholder="" title="Enter ✓ or type replacement plate" list="replacementFleetOptions" onkeydown="replacementCellKeydown(event,this)" ondblclick="toggleReplacementTick(this)" oninput="stageReplacementCellInput(this)" onchange="pickReplacementFromFleet(this)" ${!editable?'disabled':''}></td>`; }).join('')}</tr>`).join('')}
   </tbody></table></div>`;
 }
 
@@ -1237,41 +1261,46 @@ function vehicleClientChangeEvents(v){
     })
     .sort((a,b)=>String(a.date).localeCompare(String(b.date)));
 }
+function displayDateRangeValue(value){
+  const clean=String(value || '').slice(0,10);
+  return clean || 'Not recorded';
+}
 function vehicleAssignmentTimeline(v){
-  const events = vehicleClientChangeEvents(v);
+  const events = vehicleClientChangeEvents(v).filter(e=>e.date && e.date !== '—');
   const currentClient = fleetClientName(v) || 'Unassigned';
-  const created = (v.createdAt || '').slice(0,10) || 'Start';
+  const created = displayDateRangeValue(v.assignmentStartDate || v.outsourceStartDate || v.createdAt || '');
   if(!events.length){
     return [{ from: created, to:'Present', client:currentClient, note:'Current fleet record' }];
   }
+  const ordered=[...events].sort((a,b)=>String(a.date).localeCompare(String(b.date)));
   const periods=[];
-  events.forEach((ev, idx)=>{
+  ordered.forEach((ev, idx)=>{
     if(idx===0){
-      periods.push({ from:created, to:ev.date, client:ev.fromClient || 'Unassigned', note:'Before first recorded change' });
+      periods.push({ from: created, to: ev.date, client: ev.fromClient || 'Unassigned', note:'Before recorded client change' });
     }
-    const next=events[idx+1];
-    periods.push({ from:ev.date, to:next ? next.date : 'Present', client:ev.toClient || currentClient, note:`Changed by ${ev.by}` });
+    const next=ordered[idx+1];
+    periods.push({ from: ev.date, to: next ? next.date : 'Present', client: ev.toClient || currentClient, note:`Changed by ${ev.by || '—'}` });
   });
   const last=periods[periods.length-1];
-  if(last && last.client !== currentClient){
-    last.client = currentClient;
-    last.note = `${last.note} · current fleet client`;
+  if(last && clientKey(last.client) !== clientKey(currentClient)){
+    periods.push({ from: last.to === 'Present' ? today() : last.to, to:'Present', client: currentClient, note:'Current fleet record' });
   }
-  return periods.filter((r,i)=>r.client || i===0).reverse();
+  return periods.filter(r=>r.client).reverse();
 }
 function vehicleHistoryHTML(){
   const vehicles=vehicleHistoryRows();
   return `<div class="page-head"><div><h1>Fleet</h1><p class="muted">Vehicle assignment history by client.</p></div><div class="head-actions"><button class="btn light" onclick="exportVehicleHistoryCSV()">${I('download','icon-sm')} Export CSV</button></div></div>
   ${fleetSubnavHeader('vehicleHistory')}
-  <section class="panel vehicle-history-panel vehicle-history-table-panel"><div class="section-title"><div><h3>Vehicle History</h3><p class="muted small-note">A clean log of which client had each vehicle, from which date to which date.</p></div></div>
+  <section class="panel vehicle-history-panel vehicle-history-table-panel"><div class="section-title"><div><h3>Vehicle History</h3><p class="muted small-note">See exactly which client had a vehicle, from what date to what date.</p></div></div>
   <input id="vehicleHistorySearch" class="fleet-search" placeholder="Search plate, vehicle, or client..." value="${esc(state.vehicleHistorySearch || '')}" autocomplete="off">
-  <div class="table-wrap vehicle-history-table-wrap"><table class="vehicle-history-table"><thead><tr><th></th><th>Plate</th><th>Vehicle</th><th>Current Client</th><th>Status</th><th>History Count</th></tr></thead><tbody>${vehicles.map(vehicleHistoryRow).join('') || '<tr><td colspan="6">No vehicles found.</td></tr>'}</tbody></table></div></section>`;
+  <div class="table-wrap vehicle-history-table-wrap"><table class="vehicle-history-table"><thead><tr><th></th><th>Plate</th><th>Vehicle</th><th>Current Client</th><th>Current From</th><th>Current To</th><th>Status</th></tr></thead><tbody>${vehicles.map(vehicleHistoryRow).join('') || '<tr><td colspan="7">No vehicles found.</td></tr>'}</tbody></table></div></section>`;
 }
 function vehicleHistoryRow(v){
   const open = state.vehicleHistoryOpen === v.id;
   const timeline=vehicleAssignmentTimeline(v);
-  const historyRows = timeline.map(r=>`<tr class="vh-detail-row"><td></td><td colspan="2"><b>${esc(r.client)}</b><small>${esc(r.note || '')}</small></td><td>${esc(r.from)}</td><td>${esc(r.to)}</td><td></td></tr>`).join('');
-  return `<tr class="vh-main-row" onclick="toggleVehicleHistory('${esc(v.id)}')"><td><button class="mini-btn vh-arrow" type="button">${open?'▾':'▸'}</button></td><td><span class="fleet-plate">${esc(v.plate || '—')}</span></td><td><b>${esc(modelWithoutYear(v.modelNumber)||v.modelNumber||'Vehicle')}</b><small>${v.year?esc(v.year):''}</small></td><td><b>${esc(fleetClientName(v) || 'Unassigned')}</b></td><td><span class="pill ${v.status==='In Use'?'green':v.status==='Off-hire'?'red':'orange'}">${esc(v.status||'—')}</span></td><td>${timeline.length}</td></tr>${open ? historyRows : ''}`;
+  const current=timeline[0] || {from:'Not recorded', to:'Present', client:fleetClientName(v)||'Unassigned'};
+  const historyRows = timeline.map(r=>`<tr class="vh-detail-row"><td></td><td colspan="2"><b>${esc(r.client)}</b><small>${esc(r.note || '')}</small></td><td><b>From</b><small>${esc(r.from)}</small></td><td><b>To</b><small>${esc(r.to)}</small></td><td colspan="2"></td></tr>`).join('');
+  return `<tr class="vh-main-row" onclick="toggleVehicleHistory('${esc(v.id)}')"><td><button class="mini-btn vh-arrow" type="button">${open?'▾':'▸'}</button></td><td><span class="fleet-plate">${esc(v.plate || '—')}</span></td><td><b>${esc(modelWithoutYear(v.modelNumber)||v.modelNumber||'Vehicle')}</b><small>${v.year?esc(v.year):''}</small></td><td><b>${esc(fleetClientName(v) || 'Unassigned')}</b></td><td>${esc(current.from)}</td><td>${esc(current.to)}</td><td><span class="pill ${v.status==='In Use'?'green':v.status==='Off-hire'?'red':'orange'}">${esc(v.status||'—')}</span></td></tr>${open ? historyRows : ''}`;
 }
 function toggleVehicleHistory(vehicleId){
   state.vehicleHistoryOpen = state.vehicleHistoryOpen === vehicleId ? '' : vehicleId;
@@ -2192,5 +2221,5 @@ function exportActivity(){
 
 async function resetDemo(){ if(!confirm('Reset all demo data?')) return; if(USE_SUPABASE){ await sb.from('parts').delete().neq('id','__never__'); await sb.from('jobs').delete().neq('id','__never__'); await sb.from('vehicles').delete().neq('id','__never__'); try { await sb.from('staff').delete().neq('id','__never__'); } catch(e) { console.warn(e); } try { await sb.from('logs').delete().neq('id','__never__'); } catch(e) { console.warn(e); } try { await sb.from('tickets').delete().neq('id','__never__'); } catch(e) { console.warn(e); } state.parts=seedParts.map(p=>({...p})); state.jobs=seedJobs.map(j=>({...j})); state.vehicles=seedVehicles.map(v=>({...v})); state.staff=seedStaff.map(x=>({...x})); state.logs=[]; state.tickets=seedTickets.map(t=>({...t})); state.clients=seedClients.map(c=>({...c})); await saveParts(); await saveJobs(); await saveVehicles(); await saveStaff(); await saveLogs(); await saveTickets(); await saveClients(); } else { set(KEYS.parts, seedParts); set(KEYS.jobs, seedJobs); set(KEYS.vehicles, seedVehicles); set(KEYS.staff, seedStaff); set(KEYS.logs, []); set(KEYS.tickets, seedTickets); set(KEYS.clients, seedClients); } state.filters={q:'',category:'All',stock:'All'}; state.vehicleHistoryQuery=''; state.selectedClient=''; state.clientFilter=''; state.activityQuery=''; state.activitySection='All'; state.ticketTab='dashboard'; state.ticketSearch=''; state.ticketStatus='All'; state.ticketPriority='All'; toast('Demo data reset'); render(); }
 
-window.addStaffFromPrompt=addStaffFromPrompt; window.selectClient=selectClient; window.editClient=editClient; window.deleteClient=deleteClient; window.clearClientForm=clearClientForm; window.exportClients=exportClients; window.importFleetCSV=importFleetCSV; window.escalateTicket=escalateTicket; window.deEscalateTicket=deEscalateTicket; window.exportActivity=exportActivity; window.switchTicketTab=switchTicketTab; window.saveTicket=saveTicket; window.deleteTicket=deleteTicket; window.updateTicketStatus=updateTicketStatus; window.viewTicket=viewTicket; window.closeTicketDialog=closeTicketDialog; window.exportTickets=exportTickets; window.fillTicketFromFleet=fillTicketFromFleet; window.startNewJobCard=startNewJobCard; window.loadJobCardForEdit=loadJobCardForEdit; window.goInventory=goInventory; window.goJobs=goJobs; window.exportDashboardInventory=exportDashboardInventory; window.exportDashboardJobs=exportDashboardJobs; window.viewPlateHistory=viewPlateHistory; window.clearPlateHistorySearch=clearPlateHistorySearch; window.exportPlateHistoryCSV=exportPlateHistoryCSV; window.startAddVehicle=startAddVehicle; window.toggleOrdered=toggleOrdered; window.go=go; window.openPartDialog=openPartDialog; window.closePartDialog=closePartDialog; window.openRestockDialog=openRestockDialog; window.closeRestockDialog=closeRestockDialog; window.viewPartUsage=viewPartUsage; window.viewJob=viewJob; window.closeJobDialog=closeJobDialog; window.deleteJob=deleteJob; window.deletePart=deletePart; window.exportInventory=exportInventory; window.importInventoryCSV=importInventoryCSV; window.exportJobs=exportJobs; window.exportUsage=exportUsage; window.exportMonthlyReport=exportMonthlyReport; window.exportFleet=exportFleet; window.editFleetVehicle=editFleetVehicle; window.deleteFleetVehicle=deleteFleetVehicle; window.clearFleetForm=clearFleetForm; window.resetDemo=resetDemo;
+window.addStaffFromPrompt=addStaffFromPrompt; window.selectClient=selectClient; window.editClient=editClient; window.deleteClient=deleteClient; window.clearClientForm=clearClientForm; window.exportClients=exportClients; window.importFleetCSV=importFleetCSV; window.escalateTicket=escalateTicket; window.deEscalateTicket=deEscalateTicket; window.exportActivity=exportActivity; window.switchTicketTab=switchTicketTab; window.saveTicket=saveTicket; window.deleteTicket=deleteTicket; window.updateTicketStatus=updateTicketStatus; window.viewTicket=viewTicket; window.closeTicketDialog=closeTicketDialog; window.exportTickets=exportTickets; window.fillTicketFromFleet=fillTicketFromFleet; window.startNewJobCard=startNewJobCard; window.loadJobCardForEdit=loadJobCardForEdit; window.goInventory=goInventory; window.goJobs=goJobs; window.exportDashboardInventory=exportDashboardInventory; window.exportDashboardJobs=exportDashboardJobs; window.viewPlateHistory=viewPlateHistory; window.clearPlateHistorySearch=clearPlateHistorySearch; window.exportPlateHistoryCSV=exportPlateHistoryCSV; window.startAddVehicle=startAddVehicle; window.toggleOrdered=toggleOrdered; window.go=go; window.openPartDialog=openPartDialog; window.closePartDialog=closePartDialog; window.openRestockDialog=openRestockDialog; window.closeRestockDialog=closeRestockDialog; window.viewPartUsage=viewPartUsage; window.viewJob=viewJob; window.closeJobDialog=closeJobDialog; window.deleteJob=deleteJob; window.deletePart=deletePart; window.exportInventory=exportInventory; window.importInventoryCSV=importInventoryCSV; window.exportJobs=exportJobs; window.exportUsage=exportUsage; window.exportMonthlyReport=exportMonthlyReport; window.exportFleet=exportFleet; window.clearVisibleReplacementCells=clearVisibleReplacementCells; window.replacementCellKeydown=replacementCellKeydown; window.editFleetVehicle=editFleetVehicle; window.deleteFleetVehicle=deleteFleetVehicle; window.clearFleetForm=clearFleetForm; window.resetDemo=resetDemo;
 init();
