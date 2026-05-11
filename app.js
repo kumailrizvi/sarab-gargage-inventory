@@ -1244,7 +1244,13 @@ function exportReplacementsCSV(){
 function vehicleHistoryRows(){
   const q=String(state.vehicleHistorySearch || '').trim().toLowerCase();
   let vehicles=state.vehicles.slice();
-  if(q) vehicles=vehicles.filter(v=>[v.plate,v.modelNumber,v.year,fleetClientName(v),v.customer,v.status,v.ownership,v.notes].join(' ').toLowerCase().includes(q));
+  if(q){
+    vehicles=vehicles.filter(v=>{
+      const historyText = vehicleAssignmentTimeline(v).map(r=>`${r.client} ${r.from} ${r.to} ${r.note||''}`).join(' ');
+      return [v.plate,v.modelNumber,v.year,fleetClientName(v),v.customer,v.status,v.ownership,v.notes,historyText]
+        .join(' ').toLowerCase().includes(q);
+    });
+  }
   return vehicles.sort((a,b)=>String(a.plate||'').localeCompare(String(b.plate||'')));
 }
 function vehicleClientChangeEvents(v){
@@ -1257,7 +1263,12 @@ function vehicleClientChangeEvents(v){
     })
     .map(log=>{
       const [fromClient='', toClient=''] = String(log.details || '').split('→').map(x=>x.trim());
-      return { date:(log.createdAt || log.time || '').slice(0,10) || '—', fromClient, toClient, by:log.staff || log.user || '—' };
+      return {
+        date:(log.timestamp || log.createdAt || log.time || '').slice(0,10) || 'Not recorded',
+        fromClient: fromClient || 'Unassigned',
+        toClient: toClient || 'Unassigned',
+        by:log.staff || log.user || '—'
+      };
     })
     .sort((a,b)=>String(a.date).localeCompare(String(b.date)));
 }
@@ -1265,51 +1276,86 @@ function displayDateRangeValue(value){
   const clean=String(value || '').slice(0,10);
   return clean || 'Not recorded';
 }
-function vehicleAssignmentTimeline(v){
-  const events = vehicleClientChangeEvents(v).filter(e=>e.date && e.date !== '—');
+function normalizeAssignmentHistory(v){
   const currentClient = fleetClientName(v) || 'Unassigned';
-  const created = displayDateRangeValue(v.assignmentStartDate || v.outsourceStartDate || v.createdAt || '');
-  if(!events.length){
-    return [{ from: created, to:'Present', client:currentClient, note:'Current fleet record' }];
-  }
-  const ordered=[...events].sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+  const stored = Array.isArray(v.assignmentHistory) ? v.assignmentHistory : [];
+  const normalized = stored
+    .map(x=>({
+      client: normName(x.client || x.customer || 'Unassigned') || 'Unassigned',
+      from: displayDateRangeValue(x.from || x.fromDate || x.startDate || x.date),
+      to: x.to || x.toDate || x.endDate || '',
+      note: x.note || x.source || '',
+      changedBy: x.changedBy || ''
+    }))
+    .filter(x=>x.client);
+  if(normalized.length) return normalized;
+
+  const created = displayDateRangeValue(v.assignmentStartDate || v.outsourceStartDate || v.createdAt || today());
+  const events = vehicleClientChangeEvents(v).filter(e=>e.date && e.date !== 'Not recorded');
+  if(!events.length) return [{ client:currentClient, from:created, to:'', note:'Current fleet record' }];
+
   const periods=[];
-  ordered.forEach((ev, idx)=>{
+  events.forEach((ev, idx)=>{
     if(idx===0){
-      periods.push({ from: created, to: ev.date, client: ev.fromClient || 'Unassigned', note:'Before recorded client change' });
+      periods.push({ client: ev.fromClient || 'Unassigned', from: created, to: ev.date, note:'Before recorded client change', changedBy: ev.by || '' });
     }
-    const next=ordered[idx+1];
-    periods.push({ from: ev.date, to: next ? next.date : 'Present', client: ev.toClient || currentClient, note:`Changed by ${ev.by || '—'}` });
+    const next=events[idx+1];
+    periods.push({ client: ev.toClient || currentClient, from: ev.date, to: next ? next.date : '', note:'Fleet client changed', changedBy: ev.by || '' });
   });
   const last=periods[periods.length-1];
   if(last && clientKey(last.client) !== clientKey(currentClient)){
-    periods.push({ from: last.to === 'Present' ? today() : last.to, to:'Present', client: currentClient, note:'Current fleet record' });
+    periods.push({ client: currentClient, from: displayDateRangeValue(v.updatedAt || today()), to:'', note:'Current fleet record' });
   }
-  return periods.filter(r=>r.client).reverse();
+  return periods.filter(x=>x.client);
+}
+function vehicleAssignmentTimeline(v){
+  const currentClient = fleetClientName(v) || 'Unassigned';
+  const periods = normalizeAssignmentHistory(v);
+  if(!periods.length) return [{ from:'Not recorded', to:'Present', client:currentClient, note:'Current fleet record' }];
+  const clean = periods.map((p, idx)=>({
+    client: p.client || 'Unassigned',
+    from: displayDateRangeValue(p.from),
+    to: p.to ? displayDateRangeValue(p.to) : 'Present',
+    note: p.note || (idx === periods.length-1 ? 'Current assignment' : 'Past assignment'),
+    changedBy: p.changedBy || ''
+  }));
+  const last = clean[clean.length-1];
+  if(last && clientKey(last.client) !== clientKey(currentClient)){
+    clean.push({ client:currentClient, from:displayDateRangeValue(v.updatedAt || today()), to:'Present', note:'Current fleet record' });
+  }
+  return clean;
+}
+function vehicleHistoryResultsHTML(){
+  const vehicles=vehicleHistoryRows();
+  return `<div class="table-wrap vehicle-history-table-wrap"><table class="vehicle-history-table"><thead><tr><th></th><th>Plate</th><th>Vehicle</th><th>Current Client</th><th>Current From</th><th>Current To</th><th>Status</th></tr></thead><tbody>${vehicles.map(vehicleHistoryRow).join('') || '<tr><td colspan="7">No vehicles found.</td></tr>'}</tbody></table></div>`;
+}
+function renderVehicleHistoryResults(){
+  const el=$('vehicleHistoryResults');
+  if(el) el.innerHTML = vehicleHistoryResultsHTML();
 }
 function vehicleHistoryHTML(){
-  const vehicles=vehicleHistoryRows();
   return `<div class="page-head"><div><h1>Fleet</h1><p class="muted">Vehicle assignment history by client.</p></div><div class="head-actions"><button class="btn light" onclick="exportVehicleHistoryCSV()">${I('download','icon-sm')} Export CSV</button></div></div>
   ${fleetSubnavHeader('vehicleHistory')}
-  <section class="panel vehicle-history-panel vehicle-history-table-panel"><div class="section-title"><div><h3>Vehicle History</h3><p class="muted small-note">See exactly which client had a vehicle, from what date to what date.</p></div></div>
+  <section class="panel vehicle-history-panel vehicle-history-table-panel"><div class="section-title"><div><h3>Vehicle History</h3><p class="muted small-note">This shows which client had each vehicle, with start and end dates. When the client changes in Fleet, the previous client period is closed and a new one starts.</p></div></div>
   <input id="vehicleHistorySearch" class="fleet-search" placeholder="Search plate, vehicle, or client..." value="${esc(state.vehicleHistorySearch || '')}" autocomplete="off">
-  <div class="table-wrap vehicle-history-table-wrap"><table class="vehicle-history-table"><thead><tr><th></th><th>Plate</th><th>Vehicle</th><th>Current Client</th><th>Current From</th><th>Current To</th><th>Status</th></tr></thead><tbody>${vehicles.map(vehicleHistoryRow).join('') || '<tr><td colspan="7">No vehicles found.</td></tr>'}</tbody></table></div></section>`;
+  <div id="vehicleHistoryResults">${vehicleHistoryResultsHTML()}</div></section>`;
 }
 function vehicleHistoryRow(v){
   const open = state.vehicleHistoryOpen === v.id;
   const timeline=vehicleAssignmentTimeline(v);
-  const current=timeline[0] || {from:'Not recorded', to:'Present', client:fleetClientName(v)||'Unassigned'};
-  const historyRows = timeline.map(r=>`<tr class="vh-detail-row"><td></td><td colspan="2"><b>${esc(r.client)}</b><small>${esc(r.note || '')}</small></td><td><b>From</b><small>${esc(r.from)}</small></td><td><b>To</b><small>${esc(r.to)}</small></td><td colspan="2"></td></tr>`).join('');
-  return `<tr class="vh-main-row" onclick="toggleVehicleHistory('${esc(v.id)}')"><td><button class="mini-btn vh-arrow" type="button">${open?'▾':'▸'}</button></td><td><span class="fleet-plate">${esc(v.plate || '—')}</span></td><td><b>${esc(modelWithoutYear(v.modelNumber)||v.modelNumber||'Vehicle')}</b><small>${v.year?esc(v.year):''}</small></td><td><b>${esc(fleetClientName(v) || 'Unassigned')}</b></td><td>${esc(current.from)}</td><td>${esc(current.to)}</td><td><span class="pill ${v.status==='In Use'?'green':v.status==='Off-hire'?'red':'orange'}">${esc(v.status||'—')}</span></td></tr>${open ? historyRows : ''}`;
+  const currentClient = fleetClientName(v) || 'Unassigned';
+  const current = [...timeline].reverse().find(r=>clientKey(r.client)===clientKey(currentClient)) || timeline[timeline.length-1] || {from:'Not recorded', to:'Present', client:currentClient};
+  const historyRows = timeline.slice().reverse().map((r,idx)=>`<tr class="vh-detail-row"><td></td><td colspan="2"><b>${esc(r.client)}</b><small>${idx===0?'Current / latest period':'Past period'}${r.changedBy ? ` · Changed by ${esc(r.changedBy)}` : ''}${r.note ? ` · ${esc(r.note)}` : ''}</small></td><td><b>From</b><small>${esc(r.from)}</small></td><td><b>To</b><small>${esc(r.to || 'Present')}</small></td><td colspan="2"></td></tr>`).join('');
+  return `<tr class="vh-main-row" onclick="toggleVehicleHistory('${esc(v.id)}')"><td><button class="mini-btn vh-arrow" type="button">${open?'▾':'▸'}</button></td><td><span class="fleet-plate">${esc(v.plate || '—')}</span></td><td><b>${esc(modelWithoutYear(v.modelNumber)||v.modelNumber||'Vehicle')}</b><small>${v.year?esc(v.year):''}</small></td><td><b>${esc(currentClient)}</b></td><td>${esc(current.from)}</td><td>${esc(current.to || 'Present')}</td><td><span class="pill ${v.status==='In Use'?'green':v.status==='Off-hire'?'red':'orange'}">${esc(v.status||'—')}</span></td></tr>${open ? historyRows : ''}`;
 }
 function toggleVehicleHistory(vehicleId){
   state.vehicleHistoryOpen = state.vehicleHistoryOpen === vehicleId ? '' : vehicleId;
-  render();
+  renderVehicleHistoryResults();
 }
 function exportVehicleHistoryCSV(){
-  const rows=[['Plate','Vehicle','Year','Client','From Date','To Date','Notes']];
+  const rows=[['Plate','Vehicle','Year','Client','From Date','To Date','Notes','Changed By']];
   vehicleHistoryRows().forEach(v=>{
-    vehicleAssignmentTimeline(v).slice().reverse().forEach(r=>rows.push([v.plate||'', modelWithoutYear(v.modelNumber)||v.modelNumber||'', v.year||'', r.client, r.from, r.to, r.note||'']));
+    vehicleAssignmentTimeline(v).forEach(r=>rows.push([v.plate||'', modelWithoutYear(v.modelNumber)||v.modelNumber||'', v.year||'', r.client, r.from, r.to || 'Present', r.note||'', r.changedBy||'']));
   });
   downloadCSV('sarab-vehicle-client-history.csv', rows);
 }
@@ -1380,7 +1426,8 @@ async function saveFleetVehicle(e){
     clientRate: $('fleetStatus').value === 'Off-hire' ? 0 : Number($('fleetClientRate').value || 0),
     notes: $('fleetNotes').value.trim(),
     createdAt: state.vehicles.find(v=>v.id===$('fleetId').value)?.createdAt || new Date().toISOString(),
-    updatedAt: new Date().toISOString()
+    updatedAt: new Date().toISOString(),
+    assignmentHistory: []
   };
   if(!vehicle.modelNumber || !vehicle.plate) return toast('Model and plate code/plate number are required');
   const duplicate = fleetDuplicate(vehicle);
@@ -1388,11 +1435,27 @@ async function saveFleetVehicle(e){
   const idx = state.vehicles.findIndex(v => v.id === vehicle.id);
   const previousVehicle = idx >= 0 ? state.vehicles[idx] : null;
   const previousClient = previousVehicle ? fleetClientName(previousVehicle) : '';
+  const nextClient = fleetClientName(vehicle) || 'Unassigned';
+  const changedDate = today();
+  if(previousVehicle){
+    const history = normalizeAssignmentHistory(previousVehicle).map(x=>({...x}));
+    if(clientKey(previousClient) !== clientKey(nextClient)){
+      if(!history.length){
+        history.push({ client: previousClient || 'Unassigned', from: displayDateRangeValue(previousVehicle.createdAt || changedDate), to:'', note:'Original assignment' });
+      }
+      const last = history[history.length-1];
+      if(last && !last.to) last.to = changedDate;
+      history.push({ client: nextClient, from: changedDate, to:'', note:'Client changed from Fleet page', changedBy: state.user?.name || state.user?.email || '—' });
+    }
+    vehicle.assignmentHistory = history;
+  } else {
+    vehicle.assignmentHistory = [{ client: nextClient, from: changedDate, to:'', note:'Vehicle added to fleet', changedBy: state.user?.name || state.user?.email || '—' }];
+  }
   if(idx >= 0) state.vehicles[idx] = vehicle; else state.vehicles.unshift(vehicle);
   await saveVehicles();
   await syncClientFromFleetVehicle(vehicle);
-  if(previousVehicle && clientKey(previousClient) !== clientKey(fleetClientName(vehicle))){
-    await logAction('Changed vehicle client', 'Fleet', vehicle.plate, `${previousClient || '—'} → ${fleetClientName(vehicle) || '—'}`, state.user?.name);
+  if(previousVehicle && clientKey(previousClient) !== clientKey(nextClient)){
+    await logAction('Changed vehicle client', 'Fleet', vehicle.plate, `${previousClient || '—'} → ${nextClient || '—'}`, state.user?.name);
   }
   await logAction(idx >= 0 ? 'Updated fleet vehicle' : 'Added fleet vehicle', 'Fleet', vehicle.plate, `${vehicle.modelNumber}${vehicle.year ? ' ' + vehicle.year : ''} · ${vehicle.status}`, state.user?.name);
   toast('Fleet vehicle saved');
@@ -1808,7 +1871,7 @@ function bindPageEvents(){
   if($('replacementClient')) $('replacementClient').onchange=e=>{state.replacementClient=e.target.value; render();};
   if($('replacementVehicleSearch')) $('replacementVehicleSearch').oninput=e=>{state.replacementVehicleSearch=e.target.value; renderAndRefocus('replacementVehicleSearch', e.target.selectionStart);};
   if($('replacementMonth')) $('replacementMonth').onchange=e=>{state.replacementMonth=e.target.value; render();};
-  if($('vehicleHistorySearch')) $('vehicleHistorySearch').oninput=e=>{state.vehicleHistorySearch=e.target.value; renderAndRefocus('vehicleHistorySearch', e.target.selectionStart);};
+  if($('vehicleHistorySearch')) $('vehicleHistorySearch').oninput=e=>{state.vehicleHistorySearch=e.target.value; renderVehicleHistoryResults();};
   document.querySelectorAll('.rep-cell').forEach(cell=>{ cell.oninput=()=>stageReplacementCellInput(cell); cell.onchange=()=>pickReplacementFromFleet(cell); });
 
   if($('clientForm')) $('clientForm').onsubmit=saveClient;
