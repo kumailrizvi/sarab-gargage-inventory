@@ -877,3 +877,42 @@ input:disabled{
   .client-card-actions,.client-hero-actions{justify-content:flex-start;}
   .client-form-actions{grid-template-columns:1fr;}
 }
+
+/* v45 duplicate protection, Excel CSV helper, sync toast, wider clients list */
+.toast.refresh-toast{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  max-width:420px;
+  background:#064d30;
+  color:#fff;
+}
+.toast.refresh-toast button{
+  border:0;
+  border-radius:10px;
+  padding:8px 12px;
+  background:#fff;
+  color:#087243;
+  font-weight:800;
+}
+.clients-layout.redesigned{
+  grid-template-columns:minmax(330px,.72fr) minmax(500px,1.18fr) minmax(420px,1fr);
+  grid-template-areas:"form list overview";
+  gap:22px;
+}
+.client-list.redesigned{
+  max-height:690px;
+}
+.client-list-card.redesigned{
+  min-width:0;
+}
+@media(max-width:1350px){
+  .clients-layout.redesigned{
+    grid-template-columns:minmax(360px,.9fr) minmax(460px,1.1fr);
+    grid-template-areas:"form list" "overview overview";
+  }
+  .client-overview.redesigned{position:static;}
+}
+@media(max-width:900px){
+  .clients-layout.redesigned{grid-template-columns:1fr;grid-template-areas:"form" "list" "overview";}
+}

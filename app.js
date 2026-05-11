@@ -122,6 +122,14 @@ const seedTickets = [
 ];
 
 const state = { user:null, view:'dashboard', parts:[], jobs:[], vehicles:[], clients:[], staff:[], logs:[], tickets:[], filters:{ q:'', category:'All', stock:'All' }, vehicleHistoryQuery:'', fleetFilter:'', clientFilter:'', selectedClient:'', activityQuery:'', activitySection:'All', ticketTab:'dashboard', ticketSearch:'', ticketStatus:'All', ticketPriority:'All' };
+function duplicateKey(value){ return String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, ''); }
+function plateDuplicateKey(value){ return String(value || '').trim().toUpperCase().replace(/[^A-Z0-9]+/g, ''); }
+function inventoryDuplicate(part){
+  return state.parts.find(p => p.id !== part.id && (duplicateKey(p.sku) === duplicateKey(part.sku) || duplicateKey(p.name) === duplicateKey(part.name)));
+}
+function fleetDuplicate(vehicle){
+  return state.vehicles.find(v => v.id !== vehicle.id && plateDuplicateKey(v.plate) === plateDuplicateKey(vehicle.plate));
+}
 const JOB_STATUSES = ['Not Started','Pending','Work Being Done','Done Completed'];
 const REGISTERED_COMPANIES = ['MBR1','MBR2','Garage','AHU','Travel & Tourism'];
 function extractYearFromModel(model=''){
@@ -260,45 +268,45 @@ async function saveParts(){
   if(!USE_SUPABASE){ set(KEYS.parts, state.parts); return; }
   const rows = state.parts.map(p => ({ id:p.id, data:p, updated_at:new Date().toISOString() }));
   const { error } = await sb.from('parts').upsert(rows);
-  if(error){ console.error(error); toast('Could not save inventory'); }
+  if(error){ console.error(error); toast('Could not save inventory'); } else markRemoteSnapshot();
 }
 async function saveJobs(){
   if(!USE_SUPABASE){ set(KEYS.jobs, state.jobs); return; }
   const rows = state.jobs.map(j => ({ id:j.id, data:j, created_at:j.createdAt || new Date().toISOString() }));
   const { error } = await sb.from('jobs').upsert(rows);
-  if(error){ console.error(error); toast('Could not save job history'); }
+  if(error){ console.error(error); toast('Could not save job history'); } else markRemoteSnapshot();
 }
 async function saveVehicles(){
   if(!USE_SUPABASE){ set(KEYS.vehicles, state.vehicles); return; }
   const rows = state.vehicles.map(v => ({ id:v.id, data:v, updated_at:new Date().toISOString() }));
   const { error } = await sb.from('vehicles').upsert(rows);
-  if(error){ console.error(error); toast('Could not save fleet vehicles'); }
+  if(error){ console.error(error); toast('Could not save fleet vehicles'); } else markRemoteSnapshot();
 }
 async function saveStaff(){
   hydrateStaffFromJobs();
   if(!USE_SUPABASE){ set(KEYS.staff, state.staff); return; }
   const rows = state.staff.map(x => ({ id:x.id, data:x, updated_at:new Date().toISOString() }));
   const { error } = await sb.from('staff').upsert(rows);
-  if(error){ console.warn('Could not save staff list. Run updated schema if you want staff list shared in Supabase.', error); }
+  if(error){ console.warn('Could not save staff list. Run updated schema if you want staff list shared in Supabase.', error); } else markRemoteSnapshot();
 }
 async function saveLogs(){
   if(!USE_SUPABASE){ set(KEYS.logs, state.logs); return; }
   const rows = state.logs.map(x => ({ id:x.id, data:x, updated_at:new Date().toISOString() }));
   const { error } = await sb.from('logs').upsert(rows);
-  if(error){ console.warn('Could not save activity log. Run updated schema if you want activity log shared in Supabase.', error); }
+  if(error){ console.warn('Could not save activity log. Run updated schema if you want activity log shared in Supabase.', error); } else markRemoteSnapshot();
 }
 async function saveTickets(){
   if(!USE_SUPABASE){ set(KEYS.tickets, state.tickets); return; }
   const rows = state.tickets.map(t => ({ id:t.id, data:t, updated_at:new Date().toISOString() }));
   const { error } = await sb.from('tickets').upsert(rows);
-  if(error){ console.warn('Could not save tickets. Run updated schema for the ticketing system.', error); }
+  if(error){ console.warn('Could not save tickets. Run updated schema for the ticketing system.', error); } else markRemoteSnapshot();
 }
 
 async function saveClients(){
   if(!USE_SUPABASE){ set(KEYS.clients, state.clients); return; }
   const rows = state.clients.map(c => ({ id:c.id, data:c, updated_at:new Date().toISOString() }));
   const { error } = await sb.from('clients').upsert(rows);
-  if(error){ console.warn('Could not save clients. Run updated schema for the clients table.', error); }
+  if(error){ console.warn('Could not save clients. Run updated schema for the clients table.', error); } else markRemoteSnapshot();
 }
 
 async function deleteRemoteRow(table, id){
@@ -306,7 +314,45 @@ async function deleteRemoteRow(table, id){
   const { error } = await sb.from(table).delete().eq('id', id);
   if(error){ console.error(error); toast(`Could not delete ${table}`); }
 }
-function toast(msg){ const t=$('toast'); t.textContent=msg; t.classList.remove('hidden'); setTimeout(()=>t.classList.add('hidden'), 2400); }
+function toast(msg){ const t=$('toast'); t.classList.remove('refresh-toast'); t.textContent=msg; t.classList.remove('hidden'); setTimeout(()=>t.classList.add('hidden'), 2400); }
+let remoteSignature = '';
+let updateToastVisible = false;
+let remoteWatcherTimer = null;
+function stableDataSignature(items){ return (items || []).map(x => JSON.stringify(x)).sort().join('|'); }
+function currentSharedSignature(){
+  return ['parts','jobs','vehicles','clients','tickets','staff'].map(k => `${k}:${stableDataSignature(state[k])}`).join('||');
+}
+function markRemoteSnapshot(){ remoteSignature = currentSharedSignature(); }
+async function fetchRemoteSignature(){
+  if(!USE_SUPABASE) return '';
+  const tables = ['parts','jobs','vehicles','clients','tickets','staff'];
+  const pieces = [];
+  for(const table of tables){
+    const { data, error } = await sb.from(table).select('id,data');
+    if(error) throw error;
+    pieces.push(`${table}:${(data || []).map(r => JSON.stringify({id:r.id,...r.data})).sort().join('|')}`);
+  }
+  return pieces.join('||');
+}
+function showRefreshToast(){
+  if(updateToastVisible) return;
+  updateToastVisible = true;
+  const t = $('toast');
+  t.classList.add('refresh-toast');
+  t.innerHTML = '<span>New update available from another user.</span><button type="button" onclick="location.reload()">Refresh</button>';
+  t.classList.remove('hidden');
+}
+function startRemoteUpdateWatcher(){
+  if(!USE_SUPABASE || remoteWatcherTimer) return;
+  markRemoteSnapshot();
+  remoteWatcherTimer = setInterval(async()=>{
+    try{
+      const sig = await fetchRemoteSignature();
+      if(!remoteSignature){ remoteSignature = sig; return; }
+      if(sig && sig !== remoteSignature) showRefreshToast();
+    }catch(err){ console.warn('Update watcher skipped', err); }
+  }, 20000);
+}
 async function logAction(action, section, reference='', details='', staff=''){
   const entry = {
     id: id('log'),
@@ -343,7 +389,7 @@ function bindGlobal(){
 }
 function toggleAuth(mode){ $('loginTab').classList.toggle('active', mode==='login'); $('signupTab').classList.toggle('active', mode==='signup'); $('loginForm').classList.toggle('hidden', mode!=='login'); $('signupForm').classList.toggle('hidden', mode!=='signup'); }
 function showAuth(){ $('authScreen').classList.remove('hidden'); $('appShell').classList.add('hidden'); }
-function showApp(){ $('authScreen').classList.add('hidden'); $('appShell').classList.remove('hidden'); $('userName').textContent = 'Sarab Al Madina Team'; render(); }
+function showApp(){ $('authScreen').classList.add('hidden'); $('appShell').classList.remove('hidden'); $('userName').textContent = 'Sarab Al Madina Team'; render(); if(USE_SUPABASE){ markRemoteSnapshot(); startRemoteUpdateWatcher(); } }
 async function login(e){
   e.preventDefault();
   const email=$('loginEmail').value.trim().toLowerCase(); const pass=$('loginPassword').value;
@@ -918,6 +964,8 @@ async function saveFleetVehicle(e){
     updatedAt: new Date().toISOString()
   };
   if(!vehicle.modelNumber || !vehicle.plate) return toast('Model and plate code/plate number are required');
+  const duplicate = fleetDuplicate(vehicle);
+  if(duplicate) return toast(`Duplicate fleet vehicle blocked: ${duplicate.plate} already exists`);
   const idx = state.vehicles.findIndex(v => v.id === vehicle.id);
   if(idx >= 0) state.vehicles[idx] = vehicle; else state.vehicles.unshift(vehicle);
   await saveVehicles();
@@ -1001,7 +1049,7 @@ function importFleetCSV(){
         const modelRaw=firstValue(obj,['Vehicle Model','Model','Vehicle','Car']);
         const customer=firstValue(obj,['Customer','Client','Client Name']);
         if(!plate || !modelRaw){ skipped++; continue; }
-        const existing=state.vehicles.find(v=>normalizePlatePiece(v.plate)===plate);
+        const existing=state.vehicles.find(v=>plateDuplicateKey(v.plate)===plateDuplicateKey(plate));
         const parts=splitPlate(plate);
         const status=firstValue(obj,['Status'], existing?.status || 'In Use');
         const ownership=firstValue(obj,['Vehicle Type','Type','Ownership'], existing?.ownership || 'SMG Vehicle');
@@ -1471,7 +1519,21 @@ function viewPartUsage(partId){ const p=state.parts.find(x=>x.id===partId); cons
 
 function openPartDialog(partId=''){ const p=state.parts.find(x=>x.id===partId); $('partDialogTitle').textContent=p?'Edit Part':'Add Part'; $('partId').value=p?.id||''; $('partName').value=p?.name||''; $('partSku').value=p?.sku||''; $('partCategory').value=p?.category||'Engine'; $('partLocation').value=p?.location||''; $('partQty').value=p?.qty??0; $('partThreshold').value=p?.threshold??5; $('partCost').value=p?.cost??0; $('partPrice').value=p?.price??0; $('partSupplier').value=p?.supplier||''; $('partFits').value=p?.fits||''; $('partDialog').showModal(); }
 function closePartDialog(){ $('partDialog').close(); }
-async function savePartFromForm(e){ e.preventDefault(); const existing=state.parts.find(p=>p.id===$('partId').value); const qty=Number($('partQty').value); const part={ id:$('partId').value || id('p'), name:$('partName').value.trim(), sku:$('partSku').value.trim(), category:$('partCategory').value, location:$('partLocation').value.trim(), qty, threshold:Number($('partThreshold').value), cost:Number($('partCost').value), price:Number($('partPrice').value), supplier:$('partSupplier').value.trim(), fits:$('partFits').value.trim(), ordered: qty===0 ? Boolean(existing?.ordered) : false, createdAt: existing?.createdAt || new Date().toISOString() }; const idx=state.parts.findIndex(p=>p.id===part.id); if(idx>=0) state.parts[idx]=part; else state.parts.unshift(part); await saveParts(); await logAction(existing ? 'Updated part' : 'Created part', 'Inventory', part.sku, `${part.name} · stock ${part.qty}`, state.user?.name); closePartDialog(); toast('Part saved'); render(); }
+async function savePartFromForm(e){
+  e.preventDefault();
+  const existing=state.parts.find(p=>p.id===$('partId').value);
+  const qty=Number($('partQty').value);
+  const part={ id:$('partId').value || id('p'), name:$('partName').value.trim(), sku:$('partSku').value.trim(), category:$('partCategory').value, location:$('partLocation').value.trim(), qty, threshold:Number($('partThreshold').value), cost:Number($('partCost').value), price:Number($('partPrice').value), supplier:$('partSupplier').value.trim(), fits:$('partFits').value.trim(), ordered: qty===0 ? Boolean(existing?.ordered) : false, createdAt: existing?.createdAt || new Date().toISOString() };
+  const duplicate = inventoryDuplicate(part);
+  if(duplicate) return toast(`Duplicate inventory blocked: ${duplicate.name} / ${duplicate.sku} already exists`);
+  const idx=state.parts.findIndex(p=>p.id===part.id);
+  if(idx>=0) state.parts[idx]=part; else state.parts.unshift(part);
+  await saveParts();
+  await logAction(existing ? 'Updated part' : 'Created part', 'Inventory', part.sku, `${part.name} · stock ${part.qty}`, state.user?.name);
+  closePartDialog();
+  toast('Part saved');
+  render();
+}
 function openRestockDialog(partId=''){ $('restockPart').innerHTML=state.parts.map(p=>`<option value="${p.id}" ${p.id===partId?'selected':''}>${esc(p.name)} — stock ${p.qty}</option>`).join(''); $('restockQty').value=1; $('restockDialog').showModal(); }
 function closeRestockDialog(){ $('restockDialog').close(); }
 async function saveRestock(e){ e.preventDefault(); const qtyAdded = Number($('restockQty').value||0); const p=state.parts.find(x=>x.id===$('restockPart').value); if(p){ p.qty=Number(p.qty)+qtyAdded; if(Number(p.qty)>0) p.ordered=false; } await saveParts(); if(p) await logAction('Restocked part', 'Inventory', p.sku, `${p.name} +${qtyAdded}`, state.user?.name); closeRestockDialog(); toast('Stock added'); render(); }
@@ -1561,7 +1623,7 @@ function exportPlateHistoryCSV(){
 }
 
 function csvEscape(v){ return `"${String(v??'').replace(/"/g,'""')}"`; }
-function downloadCSV(name, rows){ const csv=rows.map(r=>r.map(csvEscape).join(',')).join('\n'); const blob=new Blob([csv],{type:'text/csv;charset=utf-8'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=name; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); }
+function downloadCSV(name, rows){ const csv='sep=,\r\n'+rows.map(r=>r.map(csvEscape).join(',')).join('\r\n'); const blob=new Blob(['\ufeff', csv],{type:'text/csv;charset=utf-8'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=name; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); }
 
 function exportDashboardInventory(){
   const rows=[['Part Name','SKU','Category','Stock','Ordered?','Low Stock Alert','Location','Cost Value AED','Last Used']];
@@ -1632,7 +1694,7 @@ function importInventoryCSV(){
         const sku=firstValue(obj,['SKU','Part SKU','Code']);
         if(!name || !sku){ skipped++; return; }
         const qty=toNumber(firstValue(obj,['Stock','Stock Quantity','Qty','Quantity']),0);
-        const existing=state.parts.find(p=>String(p.sku).toLowerCase()===String(sku).toLowerCase());
+        const existing=state.parts.find(p=>duplicateKey(p.sku)===duplicateKey(sku) || duplicateKey(p.name)===duplicateKey(name));
         const part={
           id: existing?.id || id('p'),
           name,
