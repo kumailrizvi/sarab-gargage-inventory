@@ -122,7 +122,7 @@ const seedTickets = [
   ...importedComplaintTickets
 ];
 
-const state = { user:null, view:'dashboard', parts:[], jobs:[], vehicles:[], clients:[], staff:[], logs:[], tickets:[], filters:{ q:'', category:'All', stock:'All' }, vehicleHistoryQuery:'', fleetFilter:'', clientFilter:'', selectedClient:'', summarySearch:'', activityQuery:'', activitySection:'All', ticketTab:'dashboard', ticketSearch:'', ticketStatus:'All', ticketPriority:'All', fleetSubView:'list', replacementMonth:today().slice(0,7), replacementClient:'', replacementVehicleSearch:'', replacementUndoStack:[], replacementDirty:false, replacements:[] };
+const state = { user:null, view:'dashboard', parts:[], jobs:[], vehicles:[], clients:[], staff:[], logs:[], tickets:[], filters:{ q:'', category:'All', stock:'All' }, vehicleHistoryQuery:'', fleetFilter:'', clientFilter:'', selectedClient:'', summarySearch:'', activityQuery:'', activitySection:'All', ticketTab:'dashboard', ticketSearch:'', ticketStatus:'All', ticketPriority:'All', fleetSubView:'list', replacementMonth:today().slice(0,7), replacementClient:'', replacementVehicleSearch:'', replacementUndoStack:[], replacementDirty:false, replacementUnlockedMonths:[], vehicleHistorySearch:'', replacements:[] };
 function duplicateKey(value){ return String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, ''); }
 function plateDuplicateKey(value){ return String(value || '').trim().toUpperCase().replace(/[^A-Z0-9]+/g, ''); }
 function inventoryDuplicate(part){
@@ -431,7 +431,7 @@ async function logout(){
   if(USE_SUPABASE) await sb.auth.signOut();
   localStorage.removeItem(KEYS.session); state.user=null; showAuth();
 }
-function go(view){ state.view=view; document.querySelectorAll('.subnav').forEach(b=>b.classList.toggle('active', b.dataset.view===view)); document.querySelectorAll('.nav').forEach(b=>{ const v=b.dataset.view; const active = v===view || (v==='fleet' && ['fleet','fleetSummary','replacements'].includes(view)); b.classList.toggle('active', active); }); $('sidebar').classList.remove('open'); render(); }
+function go(view){ state.view=view; document.querySelectorAll('.subnav').forEach(b=>b.classList.toggle('active', b.dataset.view===view)); document.querySelectorAll('.nav').forEach(b=>{ const v=b.dataset.view; const active = v===view || (v==='fleet' && ['fleet','fleetSummary','replacements','vehicleHistory'].includes(view)); b.classList.toggle('active', active); }); $('sidebar').classList.remove('open'); render(); }
 function goInventory(stock='All'){ state.filters.stock=stock; state.view='inventory'; document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('active', b.dataset.view==='inventory')); $('sidebar').classList.remove('open'); render(); }
 function goJobs(){ state.view='used'; document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('active', b.dataset.view==='used')); $('sidebar').classList.remove('open'); render(); }
 
@@ -483,7 +483,7 @@ function stats(){
   const salesValue = state.parts.reduce((a,p)=>a+(Number(p.qty||0)*Number(p.price||0)),0);
   return { totalUnits, lowCount: low.length, todayJobs: todayJobs.length, partsUsedToday, costValue, salesValue };
 }
-function render(){ if(!USE_SUPABASE) loadData(); const s=stats(); const page=$('page'); const views={dashboard:dashboardHTML, clients:clientsHTML, inventory:inventoryHTML, fleet:fleetHTML, fleetSummary:fleetSummaryHTML, replacements:replacementsHTML, tickets:ticketsHTML, job:jobHTML, used:usedHTML, reports:reportsHTML, activity:activityHTML, export:exportHTML, settings:settingsHTML}; page.innerHTML=(views[state.view]||dashboardHTML)(s); bindPageEvents(); hydrateStaticIcons(); }
+function render(){ if(!USE_SUPABASE) loadData(); const s=stats(); const page=$('page'); const views={dashboard:dashboardHTML, clients:clientsHTML, inventory:inventoryHTML, fleet:fleetHTML, fleetSummary:fleetSummaryHTML, replacements:replacementsHTML, vehicleHistory:vehicleHistoryHTML, tickets:ticketsHTML, job:jobHTML, used:usedHTML, reports:reportsHTML, activity:activityHTML, export:exportHTML, settings:settingsHTML}; page.innerHTML=(views[state.view]||dashboardHTML)(s); bindPageEvents(); hydrateStaticIcons(); }
 function kpi(title,num,sub,icon,warn=false,action=''){ const tone=warn?'orange':''; const moneyClass=String(num).includes('AED')?'money':''; const click=action ? ` onclick="${action}" role="button" tabindex="0"` : ''; return `<section class="card kpi ${action ? 'clickable-kpi' : ''}"${click}><div><h3>${title}</h3><div class="num ${tone} ${moneyClass}">${num}</div><p>${sub}</p></div><div class="kpi-icon ${warn?'warn':''}">${I(icon,'icon-xl')}</div></section>`; }
 function statusSummaryCard(){
   const c = statusCounts();
@@ -909,7 +909,8 @@ function fleetSubnavHeader(active){
   const tabs = [
     ['fleet','Fleet List'],
     ['fleetSummary','Client wise summary'],
-    ['replacements','Replacements']
+    ['replacements','Replacements'],
+    ['vehicleHistory','Vehicle History']
   ];
   return `<div class="fleet-page-tabs">${tabs.map(([view,label])=>`<button class="tab ${active===view?'active':''}" onclick="go('${view}')">${label}</button>`).join('')}</div>`;
 }
@@ -984,10 +985,16 @@ function fleetSummaryHTML(){
   const totalOwn = rows.reduce((a,r)=>a+r.own,0);
   const totalOut = rows.reduce((a,r)=>a+r.outsource,0);
   const totalRevenue = rows.reduce((a,r)=>a+r.revenue,0);
+  const selectedName = state.summaryClient || (rows.length===1 ? rows[0].name : '');
+  const selectedRow = rows.find(r=>clientKey(r.name)===clientKey(selectedName));
   return `<div class="page-head"><div><h1>Fleet</h1><p class="muted">Client-wise fleet summary.</p></div><div class="head-actions"><button class="btn light" onclick="exportFleetSummaryCSV()">${I('download','icon-sm')} Export CSV</button></div></div>
     ${fleetSubnavHeader('fleetSummary')}
-    <div class="summary-grid fleet-summary-kpis"><div class="scard"><div class="scard-label">Clients</div><div class="scard-val">${rows.length}</div><div class="scard-sub">With fleet assigned</div></div><div class="scard"><div class="scard-label">Total Vehicles</div><div class="scard-val">${totalVehicles}</div><div class="scard-sub">Filtered view</div></div><div class="scard"><div class="scard-label">Own Fleet</div><div class="scard-val ok">${totalOwn}</div><div class="scard-sub">SMG vehicles</div></div><div class="scard"><div class="scard-label">Outsourced</div><div class="scard-val purple">${totalOut}</div><div class="scard-sub">Vendor vehicles</div></div><div class="scard"><div class="scard-label">Monthly Revenue</div><div class="scard-val money-small">${money(totalRevenue)}</div><div class="scard-sub">In-use client rates</div></div></div>
-    <section class="panel fleet-summary-panel"><div class="section-title"><div><h3>Client wise summary</h3><p class="muted small-note">Search by client, plate, model or status. Select a client to show the vehicle breakdown.</p></div></div><div class="filters fleet-summary-filters redesigned-summary-filters"><input id="summarySearch" placeholder="Search client, plate, vehicle..." value="${esc(state.summarySearch || '')}" autocomplete="off"><select id="summaryClientFilter"><option value="">All clients</option>${clients.map(c=>`<option value="${esc(c)}" ${state.summaryClient===c?'selected':''}>${esc(c)}</option>`).join('')}</select><select id="summaryOwnershipFilter"><option value="">Own + Outsourced</option><option value="own" ${state.summaryOwnership==='own'?'selected':''}>Own only</option><option value="outsource" ${state.summaryOwnership==='outsource'?'selected':''}>Outsourced only</option></select><select id="summarySortFilter"><option value="total-desc" ${state.summarySort==='total-desc'?'selected':''}>Sort: most vehicles</option><option value="total-asc" ${state.summarySort==='total-asc'?'selected':''}>Sort: fewest vehicles</option><option value="inuse-desc" ${state.summarySort==='inuse-desc'?'selected':''}>Sort: most in use</option><option value="outsource-desc" ${state.summarySort==='outsource-desc'?'selected':''}>Sort: most outsourced</option><option value="name-asc" ${state.summarySort==='name-asc'?'selected':''}>Sort: name A-Z</option></select><button class="btn light" onclick="resetFleetSummaryFilters()">Reset</button></div><div class="fleet-summary-split"><div>${fleetSummaryCards(rows)}</div><aside class="summary-detail-panel"><h3>${state.summaryClient ? esc(state.summaryClient) : 'Vehicle Breakdown'}</h3><p class="muted small-note">Plate numbers and vehicle details for the selected client/search.</p>${fleetSummaryVehicleDetails()}</aside></div></section>`;
+    <div class="fleet-hero summary-hero"><div><small>Client-wise fleet view</small><h2>${totalVehicles}</h2><p>Total vehicles in the filtered view.</p></div><div><span>Clients</span><b>${rows.length}</b></div><div><span>Own Fleet</span><b>${totalOwn}</b></div><div><span>Outsourced</span><b>${totalOut}</b></div><div><span>Monthly Revenue</span><b>${money(totalRevenue)}</b></div></div>
+    <section class="panel fleet-summary-panel fleet-list-like-summary"><div class="section-title"><div><h3>Client wise summary</h3><p class="muted small-note">Search by client, plate, vehicle, status, company, or ownership. Click a client to see their vehicle breakdown.</p></div></div>
+      <div class="filters fleet-summary-filters redesigned-summary-filters"><input id="summarySearch" placeholder="Search client, plate, vehicle..." value="${esc(state.summarySearch || '')}" autocomplete="off"><select id="summaryClientFilter"><option value="">All clients</option>${clients.map(c=>`<option value="${esc(c)}" ${state.summaryClient===c?'selected':''}>${esc(c)}</option>`).join('')}</select><select id="summaryOwnershipFilter"><option value="">Own + Outsourced</option><option value="own" ${state.summaryOwnership==='own'?'selected':''}>Own only</option><option value="outsource" ${state.summaryOwnership==='outsource'?'selected':''}>Outsourced only</option></select><select id="summarySortFilter"><option value="total-desc" ${state.summarySort==='total-desc'?'selected':''}>Sort: most vehicles</option><option value="total-asc" ${state.summarySort==='total-asc'?'selected':''}>Sort: fewest vehicles</option><option value="inuse-desc" ${state.summarySort==='inuse-desc'?'selected':''}>Sort: most in use</option><option value="outsource-desc" ${state.summarySort==='outsource-desc'?'selected':''}>Sort: most outsourced</option><option value="name-asc" ${state.summarySort==='name-asc'?'selected':''}>Sort: name A-Z</option></select><button class="btn light" onclick="resetFleetSummaryFilters()">Reset</button></div>
+      ${selectedName ? `<div class="summary-breakdown-card"><div><small>Selected Client</small><h2>${esc(selectedName)}</h2><p>${selectedRow ? `${selectedRow.total} vehicles · ${selectedRow.inUse} in use · ${selectedRow.outsource} outsourced` : 'Vehicle breakdown'}</p></div>${fleetSummaryVehicleDetails()}</div>` : ''}
+      ${fleetSummaryCards(rows)}
+    </section>`;
 }
 function fleetSummaryCards(rows){
   return `<div class="fleet-summary-list clean-like-fleet">${rows.map(r=>`<article class="fleet-summary-row ${state.summaryClient===r.name?'selected':''}" onclick="state.summaryClient='${esc(r.name)}'; render()"><div><h3>${esc(r.name)}</h3><p class="muted">${r.total} vehicles · ${r.inUse} in use · ${r.outsource} outsourced</p><div class="summary-type-line">${r.typesArr.slice(0,4).map(([t,n])=>`<span>${esc(t)} × ${n}</span>`).join('') || '<span>No type data</span>'}</div></div><div class="summary-row-metrics"><div><small>Total</small><b>${r.total}</b></div><div><small>Own</small><b>${r.own}</b></div><div><small>Outsource</small><b>${r.outsource}</b></div><div><small>Revenue</small><b>${money(r.revenue)}</b></div></div></article>`).join('') || '<div class="empty">No fleet summary found.</div>'}</div>`;
@@ -1046,6 +1053,8 @@ async function saveReplacementCell(vehicleId, day, value){
   }
 }
 async function saveReplacementTable(){
+  const month=state.replacementMonth || today().slice(0,7);
+  if(!canEditReplacementMonth(month)){ toast('This month is locked. Use Override PIN to edit.'); return; }
   const cells=[...document.querySelectorAll('.rep-cell')];
   for(const cell of cells){ await saveReplacementCell(cell.dataset.vehicle, cell.dataset.day, cell.value); }
   await saveReplacements();
@@ -1053,6 +1062,8 @@ async function saveReplacementTable(){
   toast('Replacements saved');
 }
 function tickReplacementCell(btn){
+  const month=state.replacementMonth || today().slice(0,7);
+  if(!canEditReplacementMonth(month)){ toast('This month is locked. Use Override PIN to edit.'); return; }
   const cell=btn.closest('td')?.querySelector('.rep-cell');
   if(!cell) return;
   if(!state.replacementUndoStack) state.replacementUndoStack=[];
@@ -1066,21 +1077,58 @@ function pickReplacementFromFleet(input){
   if(match && input.value.length>1){ input.value=match.plate || input.value; }
   stageReplacementCellInput(input);
 }
+
+function replacementLockId(month){ return `rep_lock_${month}`.replace(/[^a-zA-Z0-9_-]/g,'_'); }
+function replacementLockRow(month){ return (state.replacements || []).find(r=>r.id===replacementLockId(month) || (r.kind==='lock' && r.month===month)); }
+function isReplacementMonthLocked(month){ return Boolean(replacementLockRow(month)); }
+function isReplacementMonthUnlocked(month){ return (state.replacementUnlockedMonths || []).includes(month); }
+function canEditReplacementMonth(month){ return !isReplacementMonthLocked(month) || isReplacementMonthUnlocked(month); }
+function isPastReplacementMonth(month){
+  const now = today().slice(0,7);
+  return String(month || '') < now;
+}
+async function lockReplacementMonth(){
+  const month=state.replacementMonth || today().slice(0,7);
+  if(!isPastReplacementMonth(month) && !confirm('This month has not ended yet. Lock it anyway?')) return;
+  if(isReplacementMonthLocked(month)){ toast('Month is already locked'); return; }
+  state.replacements.push({ id: replacementLockId(month), kind:'lock', month, value:'LOCKED', lockedAt:new Date().toISOString(), lockedBy:state.user?.name||state.user?.email||'—' });
+  await saveReplacements();
+  toast(`Month ${month} locked`);
+  render();
+}
+function unlockReplacementMonth(){
+  const month=state.replacementMonth || today().slice(0,7);
+  const pin=prompt('Enter override PIN to edit this locked month');
+  if(pin !== '2580') { toast('Wrong override PIN'); return; }
+  if(!state.replacementUnlockedMonths) state.replacementUnlockedMonths=[];
+  if(!state.replacementUnlockedMonths.includes(month)) state.replacementUnlockedMonths.push(month);
+  toast(`Override enabled for ${month}. You can edit until you leave/reload this page.`);
+  render();
+}
 function replacementsHTML(){
   const clients=replacementClients();
   if(!state.replacementMonth) state.replacementMonth=today().slice(0,7);
   const vehicles=replacementVehicles();
   const days=daysInMonth(state.replacementMonth);
+  const locked=isReplacementMonthLocked(state.replacementMonth);
+  const editable=canEditReplacementMonth(state.replacementMonth);
+  const lock= replacementLockRow(state.replacementMonth);
   return `<div class="page-head"><div><h1>Fleet</h1><p class="muted">Replacement register by client and month.</p></div><div class="head-actions"><button class="btn light" onclick="exportReplacementsCSV()">${I('download','icon-sm')} Export CSV</button><button class="btn primary" onclick="saveReplacementTable()">Save Replacements</button></div></div>
     ${fleetSubnavHeader('replacements')}
-    <section class="panel replacements-panel"><div class="section-title"><div><h3>Replacements</h3><p class="muted small-note">Choose all clients or one client. Click the ✓ button to mark present, or type/select a replacement plate from the existing fleet list.</p></div></div><div class="filters replacement-filters upgraded"><label>Client<select id="replacementClient"><option value="">All clients</option>${clients.map(c=>`<option value="${esc(c)}" ${state.replacementClient===c?'selected':''}>${esc(c)}</option>`).join('')}</select></label><label>Search vehicle<input id="replacementVehicleSearch" placeholder="Plate, model, client..." value="${esc(state.replacementVehicleSearch || '')}" autocomplete="off"></label><label>Month<input id="replacementMonth" type="month" value="${esc(state.replacementMonth)}"></label><button class="btn light" onclick="markVisibleReplacementDays()">Fill blanks with ✓</button><button class="btn light" onclick="undoReplacementFill()">Undo</button><button class="btn primary" onclick="saveReplacementTable()">Save</button></div>${replacementFleetDatalist()}${vehicles.length ? replacementMatrix(vehicles, days) : '<div class="empty">No vehicles found for this filter.</div>'}</section>`;
+    <section class="panel replacements-panel"><div class="section-title"><div><h3>Replacements</h3><p class="muted small-note">Choose all clients or one client. Use ✓ for normal use, or type/select a replacement plate from the existing fleet list.</p></div></div>
+      <div class="replacement-lockbar ${locked?'locked':''}"><div><b>${locked ? 'Month locked' : 'Month open'}</b><span>${locked ? `Locked by ${esc(lock?.lockedBy || '—')} on ${esc((lock?.lockedAt || '').slice(0,10))}` : 'You can edit and save this replacement register.'}</span></div><div>${locked && !editable ? `<button class="btn light" onclick="unlockReplacementMonth()">Override PIN</button>` : `<button class="btn light" onclick="lockReplacementMonth()">Lock Month</button>`}</div></div>
+      <div class="filters replacement-filters upgraded"><label>Client<select id="replacementClient"><option value="">All clients</option>${clients.map(c=>`<option value="${esc(c)}" ${state.replacementClient===c?'selected':''}>${esc(c)}</option>`).join('')}</select></label><label>Search vehicle<input id="replacementVehicleSearch" placeholder="Plate, model, client..." value="${esc(state.replacementVehicleSearch || '')}" autocomplete="off"></label><label>Month<input id="replacementMonth" type="month" value="${esc(state.replacementMonth)}"></label><button class="btn light" onclick="markVisibleReplacementDays()" ${!editable?'disabled':''}>Fill blanks with ✓</button><button class="btn light" onclick="undoReplacementFill()" ${!editable?'disabled':''}>Undo</button><button class="btn primary" onclick="saveReplacementTable()" ${!editable?'disabled':''}>Save</button></div>
+      ${replacementFleetDatalist()}${vehicles.length ? replacementMatrix(vehicles, days, editable) : '<div class="empty">No vehicles found for this filter.</div>'}
+    </section>`;
 }
-function replacementMatrix(vehicles, days){
+function replacementMatrix(vehicles, days, editable=true){
   const month=state.replacementMonth || today().slice(0,7);
   const dayHeads=Array.from({length:days},(_,i)=>`<th>${i+1}</th>`).join('');
-  return `<div class="replacement-scroll"><table class="replacement-table"><thead><tr><th class="sticky-col rep-vehicle-head">Client / Vehicle</th><th class="sticky-col-2">Plate</th>${dayHeads}</tr></thead><tbody>${vehicles.map(v=>`<tr><td class="sticky-col rep-vehicle"><b>${esc(fleetClientName(v))}</b><small>${esc(modelWithoutYear(v.modelNumber)||'Vehicle')} ${v.year?`· ${esc(v.year)}`:''}</small></td><td class="sticky-col-2"><span class="fleet-plate">${esc(v.plate)}</span></td>${Array.from({length:days},(_,i)=>{ const d=i+1; const val=replacementValue(month,v.id,d); return `<td class="rep-cell-wrap"><button type="button" class="rep-tick" onclick="tickReplacementCell(this)">✓</button><input class="rep-cell ${val?'has-value':''}" data-vehicle="${esc(v.id)}" data-day="${d}" value="${esc(val)}" placeholder="Plate" list="replacementFleetOptions"></td>`; }).join('')}</tr>`).join('')}</tbody></table></div>`;
+  return `<div class="replacement-scroll"><table class="replacement-table"><thead><tr><th class="sticky-col rep-vehicle-head">Client / Vehicle</th><th class="sticky-col-2">Plate</th>${dayHeads}</tr></thead><tbody>${vehicles.map(v=>`<tr><td class="sticky-col rep-vehicle"><b>${esc(fleetClientName(v))}</b><small>${esc(modelWithoutYear(v.modelNumber)||'Vehicle')} ${v.year?`· ${esc(v.year)}`:''}</small></td><td class="sticky-col-2"><span class="fleet-plate">${esc(v.plate)}</span></td>${Array.from({length:days},(_,i)=>{ const d=i+1; const val=replacementValue(month,v.id,d); return `<td class="rep-cell-wrap ${!editable?'locked-cell':''}"><button type="button" class="rep-tick" onclick="tickReplacementCell(this)" ${!editable?'disabled':''}>✓</button><input class="rep-cell ${val?'has-value':''}" data-vehicle="${esc(v.id)}" data-day="${d}" value="${esc(val)}" placeholder="Plate" list="replacementFleetOptions" ${!editable?'disabled':''}></td>`; }).join('')}</tr>`).join('')}</tbody></table></div>`;
 }
 function markVisibleReplacementDays(){
+  const month=state.replacementMonth || today().slice(0,7);
+  if(!canEditReplacementMonth(month)){ toast('This month is locked. Use Override PIN to edit.'); return; }
   const cells=[...document.querySelectorAll('.rep-cell')];
   if(!state.replacementUndoStack) state.replacementUndoStack=[];
   state.replacementUndoStack.push(currentReplacementCellSnapshot());
@@ -1102,6 +1150,47 @@ function exportReplacementsCSV(){
   downloadCSV(`sarab-replacements-${month}-${state.replacementClient||'all'}.csv`, rows);
 }
 
+
+function vehicleHistoryRows(){
+  const q=String(state.vehicleHistorySearch || '').trim().toLowerCase();
+  let vehicles=state.vehicles.slice();
+  if(q) vehicles=vehicles.filter(v=>[v.plate,v.modelNumber,v.year,fleetClientName(v),v.status,v.ownership,v.notes].join(' ').toLowerCase().includes(q));
+  return vehicles.sort((a,b)=>String(a.plate||'').localeCompare(String(b.plate||'')));
+}
+function replacementHistoryForVehicle(v){
+  const plate=String(v.plate||'').trim().toLowerCase();
+  const rows=[];
+  (state.replacements||[]).forEach(r=>{
+    if(r.kind==='lock') return;
+    const rowVehicle=state.vehicles.find(x=>x.id===r.vehicleId);
+    const month=String(r.month||'');
+    const day=String(r.day||'').padStart(2,'0');
+    const date=month && day ? `${month}-${day}` : month;
+    if(r.vehicleId===v.id){ rows.push({date, client:r.client||fleetClientName(rowVehicle||{}), type:'Assigned row', detail:r.value==='✓'?'Normal use':`Replacement entered: ${r.value}`}); }
+    else if(String(r.value||'').trim().toLowerCase()===plate){ rows.push({date, client:r.client||fleetClientName(rowVehicle||{}), type:'Used as replacement', detail:`Used for ${rowVehicle?.plate || 'another vehicle'}`}); }
+  });
+  return rows.sort((a,b)=>String(b.date).localeCompare(String(a.date)));
+}
+function vehicleHistoryHTML(){
+  const vehicles=vehicleHistoryRows();
+  const selected=vehicles[0];
+  return `<div class="page-head"><div><h1>Fleet</h1><p class="muted">Vehicle history by client/date assignment.</p></div><div class="head-actions"><button class="btn light" onclick="exportVehicleHistoryCSV()">${I('download','icon-sm')} Export CSV</button></div></div>
+  ${fleetSubnavHeader('vehicleHistory')}
+  <section class="panel vehicle-history-panel"><div class="section-title"><div><h3>Vehicle History</h3><p class="muted small-note">Search a plate or vehicle to see which client it is attached to and replacement activity by date.</p></div></div><input id="vehicleHistorySearch" class="fleet-search" placeholder="Search by plate, vehicle, client..." value="${esc(state.vehicleHistorySearch||'')}" autocomplete="off"><div class="vehicle-history-list">${vehicles.map(v=>vehicleHistoryCard(v)).join('') || '<div class="empty">No vehicles found.</div>'}</div></section>`;
+}
+function vehicleHistoryCard(v){
+  const hist=replacementHistoryForVehicle(v);
+  return `<article class="fleet-card vehicle-history-card"><div class="fleet-card-main"><div><span class="fleet-plate">${esc(v.plate||'—')}</span><h3>${esc(modelWithoutYear(v.modelNumber)||'Vehicle')}${v.year?` <span class="fleet-year">${esc(v.year)}</span>`:''}</h3><p class="muted">Current client: ${esc(fleetClientName(v))} · ${esc(v.status||'—')} · ${esc(v.ownership||'—')}</p></div></div><div class="history-timeline">${hist.length?hist.slice(0,12).map(h=>`<div class="history-item"><b>${esc(h.date)}</b><span>${esc(h.client)}</span><small>${esc(h.type)} — ${esc(h.detail)}</small></div>`).join(''):'<div class="empty small-empty">No replacement history yet. Current fleet record is shown above.</div>'}</div></article>`;
+}
+function exportVehicleHistoryCSV(){
+  const rows=[['Plate','Vehicle','Year','Current Client','Status','Ownership','Date','Client','History Type','Details']];
+  vehicleHistoryRows().forEach(v=>{
+    const hist=replacementHistoryForVehicle(v);
+    if(hist.length){ hist.forEach(h=>rows.push([v.plate||'',modelWithoutYear(v.modelNumber)||'',v.year||'',fleetClientName(v),v.status||'',v.ownership||'',h.date,h.client,h.type,h.detail])); }
+    else rows.push([v.plate||'',modelWithoutYear(v.modelNumber)||'',v.year||'',fleetClientName(v),v.status||'',v.ownership||'','','Current fleet assignment','No replacement history yet']);
+  });
+  downloadCSV('sarab-vehicle-history.csv', rows);
+}
 function fleetHTML(){
   const vehicles = filteredFleetVehicles();
   const inUse = state.vehicles.filter(v => v.status === 'In Use').length;
@@ -1575,6 +1664,7 @@ function bindPageEvents(){
   if($('replacementClient')) $('replacementClient').onchange=e=>{state.replacementClient=e.target.value; render();};
   if($('replacementVehicleSearch')) $('replacementVehicleSearch').oninput=e=>{state.replacementVehicleSearch=e.target.value; render();};
   if($('replacementMonth')) $('replacementMonth').onchange=e=>{state.replacementMonth=e.target.value; render();};
+  if($('vehicleHistorySearch')) $('vehicleHistorySearch').oninput=e=>{state.vehicleHistorySearch=e.target.value; render();};
   document.querySelectorAll('.rep-cell').forEach(cell=>{ cell.oninput=()=>stageReplacementCellInput(cell); cell.onchange=()=>pickReplacementFromFleet(cell); });
 
   if($('clientForm')) $('clientForm').onsubmit=saveClient;
