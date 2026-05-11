@@ -489,18 +489,51 @@ function contractStatus(c){
   return '<span class="pill green">Active</span>';
 }
 function clientOverviewHTML(client){
-  if(!client) return '<section class="panel client-overview"><div class="empty">Click a client to see their overview, linked fleet, tickets and contract dates.</div></section>';
+  if(!client) return '<section class="panel client-overview redesigned"><div class="empty">Select a client to see their contract, linked fleet, tickets and revenue.</div></section>';
   const vehicles=clientVehicles(client.name);
   const tickets=clientTickets(client.name);
+  const openTickets=tickets.filter(t=>t.status!=='Resolved');
   const inUse=vehicles.filter(v=>v.status==='In Use').length;
   const outsource=vehicles.filter(v=>v.ownership==='Outsource').length;
   const revenue=clientRevenue(client.name);
-  return `<section class="panel client-overview"><div class="section-title"><div><h3>${esc(client.name)}</h3><p class="muted small-note">Contract: ${esc(client.contractStart || '—')} → ${esc(client.contractEnd || '—')}</p></div>${contractStatus(client)}</div>
-  <div class="client-summary-grid"><div><span>Total Vehicles</span><b>${vehicles.length}</b></div><div><span>In Use</span><b>${inUse}</b></div><div><span>Outsource</span><b>${outsource}</b></div><div><span>Monthly Revenue</span><b>${money(revenue)}</b></div><div><span>Tickets</span><b>${tickets.length}</b></div></div>
-  <div class="client-detail-grid"><div><small>Contact</small><b>${esc(client.contactPerson || '—')}</b></div><div><small>Phone</small><b>${esc(client.phone || '—')}</b></div><div><small>Email</small><b>${esc(client.email || '—')}</b></div></div>
-  <div class="client-linked"><h4>Linked Fleet</h4>${vehicles.length?`<div class="fleet-cards client-fleet-mini">${vehicles.map(v=>`<article class="fleet-card"><div class="fleet-card-main"><div><span class="fleet-plate">${esc(v.plate)}</span><h3>${esc(modelWithoutYear(v.modelNumber))}${v.year?` <span class="fleet-year">${esc(v.year)}</span>`:''}</h3><p class="muted">${esc(v.status || '')} · ${esc(v.ownership || '')}</p></div><b>${money(v.status==='In Use'?v.clientRate:0)}</b></div></article>`).join('')}</div>`:'<div class="empty compact-empty">No vehicles linked to this client yet.</div>'}</div>
-  <div class="client-linked"><h4>Open Tickets</h4>${tickets.length?`<div class="jobs-list">${tickets.slice(0,5).map(t=>`<div class="job-row"><div><b>${esc(t.ticketNo)}</b><small class="muted">${esc(t.plate || '')}</small></div><div><b>${esc(t.category || 'Request')}</b><small class="muted">${esc(t.description || '')}</small></div><div>${ticketStatusPill(t.status)} ${ticketPriorityPill(t.priority)}</div></div>`).join('')}</div>`:'<div class="empty compact-empty">No tickets for this client.</div>'}</div>
-  ${client.notes?`<p class="muted client-notes">${esc(client.notes)}</p>`:''}</section>`;
+  const activeFleet=vehicles.filter(v=>v.status==='In Use');
+  return `<section class="panel client-overview redesigned">
+    <div class="client-profile-hero">
+      <div>
+        <span class="eyebrow">Client Overview</span>
+        <h2>${esc(client.name)}</h2>
+        <p>Contract: <b>${esc(client.contractStart || '—')}</b> → <b>${esc(client.contractEnd || '—')}</b></p>
+      </div>
+      <div class="client-hero-actions">
+        ${contractStatus(client)}
+        <button class="mini-btn" onclick="editClient('${esc(client.name)}')">Edit</button>
+        <button class="mini-btn danger" onclick="deleteClient('${esc(client.id || '')}','${esc(client.name)}')">Remove</button>
+      </div>
+    </div>
+    <div class="client-summary-grid redesigned">
+      <div><span>Total Fleet</span><b>${vehicles.length}</b></div>
+      <div><span>In Use</span><b>${inUse}</b></div>
+      <div><span>Outsource</span><b>${outsource}</b></div>
+      <div><span>Monthly Revenue</span><b>${money(revenue)}</b></div>
+      <div><span>Open Tickets</span><b>${openTickets.length}</b></div>
+    </div>
+    <div class="client-detail-grid redesigned">
+      <div><small>Contact Person</small><b>${esc(client.contactPerson || '—')}</b></div>
+      <div><small>Phone</small><b>${esc(client.phone || '—')}</b></div>
+      <div><small>Email</small><b>${esc(client.email || '—')}</b></div>
+      <div><small>Notes</small><b>${esc(client.notes || '—')}</b></div>
+    </div>
+    <div class="client-linked two-columns">
+      <div>
+        <h4>Linked Fleet</h4>
+        ${vehicles.length?`<div class="client-linked-list">${vehicles.slice(0,8).map(v=>`<div class="client-linked-row"><div><span class="fleet-plate">${esc(v.plate)}</span><b>${esc(modelWithoutYear(v.modelNumber) || 'Vehicle')}${v.year?` · ${esc(v.year)}`:''}</b><small>${esc(v.status || '')} · ${esc(v.ownership || '')}</small></div><strong>${money(v.status==='In Use'?v.clientRate:0)}</strong></div>`).join('')}</div>`:'<div class="empty compact-empty">No vehicles linked to this client yet.</div>'}
+      </div>
+      <div>
+        <h4>Open Tickets</h4>
+        ${openTickets.length?`<div class="client-linked-list">${openTickets.slice(0,6).map(t=>`<div class="client-linked-row"><div><b>${esc(t.ticketNo || 'Ticket')}</b><small>${esc(t.plate || '')} · ${esc(t.category || 'Request')}</small></div><div>${ticketStatusPill(t.status)} ${ticketPriorityPill(t.priority)}</div></div>`).join('')}</div>`:'<div class="empty compact-empty">No open tickets for this client.</div>'}
+      </div>
+    </div>
+  </section>`;
 }
 function clientsHTML(){
   const clients=allClients();
@@ -508,17 +541,26 @@ function clientsHTML(){
   const filtered=clients.filter(c=>!q || [c.name,c.contractStart,c.contractEnd,c.contactPerson,c.phone,c.email,c.notes].join(' ').toLowerCase().includes(q));
   const selected=clients.find(c=>clientKey(c.name)===clientKey(state.selectedClient)) || filtered[0];
   if(selected && !state.selectedClient) state.selectedClient=selected.name;
-  return `<div class="page-head"><div><h1>Clients</h1><p class="muted">Client database, contract dates, and linked fleet overview.</p></div><div class="head-actions"><button class="btn light" onclick="exportClients()">${I('download','icon-sm')} Export Clients CSV</button><button class="btn primary" onclick="clearClientForm()">${I('plus','icon-sm')} Add Client / Contract</button></div></div>
-  <div class="clients-layout"><section class="panel client-form-card"><div class="section-title"><div><h3>Client / Contract Details</h3><p class="muted small-note">If the client already exists, saving a new contract will extend the contract end date if the new date is later.</p></div></div>
-  <form id="clientForm" class="grid two"><input id="clientId" type="hidden"><label class="wide">Client name<input id="clientName" required placeholder="ALIGN / G4S / Trumax"></label><label>Contract start date<input id="clientContractStart" type="date"></label><label>Contract end date<input id="clientContractEnd" type="date"></label><label>Contact person<input id="clientContact" placeholder="Manager name"></label><label>Phone<input id="clientPhone" placeholder="+971..."></label><label class="wide">Email<input id="clientEmail" type="email" placeholder="client@example.com"></label><label class="wide">Notes<input id="clientNotes" placeholder="Contract notes, payment terms, special instructions"></label><div class="modal-actions wide"><button type="button" class="btn light" onclick="clearClientForm()">Clear</button><button class="btn primary" type="submit">Save Client</button></div></form></section>
-  <section class="panel client-list-card"><div class="section-title"><div><h3>Client List</h3><p class="muted small-note">Click a client to see contract and fleet breakdown.</p></div></div><input id="clientSearch" placeholder="Search client, contract date, contact..." value="${esc(state.clientFilter||'')}" autocomplete="off" class="fleet-search"><div class="client-list">${filtered.map(c=>{ const vehicles=clientVehicles(c.name); const active=clientKey(c.name)===clientKey(selected?.name); return `<button class="client-row ${active?'active':''}" onclick="selectClient('${esc(c.name)}')"><div><b>${esc(c.name)}</b><small>${esc(c.contractEnd ? 'Contract till '+c.contractEnd : 'No contract date')} · ${vehicles.length} vehicle${vehicles.length===1?'':'s'}</small></div>${contractStatus(c)}</button>`; }).join('') || '<div class="empty">No clients found.</div>'}</div></section>
-  ${clientOverviewHTML(selected)}</div>`;
+  const totalRevenue=clients.reduce((a,c)=>a+clientRevenue(c.name),0);
+  const activeContracts=clients.filter(c=>c.contractEnd && new Date(c.contractEnd) >= new Date(today())).length;
+  const expiringSoon=clients.filter(c=>{ if(!c.contractEnd) return false; const days=Math.ceil((new Date(c.contractEnd)-new Date(today()))/86400000); return days>=0 && days<=30; }).length;
+  return `<div class="page-head clients-head"><div><h1>Clients</h1><p class="muted">Manage client contracts and see linked fleet, revenue, and tickets.</p></div><div class="head-actions"><button class="btn light" onclick="exportClients()">${I('download','icon-sm')} Export CSV</button><button class="btn primary" onclick="clearClientForm()">${I('plus','icon-sm')} Add Client</button></div></div>
+  <div class="client-top-metrics"><div><span>Total Clients</span><b>${clients.length}</b></div><div><span>Active Contracts</span><b>${activeContracts}</b></div><div><span>Expiring Soon</span><b>${expiringSoon}</b></div><div><span>Monthly Revenue</span><b>${money(totalRevenue)}</b></div></div>
+  <div class="clients-layout redesigned">
+    <section class="panel client-form-card redesigned"><div class="section-title"><div><h3>Add / Edit Client</h3><p class="muted small-note">If the client already exists, the contract end date will be extended to the later date.</p></div></div>
+      <form id="clientForm" class="grid two"><input id="clientId" type="hidden"><label class="wide">Client name<input id="clientName" required placeholder="ALIGN / G4S / Trumax"></label><label>Contract start<input id="clientContractStart" type="date"></label><label>Contract end<input id="clientContractEnd" type="date"></label><label>Contact person<input id="clientContact" placeholder="Manager name"></label><label>Phone<input id="clientPhone" placeholder="+971..."></label><label class="wide">Email<input id="clientEmail" type="email" placeholder="client@example.com"></label><label class="wide">Notes<input id="clientNotes" placeholder="Payment terms, special instructions, renewal notes"></label><div class="modal-actions wide client-form-actions"><button type="button" class="btn light" onclick="clearClientForm()">Clear</button><button class="btn primary" type="submit">Save Client</button></div></form></section>
+    <section class="panel client-list-card redesigned"><div class="section-title"><div><h3>Client List</h3><p class="muted small-note">Select a client for full breakdown.</p></div></div><input id="clientSearch" placeholder="Search client, date, contact..." value="${esc(state.clientFilter||'')}" autocomplete="off" class="fleet-search"><div class="client-list redesigned">${filtered.map(c=>{ const vehicles=clientVehicles(c.name); const active=clientKey(c.name)===clientKey(selected?.name); return `<article class="client-card ${active?'active':''}"><button class="client-card-main" onclick="selectClient('${esc(c.name)}')"><div><b>${esc(c.name)}</b><small>${esc(c.contractEnd ? 'Contract till '+c.contractEnd : 'No contract date')} · ${vehicles.length} vehicle${vehicles.length===1?'':'s'}</small></div>${contractStatus(c)}</button><div class="client-card-actions"><button class="mini-btn" onclick="editClient('${esc(c.name)}')">Edit</button><button class="mini-btn danger" onclick="deleteClient('${esc(c.id || '')}','${esc(c.name)}')">Remove</button></div></article>`; }).join('') || '<div class="empty">No clients found.</div>'}</div></section>
+    ${clientOverviewHTML(selected)}
+  </div>`;
 }
 async function saveClient(e){
   e.preventDefault();
   const name=normName($('clientName').value);
   if(!name) return toast('Client name is required');
-  const existing=state.clients.find(c=>clientKey(c.name)===clientKey(name));
+  const formId = $('clientId').value;
+  const existingById = formId ? state.clients.find(c=>c.id===formId) : null;
+  const existingByName=state.clients.find(c=>clientKey(c.name)===clientKey(name));
+  const existing=existingById || existingByName;
   const start=$('clientContractStart').value;
   const end=$('clientContractEnd').value;
   const client={
@@ -543,9 +585,27 @@ async function saveClient(e){
 }
 function selectClient(name){ state.selectedClient=name; render(); }
 function editClient(name){
+  if(state.view!=='clients'){ state.view='clients'; render(); setTimeout(()=>editClient(name),50); return; }
   const c=allClients().find(x=>clientKey(x.name)===clientKey(name));
   if(!c) return;
-  $('clientId').value=c.id||''; $('clientName').value=c.name||''; $('clientContractStart').value=c.contractStart||''; $('clientContractEnd').value=c.contractEnd||''; $('clientContact').value=c.contactPerson||''; $('clientPhone').value=c.phone||''; $('clientEmail').value=c.email||''; $('clientNotes').value=c.notes||'';
+  $('clientId').value=c.fromFleet ? '' : (c.id||''); $('clientName').value=c.name||''; $('clientContractStart').value=c.contractStart||''; $('clientContractEnd').value=c.contractEnd||''; $('clientContact').value=c.contactPerson||''; $('clientPhone').value=c.phone||''; $('clientEmail').value=c.email||''; $('clientNotes').value=c.notes||'';
+  state.selectedClient=c.name;
+  $('clientName')?.scrollIntoView({behavior:'smooth', block:'center'});
+  $('clientName')?.focus();
+}
+async function deleteClient(clientId, name){
+  const cleanName=normName(name);
+  const existing=state.clients.find(c=>c.id===clientId) || state.clients.find(c=>clientKey(c.name)===clientKey(cleanName));
+  if(!existing){ toast('This client is pulled from fleet. Change the fleet customer name to remove it.'); return; }
+  const vehicles=clientVehicles(existing.name).length;
+  if(!confirm(`Remove ${existing.name} from the client database? Linked fleet vehicles will stay unchanged (${vehicles} vehicle${vehicles===1?'':'s'}).`)) return;
+  state.clients=state.clients.filter(c=>c.id!==existing.id);
+  await saveClients();
+  await deleteRemoteRow('clients', existing.id);
+  await logAction('Removed client','Clients', existing.name, `Linked fleet kept: ${vehicles}`, state.user?.name);
+  if(clientKey(state.selectedClient)===clientKey(existing.name)) state.selectedClient='';
+  toast('Client removed');
+  render();
 }
 function clearClientForm(){
   if(state.view!=='clients'){ go('clients'); return; }
@@ -1649,5 +1709,5 @@ function exportActivity(){
 
 async function resetDemo(){ if(!confirm('Reset all demo data?')) return; if(USE_SUPABASE){ await sb.from('parts').delete().neq('id','__never__'); await sb.from('jobs').delete().neq('id','__never__'); await sb.from('vehicles').delete().neq('id','__never__'); try { await sb.from('staff').delete().neq('id','__never__'); } catch(e) { console.warn(e); } try { await sb.from('logs').delete().neq('id','__never__'); } catch(e) { console.warn(e); } try { await sb.from('tickets').delete().neq('id','__never__'); } catch(e) { console.warn(e); } state.parts=seedParts.map(p=>({...p})); state.jobs=seedJobs.map(j=>({...j})); state.vehicles=seedVehicles.map(v=>({...v})); state.staff=seedStaff.map(x=>({...x})); state.logs=[]; state.tickets=seedTickets.map(t=>({...t})); state.clients=seedClients.map(c=>({...c})); await saveParts(); await saveJobs(); await saveVehicles(); await saveStaff(); await saveLogs(); await saveTickets(); await saveClients(); } else { set(KEYS.parts, seedParts); set(KEYS.jobs, seedJobs); set(KEYS.vehicles, seedVehicles); set(KEYS.staff, seedStaff); set(KEYS.logs, []); set(KEYS.tickets, seedTickets); set(KEYS.clients, seedClients); } state.filters={q:'',category:'All',stock:'All'}; state.vehicleHistoryQuery=''; state.selectedClient=''; state.clientFilter=''; state.activityQuery=''; state.activitySection='All'; state.ticketTab='dashboard'; state.ticketSearch=''; state.ticketStatus='All'; state.ticketPriority='All'; toast('Demo data reset'); render(); }
 
-window.addStaffFromPrompt=addStaffFromPrompt; window.selectClient=selectClient; window.editClient=editClient; window.clearClientForm=clearClientForm; window.exportClients=exportClients; window.importFleetCSV=importFleetCSV; window.escalateTicket=escalateTicket; window.deEscalateTicket=deEscalateTicket; window.exportActivity=exportActivity; window.switchTicketTab=switchTicketTab; window.saveTicket=saveTicket; window.deleteTicket=deleteTicket; window.updateTicketStatus=updateTicketStatus; window.viewTicket=viewTicket; window.closeTicketDialog=closeTicketDialog; window.exportTickets=exportTickets; window.fillTicketFromFleet=fillTicketFromFleet; window.startNewJobCard=startNewJobCard; window.loadJobCardForEdit=loadJobCardForEdit; window.goInventory=goInventory; window.goJobs=goJobs; window.exportDashboardInventory=exportDashboardInventory; window.exportDashboardJobs=exportDashboardJobs; window.viewPlateHistory=viewPlateHistory; window.clearPlateHistorySearch=clearPlateHistorySearch; window.exportPlateHistoryCSV=exportPlateHistoryCSV; window.startAddVehicle=startAddVehicle; window.toggleOrdered=toggleOrdered; window.go=go; window.openPartDialog=openPartDialog; window.closePartDialog=closePartDialog; window.openRestockDialog=openRestockDialog; window.closeRestockDialog=closeRestockDialog; window.viewPartUsage=viewPartUsage; window.viewJob=viewJob; window.closeJobDialog=closeJobDialog; window.deleteJob=deleteJob; window.deletePart=deletePart; window.exportInventory=exportInventory; window.importInventoryCSV=importInventoryCSV; window.exportJobs=exportJobs; window.exportUsage=exportUsage; window.exportMonthlyReport=exportMonthlyReport; window.exportFleet=exportFleet; window.editFleetVehicle=editFleetVehicle; window.deleteFleetVehicle=deleteFleetVehicle; window.clearFleetForm=clearFleetForm; window.resetDemo=resetDemo;
+window.addStaffFromPrompt=addStaffFromPrompt; window.selectClient=selectClient; window.editClient=editClient; window.deleteClient=deleteClient; window.clearClientForm=clearClientForm; window.exportClients=exportClients; window.importFleetCSV=importFleetCSV; window.escalateTicket=escalateTicket; window.deEscalateTicket=deEscalateTicket; window.exportActivity=exportActivity; window.switchTicketTab=switchTicketTab; window.saveTicket=saveTicket; window.deleteTicket=deleteTicket; window.updateTicketStatus=updateTicketStatus; window.viewTicket=viewTicket; window.closeTicketDialog=closeTicketDialog; window.exportTickets=exportTickets; window.fillTicketFromFleet=fillTicketFromFleet; window.startNewJobCard=startNewJobCard; window.loadJobCardForEdit=loadJobCardForEdit; window.goInventory=goInventory; window.goJobs=goJobs; window.exportDashboardInventory=exportDashboardInventory; window.exportDashboardJobs=exportDashboardJobs; window.viewPlateHistory=viewPlateHistory; window.clearPlateHistorySearch=clearPlateHistorySearch; window.exportPlateHistoryCSV=exportPlateHistoryCSV; window.startAddVehicle=startAddVehicle; window.toggleOrdered=toggleOrdered; window.go=go; window.openPartDialog=openPartDialog; window.closePartDialog=closePartDialog; window.openRestockDialog=openRestockDialog; window.closeRestockDialog=closeRestockDialog; window.viewPartUsage=viewPartUsage; window.viewJob=viewJob; window.closeJobDialog=closeJobDialog; window.deleteJob=deleteJob; window.deletePart=deletePart; window.exportInventory=exportInventory; window.importInventoryCSV=importInventoryCSV; window.exportJobs=exportJobs; window.exportUsage=exportUsage; window.exportMonthlyReport=exportMonthlyReport; window.exportFleet=exportFleet; window.editFleetVehicle=editFleetVehicle; window.deleteFleetVehicle=deleteFleetVehicle; window.clearFleetForm=clearFleetForm; window.resetDemo=resetDemo;
 init();
