@@ -1437,3 +1437,9 @@ input:disabled{
 .employee-end-date-wrap input{width:100%}
 .badge.green{background:#e7f7ee;color:#087541;border:1px solid #bfe8d1}
 .badge.muted-badge{background:#eef2f4;color:#5f6b76;border:1px solid #d8e0e5}
+
+/* v61: Employees all tab */
+.employee-layout.employee-layout-all{grid-template-columns:1fr;}
+.employee-layout.employee-layout-all .employee-list-panel{width:100%;}
+.employee-table-wrap td .tiny{font-size:12px;margin-top:3px;}
+.employee-tabs .tab{white-space:nowrap;}

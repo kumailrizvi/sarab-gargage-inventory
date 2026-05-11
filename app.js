@@ -1869,20 +1869,25 @@ function employeeFormDefaults(){ return { id:'', type: state.employeeType || 'SM
 function employeeIsCurrentlyWorking(e){ return e.currentWorking !== false; }
 function employeeGratuityEndDate(e){ return employeeIsCurrentlyWorking(e) ? today() : (e.endDate || today()); }
 function getEditingEmployee(){ return state.employees.find(e => e.id === state.editingEmployeeId) || null; }
-function employeeTypeTabs(){ return `<div class="view-tabs employee-tabs"><button class="tab ${state.employeeType==='SMG'?'active':''}" onclick="state.employeeType='SMG';state.editingEmployeeId='';render()">SMG Employees</button><button class="tab ${state.employeeType==='Outsourced'?'active':''}" onclick="state.employeeType='Outsourced';state.editingEmployeeId='';render()">Outsourced Employees</button></div>`; }
+function employeeTypeTabs(){ return `<div class="view-tabs employee-tabs"><button class="tab ${state.employeeType==='All'?'active':''}" onclick="state.employeeType='All';state.editingEmployeeId='';render()">All Employees</button><button class="tab ${state.employeeType==='SMG'?'active':''}" onclick="state.employeeType='SMG';state.editingEmployeeId='';render()">SMG Employees</button><button class="tab ${state.employeeType==='Outsourced'?'active':''}" onclick="state.employeeType='Outsourced';state.editingEmployeeId='';render()">Outsourced Employees</button></div>`; }
 function employeesHTML(){
-  const type = state.employeeType || 'SMG';
+  const type = state.employeeType || 'All';
   const q = String(state.employeeSearch || '').toLowerCase();
-  const rows = state.employees.filter(e => (e.type || 'SMG') === type).filter(e => !q || [e.name,e.visaStatus,e.startDate,e.basicSalary,e.netSalary].join(' ').toLowerCase().includes(q));
+  const rows = state.employees
+    .filter(e => type === 'All' || (e.type || 'SMG') === type)
+    .filter(e => !q || [e.type,e.name,e.visaStatus,e.startDate,e.endDate,e.basicSalary,e.netSalary].join(' ').toLowerCase().includes(q));
   const smg = state.employees.filter(e => (e.type || 'SMG') === 'SMG');
   const out = state.employees.filter(e => e.type === 'Outsourced');
   const gratuityTotal = smg.reduce((a,e)=>a+calcUAEGratuity(e.startDate,e.basicSalary,employeeGratuityEndDate(e)),0);
+  const formPanel = type === 'All'
+    ? ''
+    : `<section class="panel employee-form-panel"><h2>${getEditingEmployee() ? 'Edit' : 'Add'} ${type} Employee</h2>${employeeFormHTML(getEditingEmployee() || employeeFormDefaults())}</section>`;
   return `<div class="page-head"><div><h1>Employees</h1><p class="muted">Manage SMG employees, outsourced employees, documents, salaries, and estimated UAE gratuity.</p></div><button class="btn light" onclick="exportEmployees()">${I('download','icon-sm')} Export CSV</button></div>
-  <div class="kpis employee-kpis"><section class="card compact-kpi"><b>${smg.length}</b><span>SMG Employees</span></section><section class="card compact-kpi"><b>${out.length}</b><span>Outsourced Employees</span></section><section class="card compact-kpi"><b>${money(gratuityTotal)}</b><span>Estimated gratuity</span></section></div>
+  <div class="kpis employee-kpis"><section class="card compact-kpi"><b>${state.employees.length}</b><span>All Employees</span></section><section class="card compact-kpi"><b>${smg.length}</b><span>SMG Employees</span></section><section class="card compact-kpi"><b>${out.length}</b><span>Outsourced Employees</span></section><section class="card compact-kpi"><b>${money(gratuityTotal)}</b><span>Estimated gratuity</span></section></div>
   ${employeeTypeTabs()}
-  <div class="employee-layout">
-    <section class="panel employee-form-panel"><h2>${getEditingEmployee() ? 'Edit' : 'Add'} ${type} Employee</h2>${employeeFormHTML(getEditingEmployee() || employeeFormDefaults())}</section>
-    <section class="panel employee-list-panel"><div class="section-title"><h3>${type} Employee List</h3><button class="mini-btn" onclick="state.editingEmployeeId='';render()">New Employee</button></div><input id="employeeSearch" class="search-input" placeholder="Search employee, visa status, salary..." value="${esc(state.employeeSearch)}" oninput="state.employeeSearch=this.value; renderAndRefocus('employeeSearch')" />${employeeTableHTML(rows,type)}</section>
+  <div class="employee-layout ${type === 'All' ? 'employee-layout-all' : ''}">
+    ${formPanel}
+    <section class="panel employee-list-panel"><div class="section-title"><h3>${type === 'All' ? 'All Employees' : type + ' Employee List'}</h3>${type === 'All' ? '' : `<button class="mini-btn" onclick="state.editingEmployeeId='';render()">New Employee</button>`}</div><input id="employeeSearch" class="search-input" placeholder="Search employee, type, visa status, salary..." value="${esc(state.employeeSearch)}" oninput="state.employeeSearch=this.value; renderAndRefocus('employeeSearch')" />${employeeTableHTML(rows,type)}</section>
   </div>
   <p class="hint">Gratuity is an estimate based on basic salary and start date using the standard UAE 21/30-day approach. Confirm final calculations with HR/legal before settlement.</p>`;
 }
@@ -1905,6 +1910,13 @@ function employeeFormHTML(e){
 }
 function employeeTableHTML(rows,type){
   if(!rows.length) return `<div class="empty">No ${esc(type)} employees yet.</div>`;
+  if(type === 'All'){
+    const body = rows.map(e => {
+      const isSMG = (e.type || 'SMG') === 'SMG';
+      return `<tr><td><b>${esc(e.name)}</b><div class="muted tiny">${esc(e.type || 'SMG')}</div></td><td>${employeeIsCurrentlyWorking(e)?'<span class="badge green">Working</span>':'<span class="badge muted-badge">Left</span>'}</td><td>${esc(e.startDate||'—')}</td><td>${employeeIsCurrentlyWorking(e)?'—':esc(e.endDate||'—')}</td><td>${isSMG ? esc(e.visaStatus||'—') : 'Outsourced'}</td><td>${isSMG ? money(e.basicSalary) : '—'}</td><td>${isSMG ? money(e.netSalary) : '—'}</td><td>${isSMG ? `<b class="green-text">${money(calcUAEGratuity(e.startDate,e.basicSalary,employeeGratuityEndDate(e)))}</b>` : '—'}</td><td>${isSMG ? (e.passportCollected?'Passport ✓':'Passport —') : ['ID','Driving','Undertaking','Permit'].map((label,idx)=>{ const val=[e.hasId,e.drivingLicense,e.undertaking,e.labourPermit][idx]; return `${label}: ${val?'✓':'—'}`; }).join('<br>')}</td><td><button class="mini-btn" onclick="editEmployee('${esc(e.id)}')">Edit</button><button class="mini-btn danger" onclick="removeEmployee('${esc(e.id)}')">Remove</button></td></tr>`;
+    }).join('');
+    return `<div class="table-wrap employee-table-wrap"><table><tr><th>Name</th><th>Status</th><th>Start date</th><th>End date</th><th>Visa / Type</th><th>Basic</th><th>Net</th><th>Gratuity</th><th>Documents</th><th>Action</th></tr><tbody>${body}</tbody></table></div>`;
+  }
   const head = type === 'SMG'
     ? `<tr><th>Name</th><th>Status</th><th>Start date</th><th>End date</th><th>Visa status</th><th>Basic</th><th>Net</th><th>Gratuity</th><th>Passport</th><th>Action</th></tr>`
     : `<tr><th>Name</th><th>Status</th><th>Start date</th><th>End date</th><th>ID</th><th>Driving License</th><th>Undertaking</th><th>Labour Permit</th><th>Action</th></tr>`;
