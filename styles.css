@@ -1350,3 +1350,40 @@ input:disabled{
 .rep-cell-wrap{vertical-align:middle!important;text-align:center!important;}
 .locked-job-select{border-color:#fbbf24!important;background:#fff7ed!important;color:#92400e!important;}
 #jobLockNotice{grid-column:1/-1;margin-bottom:8px;}
+
+
+/* v57: final header + replacement tick centering + stronger job lock UI */
+.top-logo{display:none!important;}
+.topbar h2{font-size:24px;font-weight:800;color:var(--green-dark);}
+.fixed-replacement-table .rep-cell.is-tick,
+.fixed-replacement-table .rep-cell.has-value.is-tick,
+.rep-cell.is-tick,
+.rep-cell.has-value.is-tick{
+  display:inline-flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+  text-align:center!important;
+  line-height:1!important;
+  padding:0!important;
+  font-size:16px!important;
+  font-weight:900!important;
+  font-family:Arial, sans-serif!important;
+}
+.completed-job-locked{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  padding:6px 10px;
+  border-radius:999px;
+  background:#fff7ed;
+  color:#92400e;
+  border:1px solid #fed7aa;
+  font-size:12px;
+  font-weight:800;
+}
+.job-locked-form input,
+.job-locked-form textarea,
+.job-locked-form select{
+  border-color:#fed7aa!important;
+  background:#fffbeb!important;
+}

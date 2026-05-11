@@ -1,5 +1,5 @@
 /*
-  Sarab Al Madina Garage Inventory
+  Sarab Al Madina Portal
   Multi-user version.
   - If config.js contains Supabase URL + anon key, the app uses Supabase Auth + database.
   - If config.js is empty, it falls back to localStorage for local testing.
@@ -159,7 +159,7 @@ function hasJobOverride(jobId){ return (state.jobEditOverrideIds || []).includes
 function markJobOverride(jobId){ if(!state.jobEditOverrideIds) state.jobEditOverrideIds=[]; if(!state.jobEditOverrideIds.includes(jobId)) state.jobEditOverrideIds.push(jobId); }
 function requireJobOverride(job, action='edit'){
   if(!job || !isJobLocked(job) || hasJobOverride(job.id)) return true;
-  const pin = prompt(`This job card is completed and locked. Enter override PIN to ${action}.`);
+  const pin = prompt(`This job card is Done Completed and locked. Enter override PIN 3100 to ${action}.`);
   if(pin === JOB_LOCK_PIN){ markJobOverride(job.id); toast('Override accepted. Job card unlocked for this session.'); return true; }
   toast('Wrong override PIN. Job card remains locked.');
   return false;
@@ -203,8 +203,10 @@ function statusPill(status){
 function statusSelect(jobId, current=''){
   const value = current || 'Done Completed';
   const job = state.jobs.find(j => j.id === jobId);
-  const lockedClass = job && isJobLocked(job) && !hasJobOverride(job.id) ? ' locked-job-select' : '';
-  return `<select class="job-status-select${lockedClass}" onchange="updateJobStatus('${esc(jobId)}', this.value)">${JOB_STATUSES.map(status => `<option value="${esc(status)}" ${status === value ? 'selected' : ''}>${esc(status)}</option>`).join('')}</select>`;
+  const locked = job && isJobLocked(job) && !hasJobOverride(job.id);
+  const lockedClass = locked ? ' locked-job-select' : '';
+  const select = `<select class="job-status-select${lockedClass}" data-current-status="${esc(value)}" onchange="updateJobStatus('${esc(jobId)}', this.value)">${JOB_STATUSES.map(status => `<option value="${esc(status)}" ${status === value ? 'selected' : ''}>${esc(status)}</option>`).join('')}</select>`;
+  return locked ? `${select}<span class="completed-job-locked">Locked</span>` : select;
 }
 async function updateJobStatus(jobId, newStatus){
   if(!JOB_STATUSES.includes(newStatus)) return toast('Invalid job status');
@@ -1953,11 +1955,13 @@ function setJobFormFromJob(job){
   $('jobCardPreview').textContent = ensureJobCardId(job);
   const existingLockNotice = document.getElementById('jobLockNotice');
   if(existingLockNotice) existingLockNotice.remove();
+  const formEl = $('jobForm');
+  if(formEl) formEl.classList.toggle('job-locked-form', isJobLocked(job));
   if(isJobLocked(job)){
     const notice=document.createElement('div');
     notice.id='jobLockNotice';
     notice.className='lock-notice unlocked';
-    notice.innerHTML='<div><b>Completed job card</b><span>This job card is locked. Editing requires override PIN.</span></div>';
+    notice.innerHTML='<div><b>Completed job card is locked</b><span>Any edit, delete, or status change requires override PIN 3100.</span></div>';
     $('jobForm')?.prepend(notice);
   }
   $('jobCustomer').value = job.customer || '';
@@ -2049,7 +2053,7 @@ async function saveJob(e){
   await saveJobs();
   await saveParts();
   await logAction(oldJob ? 'Updated job card' : 'Created job card', 'Job Card', job.jobCardId, `${job.plate || ''} · ${job.description || 'Job card'} · ${lines.length} part line${lines.length===1?'':'s'}`, job.doneBy);
-  toast(oldJob ? 'Job card updated. Inventory adjusted.' : 'Job card saved. Inventory updated.');
+  toast(job.status === 'Done Completed' ? 'Job card saved and locked because status is Done Completed.' : (oldJob ? 'Job card updated. Inventory adjusted.' : 'Job card saved. Inventory updated.'));
   go('used');
 }
 
