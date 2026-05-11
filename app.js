@@ -1185,7 +1185,10 @@ function replacementsHTML(){
 function replacementMatrix(vehicles, days, editable=true){
   const month=state.replacementMonth || today().slice(0,7);
   const dayHeads=Array.from({length:days},(_,i)=>`<th class="rep-day-head">${i+1}</th>`).join('');
-  return `<div class="replacement-help-line"><span><b>Tip:</b> each row is one vehicle. Click a blank day cell once to mark ✓, or type a replacement plate in the same cell.</span><span>${vehicles.length} vehicle${vehicles.length===1?'':'s'} shown</span></div><div class="replacement-scroll"><table class="replacement-table compact-replacement-table"><thead><tr><th class="sticky-col rep-vehicle-head">Client / Vehicle</th><th class="sticky-col-2">Plate</th>${dayHeads}</tr></thead><tbody>${vehicles.map(v=>`<tr><td class="sticky-col rep-vehicle"><b>${esc(fleetClientName(v))}</b><small>${esc(modelWithoutYear(v.modelNumber)||'Vehicle')} ${v.year?`· ${esc(v.year)}`:''}</small></td><td class="sticky-col-2"><span class="fleet-plate">${esc(v.plate)}</span></td>${Array.from({length:days},(_,i)=>{ const d=i+1; const val=replacementValue(month,v.id,d); const isTick=val==='✓'; return `<td class="rep-cell-wrap ${!editable?'locked-cell':''}"><input class="rep-cell ${isTick?'is-tick':''} ${val?'has-value':''}" data-vehicle="${esc(v.id)}" data-day="${d}" value="${esc(val)}" placeholder="" title="Click for ✓ or type replacement plate" list="replacementFleetOptions" onclick="if(!this.value) toggleReplacementTick(this)" oninput="stageReplacementCellInput(this)" onchange="pickReplacementFromFleet(this)" ${!editable?'disabled':''}></td>`; }).join('')}</tr>`).join('')}</tbody></table></div>`;
+  return `<div class="replacement-help-line"><span><b>Tip:</b> each row is one vehicle. Click a day cell to mark ✓. Double click or start typing to enter a replacement plate.</span><span>${vehicles.length} vehicle${vehicles.length===1?'':'s'} shown</span></div>
+  <div class="replacement-scroll"><table class="replacement-table fixed-replacement-table"><thead><tr><th class="sticky-col rep-vehicle-head">Client / Vehicle</th><th class="sticky-col-2">Plate</th>${dayHeads}</tr></thead><tbody>
+  ${vehicles.map(v=>`<tr><td class="sticky-col rep-vehicle"><b>${esc(fleetClientName(v))}</b><small>${esc(modelWithoutYear(v.modelNumber)||'Vehicle')} ${v.year?`· ${esc(v.year)}`:''}</small></td><td class="sticky-col-2"><span class="fleet-plate">${esc(v.plate || '—')}</span></td>${Array.from({length:days},(_,i)=>{ const d=i+1; const val=replacementValue(month,v.id,d); const isTick=val==='✓'; return `<td class="rep-cell-wrap ${!editable?'locked-cell':''}"><input class="rep-cell ${isTick?'is-tick':''} ${val?'has-value':''}" data-vehicle="${esc(v.id)}" data-day="${d}" value="${esc(val)}" placeholder="" title="Click for ✓ or type replacement plate" list="replacementFleetOptions" onclick="if(!this.value) toggleReplacementTick(this)" ondblclick="this.value=''; this.focus(); stageReplacementCellInput(this)" oninput="stageReplacementCellInput(this)" onchange="pickReplacementFromFleet(this)" ${!editable?'disabled':''}></td>`; }).join('')}</tr>`).join('')}
+  </tbody></table></div>`;
 }
 
 function markVisibleReplacementDays(){
@@ -1220,48 +1223,66 @@ function vehicleHistoryRows(){
   if(q) vehicles=vehicles.filter(v=>[v.plate,v.modelNumber,v.year,fleetClientName(v),v.customer,v.status,v.ownership,v.notes].join(' ').toLowerCase().includes(q));
   return vehicles.sort((a,b)=>String(a.plate||'').localeCompare(String(b.plate||'')));
 }
-function vehicleAssignmentTimeline(v){
+function vehicleClientChangeEvents(v){
   const plateKey=String(v.plate||'').trim().toLowerCase();
-  const clientNow=fleetClientName(v) || '—';
-  const rows=[];
-  rows.push({
-    from:v.outsourceStartDate || v.createdAt?.slice(0,10) || 'Current',
-    to:v.status==='Off-hire' ? (v.outsourceEndDate || 'Off-hire') : 'Present',
-    client:clientNow,
-    status:v.status || 'Current',
-    source:'Current fleet record',
-    notes:`${v.ownership || 'Vehicle'}${v.clientRate ? ' · client rate ' + money(v.clientRate) : ''}`
-  });
-  (state.logs || []).forEach(log=>{
-    const ref=String(log.reference || log.ref || '').trim().toLowerCase();
-    const details=String(log.details || '').trim();
-    if(ref && ref===plateKey && /client/i.test(log.action || '') && details.includes('→')){
-      const parts=details.split('→').map(x=>x.trim());
-      if(parts.length>=2){
-        rows.push({ from:(log.createdAt||log.time||'').slice(0,10) || '—', to:'Until changed', client:parts[1], status:'Past client change', source:'Fleet edit log', notes:`Previous: ${parts[0]}` });
-      }
+  return (state.logs || [])
+    .filter(log=>{
+      const ref=String(log.reference || log.ref || '').trim().toLowerCase();
+      const details=String(log.details || '');
+      return ref === plateKey && /changed vehicle client/i.test(String(log.action || '')) && details.includes('→');
+    })
+    .map(log=>{
+      const [fromClient='', toClient=''] = String(log.details || '').split('→').map(x=>x.trim());
+      return { date:(log.createdAt || log.time || '').slice(0,10) || '—', fromClient, toClient, by:log.staff || log.user || '—' };
+    })
+    .sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+}
+function vehicleAssignmentTimeline(v){
+  const events = vehicleClientChangeEvents(v);
+  const currentClient = fleetClientName(v) || 'Unassigned';
+  const created = (v.createdAt || '').slice(0,10) || 'Start';
+  if(!events.length){
+    return [{ from: created, to:'Present', client:currentClient, note:'Current fleet record' }];
+  }
+  const periods=[];
+  events.forEach((ev, idx)=>{
+    if(idx===0){
+      periods.push({ from:created, to:ev.date, client:ev.fromClient || 'Unassigned', note:'Before first recorded change' });
     }
+    const next=events[idx+1];
+    periods.push({ from:ev.date, to:next ? next.date : 'Present', client:ev.toClient || currentClient, note:`Changed by ${ev.by}` });
   });
-  return rows.sort((a,b)=>String(b.from).localeCompare(String(a.from)));
+  const last=periods[periods.length-1];
+  if(last && last.client !== currentClient){
+    last.client = currentClient;
+    last.note = `${last.note} · current fleet client`;
+  }
+  return periods.filter((r,i)=>r.client || i===0).reverse();
 }
 function vehicleHistoryHTML(){
   const vehicles=vehicleHistoryRows();
   return `<div class="page-head"><div><h1>Fleet</h1><p class="muted">Vehicle assignment history by client.</p></div><div class="head-actions"><button class="btn light" onclick="exportVehicleHistoryCSV()">${I('download','icon-sm')} Export CSV</button></div></div>
   ${fleetSubnavHeader('vehicleHistory')}
-  <section class="panel vehicle-history-panel redesigned-vh"><div class="section-title"><div><h3>Vehicle History</h3><p class="muted small-note">See who has each vehicle now, and the recorded history when a vehicle moves from one client to another.</p></div></div>
+  <section class="panel vehicle-history-panel vehicle-history-table-panel"><div class="section-title"><div><h3>Vehicle History</h3><p class="muted small-note">A clean log of which client had each vehicle, from which date to which date.</p></div></div>
   <input id="vehicleHistorySearch" class="fleet-search" placeholder="Search plate, vehicle, or client..." value="${esc(state.vehicleHistorySearch || '')}" autocomplete="off">
-  <div class="vehicle-history-grid">${vehicles.map(vehicleHistoryCard).join('') || '<div class="empty">No vehicles found.</div>'}</div></section>`;
+  <div class="table-wrap vehicle-history-table-wrap"><table class="vehicle-history-table"><thead><tr><th></th><th>Plate</th><th>Vehicle</th><th>Current Client</th><th>Status</th><th>History Count</th></tr></thead><tbody>${vehicles.map(vehicleHistoryRow).join('') || '<tr><td colspan="6">No vehicles found.</td></tr>'}</tbody></table></div></section>`;
 }
-function vehicleHistoryCard(v){
+function vehicleHistoryRow(v){
+  const open = state.vehicleHistoryOpen === v.id;
   const timeline=vehicleAssignmentTimeline(v);
-  return `<article class="vh-card"><div class="vh-card-top"><div><span class="fleet-plate">${esc(v.plate || '—')}</span><h3>${esc(modelWithoutYear(v.modelNumber)||v.modelNumber||'Vehicle')}${v.year?` <span class="fleet-year">${esc(v.year)}</span>`:''}</h3><p class="muted">Current client: <b>${esc(fleetClientName(v))}</b></p></div><span class="pill ${v.status==='In Use'?'green':v.status==='Off-hire'?'red':'orange'}">${esc(v.status||'—')}</span></div><div class="vh-timeline clean">${timeline.map((r,i)=>`<div class="vh-line ${i===0?'current':''}"><div class="vh-dot"></div><div><b>${esc(r.client)}</b><span>${esc(r.from)} → ${esc(r.to)}</span><small>${esc(r.source)} · ${esc(r.notes||'')}</small></div></div>`).join('')}</div></article>`;
+  const historyRows = timeline.map(r=>`<tr class="vh-detail-row"><td></td><td colspan="2"><b>${esc(r.client)}</b><small>${esc(r.note || '')}</small></td><td>${esc(r.from)}</td><td>${esc(r.to)}</td><td></td></tr>`).join('');
+  return `<tr class="vh-main-row" onclick="toggleVehicleHistory('${esc(v.id)}')"><td><button class="mini-btn vh-arrow" type="button">${open?'▾':'▸'}</button></td><td><span class="fleet-plate">${esc(v.plate || '—')}</span></td><td><b>${esc(modelWithoutYear(v.modelNumber)||v.modelNumber||'Vehicle')}</b><small>${v.year?esc(v.year):''}</small></td><td><b>${esc(fleetClientName(v) || 'Unassigned')}</b></td><td><span class="pill ${v.status==='In Use'?'green':v.status==='Off-hire'?'red':'orange'}">${esc(v.status||'—')}</span></td><td>${timeline.length}</td></tr>${open ? historyRows : ''}`;
+}
+function toggleVehicleHistory(vehicleId){
+  state.vehicleHistoryOpen = state.vehicleHistoryOpen === vehicleId ? '' : vehicleId;
+  render();
 }
 function exportVehicleHistoryCSV(){
-  const rows=[['Plate','Vehicle','Year','Client','From','To','Status','Source','Notes']];
+  const rows=[['Plate','Vehicle','Year','Client','From Date','To Date','Notes']];
   vehicleHistoryRows().forEach(v=>{
-    vehicleAssignmentTimeline(v).forEach(r=>rows.push([v.plate||'', modelWithoutYear(v.modelNumber)||v.modelNumber||'', v.year||'', r.client, r.from, r.to, r.status, r.source, r.notes]));
+    vehicleAssignmentTimeline(v).slice().reverse().forEach(r=>rows.push([v.plate||'', modelWithoutYear(v.modelNumber)||v.modelNumber||'', v.year||'', r.client, r.from, r.to, r.note||'']));
   });
-  downloadCSV('sarab-vehicle-assignment-history.csv', rows);
+  downloadCSV('sarab-vehicle-client-history.csv', rows);
 }
 
 function fleetHTML(){
@@ -1729,14 +1750,21 @@ function toggleFleetVendorField(){
     $('fleetClientRate').disabled = isOffHire;
   }
 }
-function renderAndRefocus(inputId){
+function renderAndRefocus(inputId, cursorOverride=null){
   const el=$(inputId);
-  const cursor=el && typeof el.selectionStart==='number' ? el.selectionStart : null;
+  const cursor=cursorOverride !== null ? cursorOverride : (el && typeof el.selectionStart==='number' ? el.selectionStart : null);
+  const value = el ? el.value : '';
   render();
-  requestAnimationFrame(()=>{
+  const restore = () => {
     const next=$(inputId);
-    if(next){ next.focus(); if(cursor !== null) next.setSelectionRange(cursor, cursor); }
-  });
+    if(next){
+      next.focus({ preventScroll:true });
+      if(value !== undefined && next.value !== value) next.value = value;
+      if(cursor !== null && typeof next.setSelectionRange==='function') next.setSelectionRange(cursor, cursor);
+    }
+  };
+  requestAnimationFrame(restore);
+  setTimeout(restore, 25);
 }
 function bindPageEvents(){
   if($('searchInput')) $('searchInput').oninput=e=>{state.filters.q=e.target.value; renderInventoryResults();};
@@ -1744,14 +1772,14 @@ function bindPageEvents(){
   if($('stockFilter')) $('stockFilter').onchange=e=>{state.filters.stock=e.target.value; renderInventoryResults();};
   if($('reportMonth')) $('reportMonth').onchange=e=>{state.reportMonth=e.target.value; render();};
   if($('clientSearch')) $('clientSearch').oninput=e=>{state.clientFilter=e.target.value; render();};
-  if($('summarySearch')) $('summarySearch').oninput=e=>{state.summarySearch=e.target.value; renderAndRefocus('summarySearch');};
+  if($('summarySearch')) $('summarySearch').oninput=e=>{state.summarySearch=e.target.value; renderAndRefocus('summarySearch', e.target.selectionStart);};
   if($('summaryClientFilter')) $('summaryClientFilter').onchange=e=>{state.summaryClient=e.target.value; render();};
   if($('summaryOwnershipFilter')) $('summaryOwnershipFilter').onchange=e=>{state.summaryOwnership=e.target.value; render();};
   if($('summarySortFilter')) $('summarySortFilter').onchange=e=>{state.summarySort=e.target.value; render();};
   if($('replacementClient')) $('replacementClient').onchange=e=>{state.replacementClient=e.target.value; render();};
-  if($('replacementVehicleSearch')) $('replacementVehicleSearch').oninput=e=>{state.replacementVehicleSearch=e.target.value; renderAndRefocus('replacementVehicleSearch');};
+  if($('replacementVehicleSearch')) $('replacementVehicleSearch').oninput=e=>{state.replacementVehicleSearch=e.target.value; renderAndRefocus('replacementVehicleSearch', e.target.selectionStart);};
   if($('replacementMonth')) $('replacementMonth').onchange=e=>{state.replacementMonth=e.target.value; render();};
-  if($('vehicleHistorySearch')) $('vehicleHistorySearch').oninput=e=>{state.vehicleHistorySearch=e.target.value; renderAndRefocus('vehicleHistorySearch');};
+  if($('vehicleHistorySearch')) $('vehicleHistorySearch').oninput=e=>{state.vehicleHistorySearch=e.target.value; renderAndRefocus('vehicleHistorySearch', e.target.selectionStart);};
   document.querySelectorAll('.rep-cell').forEach(cell=>{ cell.oninput=()=>stageReplacementCellInput(cell); cell.onchange=()=>pickReplacementFromFleet(cell); });
 
   if($('clientForm')) $('clientForm').onsubmit=saveClient;

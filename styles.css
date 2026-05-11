@@ -1124,3 +1124,97 @@ input:disabled{
 .vh-line span{display:block;color:var(--green-dark);font-size:13px;font-weight:850;margin-bottom:2px;}
 .vh-line small{display:block;color:var(--muted);font-weight:700;line-height:1.4;}
 @media(max-width:760px){.vehicle-history-grid{grid-template-columns:1fr}.compact-replacement-table .sticky-col,.compact-replacement-table .sticky-col-2{position:static!important;left:auto!important}}
+
+/* v52 fixes: stable Fleet summary search, replacement register layout, and vehicle history table */
+.fixed-replacement-table{
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+  table-layout: fixed !important;
+  width: max-content !important;
+}
+.fixed-replacement-table th,
+.fixed-replacement-table td{
+  display: table-cell !important;
+  vertical-align: middle !important;
+  height: 42px !important;
+  max-height: 42px !important;
+  padding: 5px !important;
+  overflow: hidden !important;
+}
+.fixed-replacement-table tr{
+  height: 42px !important;
+  max-height: 42px !important;
+}
+.fixed-replacement-table .rep-vehicle,
+.fixed-replacement-table .rep-vehicle-head{
+  width: 230px !important;
+  min-width: 230px !important;
+  max-width: 230px !important;
+}
+.fixed-replacement-table .sticky-col-2{
+  left: 230px !important;
+  width: 110px !important;
+  min-width: 110px !important;
+  max-width: 110px !important;
+}
+.fixed-replacement-table .rep-day-head,
+.fixed-replacement-table .rep-cell-wrap{
+  width: 42px !important;
+  min-width: 42px !important;
+  max-width: 42px !important;
+  text-align: center !important;
+}
+.fixed-replacement-table .rep-cell-wrap{
+  display: table-cell !important;
+  padding: 4px !important;
+}
+.fixed-replacement-table .rep-cell{
+  display: inline-block !important;
+  width: 30px !important;
+  min-width: 30px !important;
+  max-width: 30px !important;
+  height: 30px !important;
+  min-height: 30px !important;
+  max-height: 30px !important;
+  padding: 1px !important;
+  margin: 0 auto !important;
+  text-align: center !important;
+  font-size: 13px !important;
+  font-weight: 800 !important;
+  line-height: 28px !important;
+  border-radius: 8px !important;
+  box-sizing: border-box !important;
+}
+.fixed-replacement-table .rep-cell:focus,
+.fixed-replacement-table .rep-cell.has-value:not(.is-tick):focus{
+  width: 92px !important;
+  max-width: 92px !important;
+  position: relative !important;
+  z-index: 30 !important;
+  background: #fff !important;
+}
+.fixed-replacement-table .rep-cell.has-value:not(.is-tick){
+  width: 38px !important;
+  max-width: 38px !important;
+  font-size: 10px !important;
+}
+.vehicle-history-table-panel .fleet-search{
+  width: 100%;
+  margin-bottom: 14px;
+}
+.vehicle-history-table-wrap{overflow:auto;}
+.vehicle-history-table th,
+.vehicle-history-table td{
+  vertical-align: middle;
+}
+.vehicle-history-table small{
+  display:block;
+  color:var(--muted);
+  margin-top:3px;
+  font-size:12px;
+}
+.vh-main-row{cursor:pointer;}
+.vh-main-row:hover td{background:#f6fbf8;}
+.vh-detail-row td{background:#fbfdfc!important;border-top:0!important;}
+.vh-detail-row b{display:block;color:var(--green-dark);}
+.vh-arrow{min-width:34px;padding:7px 9px!important;}
