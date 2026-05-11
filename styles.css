@@ -916,3 +916,25 @@ input:disabled{
 @media(max-width:900px){
   .clients-layout.redesigned{grid-template-columns:1fr;grid-template-areas:"form" "list" "overview";}
 }
+
+/* v46 client page: remove right overview and make client list wider */
+.clients-layout.redesigned{
+  grid-template-columns:minmax(320px,.72fr) minmax(620px,1.28fr)!important;
+  grid-template-areas:"form list"!important;
+  gap:22px!important;
+}
+.client-list-card.redesigned{
+  min-width:0;
+}
+.client-list.redesigned{
+  max-height:760px;
+}
+.client-card-main small{
+  line-height:1.35;
+}
+@media(max-width:1050px){
+  .clients-layout.redesigned{
+    grid-template-columns:1fr!important;
+    grid-template-areas:"form" "list"!important;
+  }
+}
