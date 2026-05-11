@@ -577,3 +577,28 @@ label{font-weight:700;font-size:14px;display:grid;gap:7px}input,select,textarea{
     min-width: 900px;
   }
 }
+
+/* v38 fleet client changes */
+.fleet-year{
+  display:inline-flex;
+  margin-left:6px;
+  padding:2px 7px;
+  border-radius:999px;
+  background:var(--green-soft);
+  color:var(--green-dark);
+  font-size:12px;
+  font-weight:800;
+  vertical-align:middle;
+}
+.fleet-meta-expanded{
+  grid-template-columns:repeat(3,1fr);
+}
+#fleetVendorWrap{
+  border:1px dashed #b7e2cb;
+  background:#f8fcfa;
+  border-radius:14px;
+  padding:12px;
+}
+@media(max-width:700px){
+  .fleet-meta-expanded{grid-template-columns:1fr;}
+}

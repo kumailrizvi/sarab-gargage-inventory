@@ -84,6 +84,24 @@ const seedVehicles = [
 
 const state = { user:null, view:'dashboard', parts:[], jobs:[], vehicles:[], staff:[], logs:[], filters:{ q:'', category:'All', stock:'All' }, vehicleHistoryQuery:'', fleetFilter:'', activityQuery:'', activitySection:'All' };
 const JOB_STATUSES = ['Not Started','Pending','Work Being Done','Done Completed'];
+const REGISTERED_COMPANIES = ['MBR1','MBR2','Garage','AHU','Travel & Tourism'];
+function extractYearFromModel(model=''){
+  const match = String(model || '').match(/\b(19\d{2}|20\d{2})\b/);
+  return match ? match[1] : '';
+}
+function modelWithoutYear(model=''){
+  return String(model || '').replace(/\b(19\d{2}|20\d{2})\b/g, '').replace(/\s{2,}/g, ' ').trim();
+}
+function normalizeFleetVehicles(){
+  let changed = false;
+  state.vehicles.forEach(v => {
+    if(!v.year){ const y = extractYearFromModel(v.modelNumber); if(y){ v.year = y; v.modelNumber = modelWithoutYear(v.modelNumber); changed = true; } }
+    if(!v.registeredCompany) { v.registeredCompany = 'Garage'; changed = true; }
+    if(!v.fuelChip) { v.fuelChip = 'No'; changed = true; }
+    if(v.ownership !== 'Outsource' && v.vendorName) { v.vendorName = ''; changed = true; }
+  });
+  return changed;
+}
 const jobStatus = (j) => j?.status || 'Done Completed';
 function existingJobNumbersForDate(date=today()){
   const compact = String(date || today()).replace(/-/g,'');
@@ -164,9 +182,11 @@ async function loadRemoteData(){
   state.jobs = await fetchRows('jobs');
   const jobIdsAdded = normalizeJobs();
   state.vehicles = await fetchRows('vehicles');
+  const fleetNormalized = normalizeFleetVehicles();
   state.staff = await fetchRows('staff', { quiet:true });
   state.logs = await fetchRows('logs', { quiet:true });
   if(jobIdsAdded) await saveJobs();
+  if(fleetNormalized) await saveVehicles();
   if(state.parts.length === 0){
     state.parts = seedParts.map(p => ({...p}));
     await saveParts();
@@ -177,7 +197,7 @@ async function loadRemoteData(){
   }
   // Staff list comes only from the staff table. If empty, dropdown stays empty until you add a person.
 }
-function loadData(){ if(USE_SUPABASE) return; loadLocalData(); if(normalizeJobs()) set(KEYS.jobs, state.jobs); }
+function loadData(){ if(USE_SUPABASE) return; loadLocalData(); if(normalizeJobs()) set(KEYS.jobs, state.jobs); if(normalizeFleetVehicles()) set(KEYS.vehicles, state.vehicles); }
 async function saveParts(){
   if(!USE_SUPABASE){ set(KEYS.parts, state.parts); return; }
   const rows = state.parts.map(p => ({ id:p.id, data:p, updated_at:new Date().toISOString() }));
@@ -583,7 +603,7 @@ function reportsHTML(s){
 function filteredFleetVehicles(){
   const q = String(state.fleetFilter || '').trim().toLowerCase();
   return state.vehicles.filter(v => {
-    const haystack = [v.modelNumber, v.plate, v.customer, v.status, v.ownership, v.notes].join(' ').toLowerCase();
+    const haystack = [v.modelNumber, v.year, v.plate, v.customer, v.status, v.ownership, v.registeredCompany, v.fuelChip, v.vendorName, v.notes].join(' ').toLowerCase();
     return !q || haystack.includes(q);
   });
 }
@@ -603,14 +623,18 @@ function fleetHTML(){
   const monthlyClientRevenue = state.vehicles.reduce((a,v)=>a+(v.status === 'In Use' ? Number(v.clientRate||0) : 0),0);
   return `<div class="page-head"><div><h1>Fleet</h1><p class="muted">Track SMG vehicles, outsourced vehicles, customers, status, rent cost, and client rate.</p></div><button class="btn primary" onclick="startAddVehicle()">${I('plus','icon-sm')} Add Vehicle</button></div>
   <div class="fleet-hero"><div><small>Fleet Revenue View</small><h2>${money(monthlyClientRevenue)}</h2><p>Client rate total for vehicles marked In Use.</p></div><div><span>Total Fleet</span><b>${state.vehicles.length}</b></div><div><span>In Use</span><b>${inUse}</b></div><div><span>Spare / Backup</span><b>${spare + backup}</b></div><div><span>Outsource Rent</span><b>${money(monthlyRentCost)}</b></div></div>
-  <div class="fleet-layout improved"><section id="fleetFormPanel" class="panel fleet-form-card"><div class="section-title"><div><h3>Vehicle Details</h3><p class="muted small-note">Add or edit one vehicle. Plate is split into code + license number, for example R 14534.</p></div></div>
+  <div class="fleet-layout improved"><section id="fleetFormPanel" class="panel fleet-form-card"><div class="section-title"><div><h3>Vehicle Details</h3><p class="muted small-note">Add or edit one vehicle. Plate is split into code + plate number, for example R 14534. If year is typed inside model, the app separates it automatically.</p></div></div>
     <form id="fleetForm" class="grid two">
       <input id="fleetId" type="hidden">
-      <label>Model number / vehicle model<input id="fleetModel" required placeholder="Toyota Hiace 2022"></label>
-      <div class="plate-fields"><label>Plate code<input id="fleetPlateCode" required placeholder="R" maxlength="8"></label><label>License number<input id="fleetPlateNumber" required placeholder="14534"></label></div>
+      <label>Vehicle model<input id="fleetModel" required placeholder="Toyota Hiace"></label>
+      <label>Year<input id="fleetYear" type="number" min="1980" max="2100" step="1" placeholder="2022"></label>
+      <label>Registered company<select id="fleetRegisteredCompany">${REGISTERED_COMPANIES.map(x=>`<option>${x}</option>`).join('')}</select></label>
+      <label>Fuel chip<select id="fleetFuelChip"><option value="Yes">Has company fuel chip</option><option value="No">No company fuel chip</option></select></label>
+      <div class="plate-fields"><label>Plate code<input id="fleetPlateCode" required placeholder="R" maxlength="8"></label><label>Plate number<input id="fleetPlateNumber" required placeholder="14534"></label></div>
       <label>Customer<input id="fleetCustomer" placeholder="Customer / client name"></label>
       <label>Status<select id="fleetStatus"><option>In Use</option><option>Spare</option><option>Back-up</option></select></label>
       <label>Vehicle type<select id="fleetOwnership"><option>SMG Vehicle</option><option>Outsource</option></select></label>
+      <label id="fleetVendorWrap" class="wide hidden">Vendor name of outsourced vehicle<input id="fleetVendorName" placeholder="Vendor / supplier name"></label>
       <label>Outsource rent rate (AED)<input id="fleetRentRate" type="number" min="0" step="0.01" value="0" placeholder="Only if outsourced"></label>
       <label>Client rate we give vehicle for (AED)<input id="fleetClientRate" type="number" min="0" step="0.01" value="0" placeholder="Rate charged to client if in use"></label>
       <label class="wide">Notes<input id="fleetNotes" placeholder="Any extra note"></label>
@@ -619,16 +643,23 @@ function fleetHTML(){
     <section class="panel fleet-list-card"><div class="section-title"><div><h3>Fleet List</h3><p class="muted small-note">Search updates instantly while typing.</p></div><button class="mini-btn" onclick="exportFleet()">Export Fleet CSV</button></div><input id="fleetSearch" placeholder="Search by plate, model, customer, status..." value="${esc(state.fleetFilter || '')}" autocomplete="off" class="fleet-search"><div id="fleetResults">${vehicles.length ? fleetTable(vehicles) : '<div class="empty">No fleet vehicles found.</div>'}</div></section></div>`;
 }
 function fleetTable(vehicles){
-  return `<div class="fleet-cards">${vehicles.map(v=>`<article class="fleet-card"><div class="fleet-card-main"><div><span class="fleet-plate">${esc(v.plate)}</span><h3>${esc(v.modelNumber)}</h3><p class="muted">${esc(v.customer || 'No customer added')}</p></div><span class="pill ${v.status === 'In Use' ? 'green' : v.status === 'Back-up' ? 'orange' : ''}">${esc(v.status)}</span></div><div class="fleet-meta"><div><small>Type</small><b>${esc(v.ownership)}</b></div><div><small>Rent Rate</small><b>${v.ownership === 'Outsource' ? money(v.rentRate) : '—'}</b></div><div><small>Client Rate</small><b>${v.status === 'In Use' ? money(v.clientRate) : '—'}</b></div></div>${v.notes ? `<p class="fleet-notes">${esc(v.notes)}</p>` : ''}<div class="fleet-actions"><button class="mini-btn" onclick="editFleetVehicle('${v.id}')">Edit</button><button class="mini-btn danger" onclick="deleteFleetVehicle('${v.id}')">Delete</button></div></article>`).join('')}</div>`;
+  return `<div class="fleet-cards">${vehicles.map(v=>{ const year = v.year || extractYearFromModel(v.modelNumber); const model = modelWithoutYear(v.modelNumber); return `<article class="fleet-card"><div class="fleet-card-main"><div><span class="fleet-plate">${esc(v.plate)}</span><h3>${esc(model)}${year ? ` <span class="fleet-year">${esc(year)}</span>` : ''}</h3><p class="muted">${esc(v.customer || 'No customer added')}</p></div><span class="pill ${v.status === 'In Use' ? 'green' : v.status === 'Back-up' ? 'orange' : ''}">${esc(v.status)}</span></div><div class="fleet-meta fleet-meta-expanded"><div><small>Registered Co.</small><b>${esc(v.registeredCompany || 'Garage')}</b></div><div><small>Fuel Chip</small><b>${esc(v.fuelChip === 'Yes' ? 'Yes' : 'No')}</b></div><div><small>Type</small><b>${esc(v.ownership)}</b></div><div><small>Vendor</small><b>${v.ownership === 'Outsource' ? esc(v.vendorName || '—') : '—'}</b></div><div><small>Rent Rate</small><b>${v.ownership === 'Outsource' ? money(v.rentRate) : '—'}</b></div><div><small>Client Rate</small><b>${v.status === 'In Use' ? money(v.clientRate) : '—'}</b></div></div>${v.notes ? `<p class="fleet-notes">${esc(v.notes)}</p>` : ''}<div class="fleet-actions"><button class="mini-btn" onclick="editFleetVehicle('${v.id}')">Edit</button><button class="mini-btn danger" onclick="deleteFleetVehicle('${v.id}')">Delete</button></div></article>`; }).join('')}</div>`;
 }
 async function saveFleetVehicle(e){
   e.preventDefault();
+  const rawModel = $('fleetModel').value.trim();
+  const autoYear = $('fleetYear').value || extractYearFromModel(rawModel);
+  const cleanModel = modelWithoutYear(rawModel);
   const vehicle = {
     id: $('fleetId').value || id('v'),
-    modelNumber: $('fleetModel').value.trim(),
+    modelNumber: cleanModel,
     plate: combinePlate($('fleetPlateCode').value, $('fleetPlateNumber').value),
     plateCode: normalizePlatePiece($('fleetPlateCode').value),
     plateNumber: normalizePlatePiece($('fleetPlateNumber').value),
+    year: autoYear,
+    registeredCompany: $('fleetRegisteredCompany').value,
+    fuelChip: $('fleetFuelChip').value,
+    vendorName: $('fleetOwnership').value === 'Outsource' ? $('fleetVendorName').value.trim() : '',
     customer: $('fleetCustomer').value.trim(),
     status: $('fleetStatus').value,
     ownership: $('fleetOwnership').value,
@@ -638,11 +669,11 @@ async function saveFleetVehicle(e){
     createdAt: state.vehicles.find(v=>v.id===$('fleetId').value)?.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString()
   };
-  if(!vehicle.modelNumber || !vehicle.plate) return toast('Model and plate code/license number are required');
+  if(!vehicle.modelNumber || !vehicle.plate) return toast('Model and plate code/plate number are required');
   const idx = state.vehicles.findIndex(v => v.id === vehicle.id);
   if(idx >= 0) state.vehicles[idx] = vehicle; else state.vehicles.unshift(vehicle);
   await saveVehicles();
-  await logAction(idx >= 0 ? 'Updated fleet vehicle' : 'Added fleet vehicle', 'Fleet', vehicle.plate, `${vehicle.modelNumber} · ${vehicle.status}`, state.user?.name);
+  await logAction(idx >= 0 ? 'Updated fleet vehicle' : 'Added fleet vehicle', 'Fleet', vehicle.plate, `${vehicle.modelNumber}${vehicle.year ? ' ' + vehicle.year : ''} · ${vehicle.status}`, state.user?.name);
   toast('Fleet vehicle saved');
   render();
 }
@@ -650,13 +681,18 @@ function editFleetVehicle(vehicleId){
   const v = state.vehicles.find(x=>x.id===vehicleId);
   if(!v) return;
   $('fleetId').value = v.id;
-  $('fleetModel').value = v.modelNumber || '';
+  $('fleetModel').value = modelWithoutYear(v.modelNumber || '');
+  $('fleetYear').value = v.year || extractYearFromModel(v.modelNumber || '');
+  $('fleetRegisteredCompany').value = v.registeredCompany || 'Garage';
+  $('fleetFuelChip').value = v.fuelChip || 'No';
   const plateParts = splitPlate(v.plate || '');
   $('fleetPlateCode').value = v.plateCode || plateParts.code || '';
   $('fleetPlateNumber').value = v.plateNumber || plateParts.license || '';
   $('fleetCustomer').value = v.customer || '';
   $('fleetStatus').value = v.status || 'In Use';
   $('fleetOwnership').value = v.ownership || 'SMG Vehicle';
+  $('fleetVendorName').value = v.vendorName || '';
+  toggleFleetVendorField();
   $('fleetRentRate').value = v.rentRate || 0;
   $('fleetClientRate').value = v.clientRate || 0;
   $('fleetNotes').value = v.notes || '';
@@ -664,9 +700,12 @@ function editFleetVehicle(vehicleId){
 }
 function clearFleetForm(){
   if(state.view !== 'fleet') { go('fleet'); return; }
-  ['fleetId','fleetModel','fleetPlateCode','fleetPlateNumber','fleetCustomer','fleetNotes'].forEach(id => { if($(id)) $(id).value=''; });
+  ['fleetId','fleetModel','fleetYear','fleetPlateCode','fleetPlateNumber','fleetCustomer','fleetVendorName','fleetNotes'].forEach(id => { if($(id)) $(id).value=''; });
   if($('fleetStatus')) $('fleetStatus').value='In Use';
+  if($('fleetRegisteredCompany')) $('fleetRegisteredCompany').value='Garage';
+  if($('fleetFuelChip')) $('fleetFuelChip').value='No';
   if($('fleetOwnership')) $('fleetOwnership').value='SMG Vehicle';
+  toggleFleetVendorField();
   if($('fleetRentRate')) $('fleetRentRate').value=0;
   if($('fleetClientRate')) $('fleetClientRate').value=0;
   scrollToFleetForm();
@@ -694,13 +733,13 @@ async function deleteFleetVehicle(vehicleId){
 }
 function exportFleet(){
   downloadCSV('sarab-fleet.csv', [
-    ['Model Number','Plate Code','License Number','Number Plate','Customer','Status','Vehicle Type','Outsource Rent Rate AED','Client Rate AED','Total AED','Notes'],
+    ['Vehicle Model','Year','Registered Company','Fuel Chip','Plate Code','Plate Number','Number Plate','Customer','Status','Vehicle Type','Vendor Name','Outsource Rent Rate AED','Client Rate AED','Total AED','Notes'],
     ...state.vehicles.map(v=>{
       const parts=splitPlate(v.plate);
       const rent=Number(v.ownership === 'Outsource' ? v.rentRate || 0 : 0);
       const client=Number(v.status === 'In Use' ? v.clientRate || 0 : 0);
       const total=client-rent;
-      return [v.modelNumber,v.plateCode || parts.code,v.plateNumber || parts.license,v.plate,v.customer,v.status,v.ownership,rent,client,total,v.notes];
+      return [modelWithoutYear(v.modelNumber),v.year || extractYearFromModel(v.modelNumber),v.registeredCompany || 'Garage',v.fuelChip || 'No',v.plateCode || parts.code,v.plateNumber || parts.license,v.plate,v.customer,v.status,v.ownership,v.ownership === 'Outsource' ? (v.vendorName || '') : '',rent,client,total,v.notes];
     })
   ]);
 }
@@ -708,6 +747,13 @@ function exportFleet(){
 function exportHTML(){ return `<div class="page-head"><div><h1>Export CSV</h1><p class="muted">Download records for Excel, accounting, backup, or Supabase migration.</p></div></div><div class="export-grid"><section class="card export-card"><h2>Inventory CSV</h2><p class="muted">All parts, quantities, cost value and shelf location.</p><button class="btn primary full" onclick="exportInventory()">${I('download','icon-sm')} Export Inventory</button></section><section class="card export-card"><h2>Jobs CSV</h2><p class="muted">All jobs, cars, labour, totals and parts used.</p><button class="btn primary full" onclick="exportJobs()">${I('download','icon-sm')} Export Jobs</button></section><section class="card export-card"><h2>Parts Used CSV</h2><p class="muted">Every part used against every vehicle/job.</p><button class="btn primary full" onclick="exportUsage()">${I('download','icon-sm')} Export Parts Used</button></section><section class="card export-card"><h2>Fleet CSV</h2><p class="muted">All fleet vehicles, status, rent rate and client rate.</p><button class="btn primary full" onclick="exportFleet()">${I('download','icon-sm')} Export Fleet</button></section><section class="card export-card"><h2>Activity Log CSV</h2><p class="muted">Track staff actions across jobs, inventory and fleet.</p><button class="btn primary full" onclick="exportActivity()">${I('download','icon-sm')} Export Activity Log</button></section></div>`; }
 function settingsHTML(){ return `<div class="page-head"><div><h1>Settings</h1><p class="muted">Settings are currently disabled for garage staff.</p></div></div><section class="card settings-card settings-disabled" aria-disabled="true"><div class="disabled-badge">Disabled</div><h2>Settings locked</h2><p class="muted">This section is greyed out to avoid accidental changes. Only the app owner should update system settings from the code or Supabase dashboard.</p><div class="settings-placeholder"><p><b>Current user</b></p><p>${esc(state.user?.name||'Sarab Al Madina Team')}<br>${esc(state.user?.email||'')}</p><p>Storage mode: ${USE_SUPABASE ? 'Supabase shared database' : 'localStorage local demo'}.</p></div></section>`; }
 
+function toggleFleetVendorField(){
+  const wrap = $('fleetVendorWrap');
+  if(!wrap || !$('fleetOwnership')) return;
+  const isOutsource = $('fleetOwnership').value === 'Outsource';
+  wrap.classList.toggle('hidden', !isOutsource);
+  if(!isOutsource && $('fleetVendorName')) $('fleetVendorName').value = '';
+}
 function bindPageEvents(){
   if($('searchInput')) $('searchInput').oninput=e=>{state.filters.q=e.target.value; renderInventoryResults();};
   if($('categoryFilter')) $('categoryFilter').onchange=e=>{state.filters.category=e.target.value; renderInventoryResults();};
@@ -716,7 +762,7 @@ function bindPageEvents(){
   if($('activitySearch')) $('activitySearch').oninput=e=>{state.activityQuery=e.target.value; render();};
   if($('activitySection')) $('activitySection').onchange=e=>{state.activitySection=e.target.value; render();};
   if($('plateHistorySearch')) $('plateHistorySearch').oninput=e=>{state.vehicleHistoryQuery=e.target.value; renderPlateHistoryResults();};
-  if($('fleetForm')){ $('fleetForm').onsubmit=saveFleetVehicle; if($('fleetSearch')) $('fleetSearch').oninput=e=>{state.fleetFilter=e.target.value; renderFleetResults();}; }
+  if($('fleetForm')){ $('fleetForm').onsubmit=saveFleetVehicle; if($('fleetSearch')) $('fleetSearch').oninput=e=>{state.fleetFilter=e.target.value; renderFleetResults();}; if($('fleetOwnership')) $('fleetOwnership').onchange=toggleFleetVendorField; if($('fleetModel')) $('fleetModel').onblur=()=>{ const y=extractYearFromModel($('fleetModel').value); if(y && !$('fleetYear').value){ $('fleetYear').value=y; $('fleetModel').value=modelWithoutYear($('fleetModel').value); } }; toggleFleetVendorField(); }
   if($('jobForm')){ $('addLineBtn').onclick=()=>addPartLine(); $('addCustomBtn').onclick=()=>addCustomCharge(); if($('newJobModeBtn')) $('newJobModeBtn').onclick=startNewJobCard; if($('jobEditSelect')) $('jobEditSelect').onchange=e=>{ if(e.target.value) loadJobCardForEdit(e.target.value); }; if($('jobDate')) $('jobDate').onchange=()=>{ if(!$('jobEditId').value) $('jobCardPreview').textContent=nextJobCardId($('jobDate').value || today()); }; $('jobLabour').oninput=updateJobSummary; $('jobLabourHours').oninput=updateJobSummary; if($('jobFleetSelect')) $('jobFleetSelect').onchange=e=>{ if(e.target.value) fillJobFromFleet(e.target.value); }; if($('jobDoneBySelect')) $('jobDoneBySelect').onchange=e=>{ if(e.target.value) addStaffName(e.target.value); }; if($('jobPlateCode')) $('jobPlateCode').oninput=updateFleetPlateSuggestions; if($('jobPlateNumber')) $('jobPlateNumber').oninput=updateFleetPlateSuggestions; addPartLine(); addCustomCharge('', 0); updateFleetPlateSuggestions(); updateJobSummary(); $('jobForm').onsubmit=saveJob; }
 }
 function addPartLine(selected='', qty=1){
