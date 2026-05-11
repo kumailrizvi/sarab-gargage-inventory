@@ -16,7 +16,8 @@ const KEYS = {
   vehicles: 'sam_vehicles_v1',
   staff: 'sam_staff_v1',
   logs: 'sam_logs_v1',
-  tickets: 'sam_tickets_v1'
+  tickets: 'sam_tickets_v1',
+  clients: 'sam_clients_v1'
 };
 const AED = new Intl.NumberFormat('en-AE', { style: 'currency', currency: 'AED' });
 const today = () => new Date().toISOString().slice(0, 10);
@@ -84,6 +85,13 @@ const seedVehicles = [
 ];
 
 
+
+const seedClients = [
+  { id:'client_sarab', name:'Sarab Al Madina', contractStart:'2026-01-01', contractEnd:'2026-12-31', contactPerson:'', phone:'', email:'', notes:'Main internal fleet client', createdAt:'2026-01-01T00:00:00Z' },
+  { id:'client_align', name:'ALIGN', contractStart:'2026-01-01', contractEnd:'2026-12-31', contactPerson:'', phone:'', email:'', notes:'Imported from fleet records', createdAt:'2026-01-01T00:00:00Z' },
+  { id:'client_g4s', name:'G4S', contractStart:'2026-01-01', contractEnd:'2026-12-31', contactPerson:'', phone:'', email:'', notes:'Imported from fleet records', createdAt:'2026-01-01T00:00:00Z' }
+];
+
 const TICKET_STATUSES = ['Open','In Progress','Pending','Resolved'];
 const TICKET_PRIORITIES = ['Low','Medium','High','Critical'];
 const TICKET_CATEGORIES = ['Vehicle Issue','Maintenance Request','Accident / Damage','Driver Complaint','Client Request','Document / Permit','Other'];
@@ -113,7 +121,7 @@ const seedTickets = [
   ...importedComplaintTickets
 ];
 
-const state = { user:null, view:'dashboard', parts:[], jobs:[], vehicles:[], staff:[], logs:[], tickets:[], filters:{ q:'', category:'All', stock:'All' }, vehicleHistoryQuery:'', fleetFilter:'', activityQuery:'', activitySection:'All', ticketTab:'dashboard', ticketSearch:'', ticketStatus:'All', ticketPriority:'All' };
+const state = { user:null, view:'dashboard', parts:[], jobs:[], vehicles:[], clients:[], staff:[], logs:[], tickets:[], filters:{ q:'', category:'All', stock:'All' }, vehicleHistoryQuery:'', fleetFilter:'', clientFilter:'', selectedClient:'', activityQuery:'', activitySection:'All', ticketTab:'dashboard', ticketSearch:'', ticketStatus:'All', ticketPriority:'All' };
 const JOB_STATUSES = ['Not Started','Pending','Work Being Done','Done Completed'];
 const REGISTERED_COMPANIES = ['MBR1','MBR2','Garage','AHU','Travel & Tourism'];
 function extractYearFromModel(model=''){
@@ -192,8 +200,8 @@ async function updateJobStatus(jobId, newStatus){
   }
   render();
 }
-function ensureLocalData(){ if(!localStorage.getItem(KEYS.users)) set(KEYS.users, seedUsers); if(!localStorage.getItem(KEYS.parts)) set(KEYS.parts, seedParts); if(!localStorage.getItem(KEYS.jobs)) set(KEYS.jobs, seedJobs); if(!localStorage.getItem(KEYS.vehicles)) set(KEYS.vehicles, seedVehicles); if(!localStorage.getItem(KEYS.staff)) set(KEYS.staff, seedStaff); if(!localStorage.getItem(KEYS.logs)) set(KEYS.logs, []); if(!localStorage.getItem(KEYS.tickets)) set(KEYS.tickets, seedTickets); }
-function loadLocalData(){ state.user = get(KEYS.session, null); state.parts = get(KEYS.parts, []); state.jobs = get(KEYS.jobs, []); state.vehicles = get(KEYS.vehicles, []); state.staff = get(KEYS.staff, []); state.logs = get(KEYS.logs, []); state.tickets = get(KEYS.tickets, []); }
+function ensureLocalData(){ if(!localStorage.getItem(KEYS.users)) set(KEYS.users, seedUsers); if(!localStorage.getItem(KEYS.parts)) set(KEYS.parts, seedParts); if(!localStorage.getItem(KEYS.jobs)) set(KEYS.jobs, seedJobs); if(!localStorage.getItem(KEYS.vehicles)) set(KEYS.vehicles, seedVehicles); if(!localStorage.getItem(KEYS.staff)) set(KEYS.staff, seedStaff); if(!localStorage.getItem(KEYS.logs)) set(KEYS.logs, []); if(!localStorage.getItem(KEYS.tickets)) set(KEYS.tickets, seedTickets); if(!localStorage.getItem(KEYS.clients)) set(KEYS.clients, seedClients); }
+function loadLocalData(){ state.user = get(KEYS.session, null); state.parts = get(KEYS.parts, []); state.jobs = get(KEYS.jobs, []); state.vehicles = get(KEYS.vehicles, []); state.clients = get(KEYS.clients, []); state.staff = get(KEYS.staff, []); state.logs = get(KEYS.logs, []); state.tickets = get(KEYS.tickets, []); }
 function mergeImportedComplaintTickets(){
   const existing = new Set((state.tickets || []).map(t => `${String(t.ticketNo||'').toLowerCase()}|${String(t.plate||'').replace(/\s+/g,'').toLowerCase()}|${String(t.category||'').toLowerCase()}`));
   const missing = importedComplaintTickets.filter(t => !existing.has(`${String(t.ticketNo||'').toLowerCase()}|${String(t.plate||'').replace(/\s+/g,'').toLowerCase()}|${String(t.category||'').toLowerCase()}`));
@@ -224,6 +232,7 @@ async function loadRemoteData(){
   state.jobs = await fetchRows('jobs');
   const jobIdsAdded = normalizeJobs();
   state.vehicles = await fetchRows('vehicles');
+  state.clients = await fetchRows('clients', { quiet:true });
   const fleetNormalized = normalizeFleetVehicles();
   state.staff = await fetchRows('staff', { quiet:true });
   state.logs = await fetchRows('logs', { quiet:true });
@@ -239,6 +248,10 @@ async function loadRemoteData(){
   if(state.vehicles.length === 0){
     state.vehicles = seedVehicles.map(v => ({...v}));
     await saveVehicles();
+  }
+  if(state.clients.length === 0){
+    state.clients = seedClients.map(c => ({...c}));
+    await saveClients();
   }
   // Staff list comes only from the staff table. If empty, dropdown stays empty until you add a person.
 }
@@ -280,6 +293,14 @@ async function saveTickets(){
   const { error } = await sb.from('tickets').upsert(rows);
   if(error){ console.warn('Could not save tickets. Run updated schema for the ticketing system.', error); }
 }
+
+async function saveClients(){
+  if(!USE_SUPABASE){ set(KEYS.clients, state.clients); return; }
+  const rows = state.clients.map(c => ({ id:c.id, data:c, updated_at:new Date().toISOString() }));
+  const { error } = await sb.from('clients').upsert(rows);
+  if(error){ console.warn('Could not save clients. Run updated schema for the clients table.', error); }
+}
+
 async function deleteRemoteRow(table, id){
   if(!USE_SUPABASE) return;
   const { error } = await sb.from(table).delete().eq('id', id);
@@ -406,7 +427,7 @@ function stats(){
   const salesValue = state.parts.reduce((a,p)=>a+(Number(p.qty||0)*Number(p.price||0)),0);
   return { totalUnits, lowCount: low.length, todayJobs: todayJobs.length, partsUsedToday, costValue, salesValue };
 }
-function render(){ if(!USE_SUPABASE) loadData(); const s=stats(); const page=$('page'); const views={dashboard:dashboardHTML, inventory:inventoryHTML, fleet:fleetHTML, tickets:ticketsHTML, job:jobHTML, used:usedHTML, reports:reportsHTML, activity:activityHTML, export:exportHTML, settings:settingsHTML}; page.innerHTML=(views[state.view]||dashboardHTML)(s); bindPageEvents(); hydrateStaticIcons(); }
+function render(){ if(!USE_SUPABASE) loadData(); const s=stats(); const page=$('page'); const views={dashboard:dashboardHTML, clients:clientsHTML, inventory:inventoryHTML, fleet:fleetHTML, tickets:ticketsHTML, job:jobHTML, used:usedHTML, reports:reportsHTML, activity:activityHTML, export:exportHTML, settings:settingsHTML}; page.innerHTML=(views[state.view]||dashboardHTML)(s); bindPageEvents(); hydrateStaticIcons(); }
 function kpi(title,num,sub,icon,warn=false,action=''){ const tone=warn?'orange':''; const moneyClass=String(num).includes('AED')?'money':''; const click=action ? ` onclick="${action}" role="button" tabindex="0"` : ''; return `<section class="card kpi ${action ? 'clickable-kpi' : ''}"${click}><div><h3>${title}</h3><div class="num ${tone} ${moneyClass}">${num}</div><p>${sub}</p></div><div class="kpi-icon ${warn?'warn':''}">${I(icon,'icon-xl')}</div></section>`; }
 function statusSummaryCard(){
   const c = statusCounts();
@@ -436,6 +457,110 @@ function renderInventoryResults(){
   const target=$('inventoryResults');
   if(target) target.innerHTML = inventoryTable(filteredInventoryParts(), false);
 }
+
+function normName(name){ return String(name || '').trim().replace(/\s+/g,' '); }
+function clientKey(name){ return normName(name).toLowerCase(); }
+function allClients(){
+  const map = new Map();
+  (state.clients || []).forEach(c => { const name=normName(c.name); if(name) map.set(clientKey(name), {...c, name}); });
+  (state.vehicles || []).forEach(v => {
+    const name=normName(v.customer);
+    if(!name) return;
+    if(!map.has(clientKey(name))) map.set(clientKey(name), { id:`fleet_client_${clientKey(name).replace(/[^a-z0-9]+/g,'_')}`, name, contractStart:'', contractEnd:'', contactPerson:'', phone:'', email:'', notes:'Pulled from fleet records', fromFleet:true });
+  });
+  return [...map.values()].sort((a,b)=>a.name.localeCompare(b.name));
+}
+function clientVehicles(name){
+  const key=clientKey(name);
+  return state.vehicles.filter(v=>clientKey(v.customer)===key);
+}
+function clientTickets(name){
+  const key=clientKey(name);
+  return state.tickets.filter(t=>clientKey(t.client)===key);
+}
+function clientRevenue(name){
+  return clientVehicles(name).reduce((a,v)=>a+(v.status === 'In Use' ? Number(v.clientRate||0) : 0),0);
+}
+function contractStatus(c){
+  if(!c.contractEnd) return '<span class="pill gray">No contract date</span>';
+  const days=Math.ceil((new Date(c.contractEnd)-new Date(today()))/86400000);
+  if(days < 0) return '<span class="pill red">Expired</span>';
+  if(days <= 30) return '<span class="pill orange">Expiring soon</span>';
+  return '<span class="pill green">Active</span>';
+}
+function clientOverviewHTML(client){
+  if(!client) return '<section class="panel client-overview"><div class="empty">Click a client to see their overview, linked fleet, tickets and contract dates.</div></section>';
+  const vehicles=clientVehicles(client.name);
+  const tickets=clientTickets(client.name);
+  const inUse=vehicles.filter(v=>v.status==='In Use').length;
+  const outsource=vehicles.filter(v=>v.ownership==='Outsource').length;
+  const revenue=clientRevenue(client.name);
+  return `<section class="panel client-overview"><div class="section-title"><div><h3>${esc(client.name)}</h3><p class="muted small-note">Contract: ${esc(client.contractStart || '—')} → ${esc(client.contractEnd || '—')}</p></div>${contractStatus(client)}</div>
+  <div class="client-summary-grid"><div><span>Total Vehicles</span><b>${vehicles.length}</b></div><div><span>In Use</span><b>${inUse}</b></div><div><span>Outsource</span><b>${outsource}</b></div><div><span>Monthly Revenue</span><b>${money(revenue)}</b></div><div><span>Tickets</span><b>${tickets.length}</b></div></div>
+  <div class="client-detail-grid"><div><small>Contact</small><b>${esc(client.contactPerson || '—')}</b></div><div><small>Phone</small><b>${esc(client.phone || '—')}</b></div><div><small>Email</small><b>${esc(client.email || '—')}</b></div></div>
+  <div class="client-linked"><h4>Linked Fleet</h4>${vehicles.length?`<div class="fleet-cards client-fleet-mini">${vehicles.map(v=>`<article class="fleet-card"><div class="fleet-card-main"><div><span class="fleet-plate">${esc(v.plate)}</span><h3>${esc(modelWithoutYear(v.modelNumber))}${v.year?` <span class="fleet-year">${esc(v.year)}</span>`:''}</h3><p class="muted">${esc(v.status || '')} · ${esc(v.ownership || '')}</p></div><b>${money(v.status==='In Use'?v.clientRate:0)}</b></div></article>`).join('')}</div>`:'<div class="empty compact-empty">No vehicles linked to this client yet.</div>'}</div>
+  <div class="client-linked"><h4>Open Tickets</h4>${tickets.length?`<div class="jobs-list">${tickets.slice(0,5).map(t=>`<div class="job-row"><div><b>${esc(t.ticketNo)}</b><small class="muted">${esc(t.plate || '')}</small></div><div><b>${esc(t.category || 'Request')}</b><small class="muted">${esc(t.description || '')}</small></div><div>${ticketStatusPill(t.status)} ${ticketPriorityPill(t.priority)}</div></div>`).join('')}</div>`:'<div class="empty compact-empty">No tickets for this client.</div>'}</div>
+  ${client.notes?`<p class="muted client-notes">${esc(client.notes)}</p>`:''}</section>`;
+}
+function clientsHTML(){
+  const clients=allClients();
+  const q=String(state.clientFilter||'').trim().toLowerCase();
+  const filtered=clients.filter(c=>!q || [c.name,c.contractStart,c.contractEnd,c.contactPerson,c.phone,c.email,c.notes].join(' ').toLowerCase().includes(q));
+  const selected=clients.find(c=>clientKey(c.name)===clientKey(state.selectedClient)) || filtered[0];
+  if(selected && !state.selectedClient) state.selectedClient=selected.name;
+  return `<div class="page-head"><div><h1>Clients</h1><p class="muted">Client database, contract dates, and linked fleet overview.</p></div><div class="head-actions"><button class="btn light" onclick="exportClients()">${I('download','icon-sm')} Export Clients CSV</button><button class="btn primary" onclick="clearClientForm()">${I('plus','icon-sm')} Add Client / Contract</button></div></div>
+  <div class="clients-layout"><section class="panel client-form-card"><div class="section-title"><div><h3>Client / Contract Details</h3><p class="muted small-note">If the client already exists, saving a new contract will extend the contract end date if the new date is later.</p></div></div>
+  <form id="clientForm" class="grid two"><input id="clientId" type="hidden"><label class="wide">Client name<input id="clientName" required placeholder="ALIGN / G4S / Trumax"></label><label>Contract start date<input id="clientContractStart" type="date"></label><label>Contract end date<input id="clientContractEnd" type="date"></label><label>Contact person<input id="clientContact" placeholder="Manager name"></label><label>Phone<input id="clientPhone" placeholder="+971..."></label><label class="wide">Email<input id="clientEmail" type="email" placeholder="client@example.com"></label><label class="wide">Notes<input id="clientNotes" placeholder="Contract notes, payment terms, special instructions"></label><div class="modal-actions wide"><button type="button" class="btn light" onclick="clearClientForm()">Clear</button><button class="btn primary" type="submit">Save Client</button></div></form></section>
+  <section class="panel client-list-card"><div class="section-title"><div><h3>Client List</h3><p class="muted small-note">Click a client to see contract and fleet breakdown.</p></div></div><input id="clientSearch" placeholder="Search client, contract date, contact..." value="${esc(state.clientFilter||'')}" autocomplete="off" class="fleet-search"><div class="client-list">${filtered.map(c=>{ const vehicles=clientVehicles(c.name); const active=clientKey(c.name)===clientKey(selected?.name); return `<button class="client-row ${active?'active':''}" onclick="selectClient('${esc(c.name)}')"><div><b>${esc(c.name)}</b><small>${esc(c.contractEnd ? 'Contract till '+c.contractEnd : 'No contract date')} · ${vehicles.length} vehicle${vehicles.length===1?'':'s'}</small></div>${contractStatus(c)}</button>`; }).join('') || '<div class="empty">No clients found.</div>'}</div></section>
+  ${clientOverviewHTML(selected)}</div>`;
+}
+async function saveClient(e){
+  e.preventDefault();
+  const name=normName($('clientName').value);
+  if(!name) return toast('Client name is required');
+  const existing=state.clients.find(c=>clientKey(c.name)===clientKey(name));
+  const start=$('clientContractStart').value;
+  const end=$('clientContractEnd').value;
+  const client={
+    id: existing?.id || id('client'),
+    name,
+    contractStart: existing?.contractStart && start ? (existing.contractStart < start ? existing.contractStart : start) : (start || existing?.contractStart || ''),
+    contractEnd: existing?.contractEnd && end ? (existing.contractEnd > end ? existing.contractEnd : end) : (end || existing?.contractEnd || ''),
+    contactPerson: $('clientContact').value.trim() || existing?.contactPerson || '',
+    phone: $('clientPhone').value.trim() || existing?.phone || '',
+    email: $('clientEmail').value.trim() || existing?.email || '',
+    notes: $('clientNotes').value.trim() || existing?.notes || '',
+    createdAt: existing?.createdAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+  const idx=state.clients.findIndex(c=>c.id===client.id);
+  if(idx>=0) state.clients[idx]=client; else state.clients.unshift(client);
+  state.selectedClient=name;
+  await saveClients();
+  await logAction(existing?'Updated client contract':'Added client','Clients', name, `Contract till ${client.contractEnd || '—'}`, state.user?.name);
+  toast(existing ? 'Client updated / contract amended' : 'Client added');
+  render();
+}
+function selectClient(name){ state.selectedClient=name; render(); }
+function editClient(name){
+  const c=allClients().find(x=>clientKey(x.name)===clientKey(name));
+  if(!c) return;
+  $('clientId').value=c.id||''; $('clientName').value=c.name||''; $('clientContractStart').value=c.contractStart||''; $('clientContractEnd').value=c.contractEnd||''; $('clientContact').value=c.contactPerson||''; $('clientPhone').value=c.phone||''; $('clientEmail').value=c.email||''; $('clientNotes').value=c.notes||'';
+}
+function clearClientForm(){
+  if(state.view!=='clients'){ go('clients'); return; }
+  ['clientId','clientName','clientContractStart','clientContractEnd','clientContact','clientPhone','clientEmail','clientNotes'].forEach(id=>{ if($(id)) $(id).value=''; });
+  setTimeout(()=>{$('clientName')?.focus();},50);
+}
+function exportClients(){
+  const rows=[['Client','Contract Start','Contract End','Contract Status','Contact','Phone','Email','Linked Vehicles','In Use Vehicles','Monthly Client Revenue AED','Open Tickets','Notes']];
+  allClients().forEach(c=>{
+    const vehicles=clientVehicles(c.name); const inUse=vehicles.filter(v=>v.status==='In Use').length; const tickets=clientTickets(c.name).filter(t=>t.status!=='Resolved').length;
+    rows.push([c.name,c.contractStart||'',c.contractEnd||'',c.contractEnd ? (new Date(c.contractEnd) < new Date(today()) ? 'Expired' : 'Active') : 'No date',c.contactPerson||'',c.phone||'',c.email||'',vehicles.length,inUse,clientRevenue(c.name),tickets,c.notes||'']);
+  });
+  downloadCSV('sarab-clients.csv', rows);
+}
+
 function inventoryHTML(){
   const cats=['All',...new Set(state.parts.map(p=>p.category))];
   const filtered=filteredInventoryParts();
@@ -672,7 +797,7 @@ function fleetHTML(){
   const backup = state.vehicles.filter(v => v.status === 'Back-up').length;
   const monthlyRentCost = state.vehicles.reduce((a,v)=>a+(v.ownership === 'Outsource' && v.status !== 'Off-hire' ? Number(v.rentRate||0) : 0),0);
   const monthlyClientRevenue = state.vehicles.reduce((a,v)=>a+(v.status === 'In Use' ? Number(v.clientRate||0) : 0),0);
-  return `<div class="page-head"><div><h1>Fleet</h1><p class="muted">Track SMG vehicles, outsourced vehicles, customers, status, rent cost, and client rate.</p></div><button class="btn primary" onclick="startAddVehicle()">${I('plus','icon-sm')} Add Vehicle</button></div>
+  return `<div class="page-head"><div><h1>Fleet</h1><p class="muted">Track SMG vehicles, outsourced vehicles, customers, status, rent cost, and client rate.</p></div><div class="head-actions"><button class="btn light" onclick="importFleetCSV()">${I('download','icon-sm')} Import CSV</button><button class="btn primary" onclick="startAddVehicle()">${I('plus','icon-sm')} Add Vehicle</button></div></div>
   <div class="fleet-hero"><div><small>Fleet Revenue View</small><h2>${money(monthlyClientRevenue)}</h2><p>Client rate total for vehicles marked In Use.</p></div><div><span>Total Fleet</span><b>${state.vehicles.length}</b></div><div><span>In Use</span><b>${inUse}</b></div><div><span>Spare / Backup</span><b>${spare + backup}</b></div><div><span>Outsource Rent</span><b>${money(monthlyRentCost)}</b></div></div>
   <div class="fleet-layout improved"><section id="fleetFormPanel" class="panel fleet-form-card"><div class="section-title"><div><h3>Vehicle Details</h3><p class="muted small-note">Add or edit one vehicle. Plate is split into code + plate number, for example R 14534. If year is typed inside model, the app separates it automatically.</p></div></div>
     <form id="fleetForm" class="grid two">
@@ -696,6 +821,16 @@ function fleetHTML(){
 function fleetTable(vehicles){
   return `<div class="fleet-cards">${vehicles.map(v=>{ const year = v.year || extractYearFromModel(v.modelNumber); const model = modelWithoutYear(v.modelNumber); return `<article class="fleet-card"><div class="fleet-card-main"><div><span class="fleet-plate">${esc(v.plate)}</span><h3>${esc(model)}${year ? ` <span class="fleet-year">${esc(year)}</span>` : ''}</h3><p class="muted">${esc(v.customer || 'No customer added')}</p></div><span class="pill ${v.status === 'In Use' ? 'green' : v.status === 'Back-up' ? 'orange' : v.status === 'Off-hire' ? 'red' : ''}">${esc(v.status)}</span></div><div class="fleet-meta fleet-meta-expanded"><div><small>Registered Co.</small><b>${esc(v.registeredCompany || 'Garage')}</b></div><div><small>Fuel Chip</small><b>${esc(v.fuelChip === 'Yes' ? 'Yes' : 'No')}</b></div><div><small>Type</small><b>${esc(v.ownership)}</b></div><div><small>Vendor</small><b>${v.ownership === 'Outsource' ? esc(v.vendorName || '—') : '—'}</b></div><div><small>Outsource Dates</small><b>${v.ownership === 'Outsource' ? `${esc(v.outsourceStartDate || '—')} → ${esc(v.outsourceEndDate || '—')}` : '—'}</b></div><div><small>Rent Rate</small><b>${v.ownership === 'Outsource' && v.status !== 'Off-hire' ? money(v.rentRate) : '—'}</b></div><div><small>Client Rate</small><b>${v.status === 'In Use' ? money(v.clientRate) : '—'}</b></div></div>${v.notes ? `<p class="fleet-notes">${esc(v.notes)}</p>` : ''}<div class="fleet-actions"><button class="mini-btn" onclick="editFleetVehicle('${v.id}')">Edit</button><button class="mini-btn danger" onclick="deleteFleetVehicle('${v.id}')">Delete</button></div></article>`; }).join('')}</div>`;
 }
+
+async function syncClientFromFleetVehicle(vehicle){
+  const name=normName(vehicle.customer);
+  if(!name) return;
+  const existing=state.clients.find(c=>clientKey(c.name)===clientKey(name));
+  if(existing) return;
+  state.clients.unshift({ id:id('client'), name, contractStart:'', contractEnd:'', contactPerson:'', phone:'', email:'', notes:'Auto-added from fleet', createdAt:new Date().toISOString() });
+  await saveClients();
+}
+
 async function saveFleetVehicle(e){
   e.preventDefault();
   const rawModel = $('fleetModel').value.trim();
@@ -726,6 +861,7 @@ async function saveFleetVehicle(e){
   const idx = state.vehicles.findIndex(v => v.id === vehicle.id);
   if(idx >= 0) state.vehicles[idx] = vehicle; else state.vehicles.unshift(vehicle);
   await saveVehicles();
+  await syncClientFromFleetVehicle(vehicle);
   await logAction(idx >= 0 ? 'Updated fleet vehicle' : 'Added fleet vehicle', 'Fleet', vehicle.plate, `${vehicle.modelNumber}${vehicle.year ? ' ' + vehicle.year : ''} · ${vehicle.status}`, state.user?.name);
   toast('Fleet vehicle saved');
   render();
@@ -786,6 +922,64 @@ async function deleteFleetVehicle(vehicleId){
   toast('Fleet vehicle deleted');
   render();
 }
+
+function importFleetCSV(){
+  const input=document.createElement('input');
+  input.type='file';
+  input.accept='.csv,text/csv';
+  input.onchange=async()=>{
+    const file=input.files?.[0];
+    if(!file) return;
+    try{
+      const rows=parseCSV(await file.text());
+      if(rows.length < 2) return toast('CSV is empty or missing rows');
+      const headers=rows[0].map(normalizeHeader);
+      let imported=0, updated=0, skipped=0;
+      for(const cols of rows.slice(1)){
+        const obj={}; headers.forEach((h,i)=>obj[h]=cols[i] ?? '');
+        const plate=normalizePlatePiece(firstValue(obj,['Number Plate','Plate','Plate Number','Vehicle Plate']));
+        const modelRaw=firstValue(obj,['Vehicle Model','Model','Vehicle','Car']);
+        const customer=firstValue(obj,['Customer','Client','Client Name']);
+        if(!plate || !modelRaw){ skipped++; continue; }
+        const existing=state.vehicles.find(v=>normalizePlatePiece(v.plate)===plate);
+        const parts=splitPlate(plate);
+        const status=firstValue(obj,['Status'], existing?.status || 'In Use');
+        const ownership=firstValue(obj,['Vehicle Type','Type','Ownership'], existing?.ownership || 'SMG Vehicle');
+        const vehicle={
+          id: existing?.id || id('v'),
+          modelNumber:modelWithoutYear(modelRaw),
+          year:firstValue(obj,['Year'], existing?.year || extractYearFromModel(modelRaw)),
+          registeredCompany:firstValue(obj,['Registered Company','Company'], existing?.registeredCompany || 'Garage'),
+          fuelChip:firstValue(obj,['Fuel Chip','Company Fuel Chip'], existing?.fuelChip || 'No'),
+          plate,
+          plateCode:firstValue(obj,['Plate Code'], existing?.plateCode || parts.code),
+          plateNumber:firstValue(obj,['Plate Number','License Number'], existing?.plateNumber || parts.license),
+          customer,
+          status,
+          ownership,
+          vendorName: ownership === 'Outsource' ? firstValue(obj,['Vendor Name','Vendor','Supplier'], existing?.vendorName || '') : '',
+          outsourceStartDate: ownership === 'Outsource' ? firstValue(obj,['Outsource Start Date','Start Date'], existing?.outsourceStartDate || '') : '',
+          outsourceEndDate: ownership === 'Outsource' ? firstValue(obj,['Outsource End Date','End Date'], existing?.outsourceEndDate || '') : '',
+          rentRate: status === 'Off-hire' ? 0 : toNumber(firstValue(obj,['Outsource Rent Rate AED','Rent Rate','Rent'], existing?.rentRate ?? 0),0),
+          clientRate: status === 'Off-hire' ? 0 : toNumber(firstValue(obj,['Client Rate AED','Client Rate','Rate'], existing?.clientRate ?? 0),0),
+          notes:firstValue(obj,['Notes'], existing?.notes || ''),
+          createdAt: existing?.createdAt || new Date().toISOString(),
+          updatedAt:new Date().toISOString()
+        };
+        const idx=state.vehicles.findIndex(v=>v.id===vehicle.id);
+        if(idx>=0){ state.vehicles[idx]=vehicle; updated++; } else { state.vehicles.unshift(vehicle); imported++; }
+        await syncClientFromFleetVehicle(vehicle);
+      }
+      await saveVehicles();
+      await saveClients();
+      await logAction('Imported fleet CSV','Fleet','CSV Import',`${imported} new, ${updated} updated, ${skipped} skipped`,state.user?.name);
+      toast(`Fleet CSV imported: ${imported} new, ${updated} updated, ${skipped} skipped`);
+      render();
+    }catch(err){ console.error(err); toast('Could not import fleet CSV'); }
+  };
+  input.click();
+}
+
 function exportFleet(){
   downloadCSV('sarab-fleet.csv', [
     ['Vehicle Model','Year','Registered Company','Fuel Chip','Plate Code','Plate Number','Number Plate','Customer','Status','Vehicle Type','Vendor Name','Outsource Start Date','Outsource End Date','Outsource Rent Rate AED','Client Rate AED','Total AED','Notes'],
@@ -1030,7 +1224,7 @@ function exportTickets(){
   ]);
 }
 
-function exportHTML(){ return `<div class="page-head"><div><h1>Export CSV</h1><p class="muted">Download records for Excel, accounting, backup, or Supabase migration.</p></div></div><div class="export-grid"><section class="card export-card"><h2>Inventory CSV</h2><p class="muted">All parts, quantities, cost value and shelf location.</p><button class="btn primary full" onclick="exportInventory()">${I('download','icon-sm')} Export Inventory</button></section><section class="card export-card"><h2>Jobs CSV</h2><p class="muted">All jobs, cars, labour, totals and parts used.</p><button class="btn primary full" onclick="exportJobs()">${I('download','icon-sm')} Export Jobs</button></section><section class="card export-card"><h2>Parts Used CSV</h2><p class="muted">Every part used against every vehicle/job.</p><button class="btn primary full" onclick="exportUsage()">${I('download','icon-sm')} Export Parts Used</button></section><section class="card export-card"><h2>Fleet CSV</h2><p class="muted">All fleet vehicles, status, rent rate and client rate.</p><button class="btn primary full" onclick="exportFleet()">${I('download','icon-sm')} Export Fleet</button></section><section class="card export-card"><h2>Ticketing CSV</h2><p class="muted">All requests, statuses, priorities, assignments and SLA details.</p><button class="btn primary full" onclick="exportTickets()">${I('download','icon-sm')} Export Tickets</button></section><section class="card export-card"><h2>Activity Log CSV</h2><p class="muted">Track staff actions across jobs, inventory and fleet.</p><button class="btn primary full" onclick="exportActivity()">${I('download','icon-sm')} Export Activity Log</button></section></div>`; }
+function exportHTML(){ return `<div class="page-head"><div><h1>Export CSV</h1><p class="muted">Download records for Excel, accounting, backup, or Supabase migration.</p></div></div><div class="export-grid"><section class="card export-card"><h2>Clients CSV</h2><p class="muted">Client database, contract dates, linked fleet and revenue summary.</p><button class="btn primary full" onclick="exportClients()">${I('download','icon-sm')} Export Clients</button></section><section class="card export-card"><h2>Inventory CSV</h2><p class="muted">All parts, quantities, cost value and shelf location.</p><button class="btn primary full" onclick="exportInventory()">${I('download','icon-sm')} Export Inventory</button></section><section class="card export-card"><h2>Jobs CSV</h2><p class="muted">All jobs, cars, labour, totals and parts used.</p><button class="btn primary full" onclick="exportJobs()">${I('download','icon-sm')} Export Jobs</button></section><section class="card export-card"><h2>Parts Used CSV</h2><p class="muted">Every part used against every vehicle/job.</p><button class="btn primary full" onclick="exportUsage()">${I('download','icon-sm')} Export Parts Used</button></section><section class="card export-card"><h2>Fleet CSV</h2><p class="muted">All fleet vehicles, status, rent rate and client rate.</p><button class="btn primary full" onclick="exportFleet()">${I('download','icon-sm')} Export Fleet</button></section><section class="card export-card"><h2>Ticketing CSV</h2><p class="muted">All requests, statuses, priorities, assignments and SLA details.</p><button class="btn primary full" onclick="exportTickets()">${I('download','icon-sm')} Export Tickets</button></section></div>`; }
 function settingsHTML(){ return `<div class="page-head"><div><h1>Settings</h1><p class="muted">Settings are currently disabled for garage staff.</p></div></div><section class="card settings-card settings-disabled" aria-disabled="true"><div class="disabled-badge">Disabled</div><h2>Settings locked</h2><p class="muted">This section is greyed out to avoid accidental changes. Only the app owner should update system settings from the code or Supabase dashboard.</p><div class="settings-placeholder"><p><b>Current user</b></p><p>${esc(state.user?.name||'Sarab Al Madina Team')}<br>${esc(state.user?.email||'')}</p><p>Storage mode: ${USE_SUPABASE ? 'Supabase shared database' : 'localStorage local demo'}.</p></div></section>`; }
 
 function toggleFleetVendorField(){
@@ -1058,6 +1252,8 @@ function bindPageEvents(){
   if($('categoryFilter')) $('categoryFilter').onchange=e=>{state.filters.category=e.target.value; renderInventoryResults();};
   if($('stockFilter')) $('stockFilter').onchange=e=>{state.filters.stock=e.target.value; renderInventoryResults();};
   if($('reportMonth')) $('reportMonth').onchange=e=>{state.reportMonth=e.target.value; render();};
+  if($('clientSearch')) $('clientSearch').oninput=e=>{state.clientFilter=e.target.value; render();};
+  if($('clientForm')) $('clientForm').onsubmit=saveClient;
   if($('activitySearch')) $('activitySearch').oninput=e=>{state.activityQuery=e.target.value; render();};
   if($('activitySection')) $('activitySection').onchange=e=>{state.activitySection=e.target.value; render();};
   if($('plateHistorySearch')) $('plateHistorySearch').oninput=e=>{state.vehicleHistoryQuery=e.target.value; renderPlateHistoryResults();};
@@ -1451,7 +1647,7 @@ function exportActivity(){
   downloadCSV('sarab-activity-log.csv', rows);
 }
 
-async function resetDemo(){ if(!confirm('Reset all demo data?')) return; if(USE_SUPABASE){ await sb.from('parts').delete().neq('id','__never__'); await sb.from('jobs').delete().neq('id','__never__'); await sb.from('vehicles').delete().neq('id','__never__'); try { await sb.from('staff').delete().neq('id','__never__'); } catch(e) { console.warn(e); } try { await sb.from('logs').delete().neq('id','__never__'); } catch(e) { console.warn(e); } try { await sb.from('tickets').delete().neq('id','__never__'); } catch(e) { console.warn(e); } state.parts=seedParts.map(p=>({...p})); state.jobs=seedJobs.map(j=>({...j})); state.vehicles=seedVehicles.map(v=>({...v})); state.staff=seedStaff.map(x=>({...x})); state.logs=[]; state.tickets=seedTickets.map(t=>({...t})); await saveParts(); await saveJobs(); await saveVehicles(); await saveStaff(); await saveLogs(); await saveTickets(); } else { set(KEYS.parts, seedParts); set(KEYS.jobs, seedJobs); set(KEYS.vehicles, seedVehicles); set(KEYS.staff, seedStaff); set(KEYS.logs, []); set(KEYS.tickets, seedTickets); } state.filters={q:'',category:'All',stock:'All'}; state.vehicleHistoryQuery=''; state.activityQuery=''; state.activitySection='All'; state.ticketTab='dashboard'; state.ticketSearch=''; state.ticketStatus='All'; state.ticketPriority='All'; toast('Demo data reset'); render(); }
+async function resetDemo(){ if(!confirm('Reset all demo data?')) return; if(USE_SUPABASE){ await sb.from('parts').delete().neq('id','__never__'); await sb.from('jobs').delete().neq('id','__never__'); await sb.from('vehicles').delete().neq('id','__never__'); try { await sb.from('staff').delete().neq('id','__never__'); } catch(e) { console.warn(e); } try { await sb.from('logs').delete().neq('id','__never__'); } catch(e) { console.warn(e); } try { await sb.from('tickets').delete().neq('id','__never__'); } catch(e) { console.warn(e); } state.parts=seedParts.map(p=>({...p})); state.jobs=seedJobs.map(j=>({...j})); state.vehicles=seedVehicles.map(v=>({...v})); state.staff=seedStaff.map(x=>({...x})); state.logs=[]; state.tickets=seedTickets.map(t=>({...t})); state.clients=seedClients.map(c=>({...c})); await saveParts(); await saveJobs(); await saveVehicles(); await saveStaff(); await saveLogs(); await saveTickets(); await saveClients(); } else { set(KEYS.parts, seedParts); set(KEYS.jobs, seedJobs); set(KEYS.vehicles, seedVehicles); set(KEYS.staff, seedStaff); set(KEYS.logs, []); set(KEYS.tickets, seedTickets); set(KEYS.clients, seedClients); } state.filters={q:'',category:'All',stock:'All'}; state.vehicleHistoryQuery=''; state.selectedClient=''; state.clientFilter=''; state.activityQuery=''; state.activitySection='All'; state.ticketTab='dashboard'; state.ticketSearch=''; state.ticketStatus='All'; state.ticketPriority='All'; toast('Demo data reset'); render(); }
 
-window.addStaffFromPrompt=addStaffFromPrompt; window.escalateTicket=escalateTicket; window.deEscalateTicket=deEscalateTicket; window.exportActivity=exportActivity; window.switchTicketTab=switchTicketTab; window.saveTicket=saveTicket; window.deleteTicket=deleteTicket; window.updateTicketStatus=updateTicketStatus; window.viewTicket=viewTicket; window.closeTicketDialog=closeTicketDialog; window.exportTickets=exportTickets; window.fillTicketFromFleet=fillTicketFromFleet; window.startNewJobCard=startNewJobCard; window.loadJobCardForEdit=loadJobCardForEdit; window.goInventory=goInventory; window.goJobs=goJobs; window.exportDashboardInventory=exportDashboardInventory; window.exportDashboardJobs=exportDashboardJobs; window.viewPlateHistory=viewPlateHistory; window.clearPlateHistorySearch=clearPlateHistorySearch; window.exportPlateHistoryCSV=exportPlateHistoryCSV; window.startAddVehicle=startAddVehicle; window.toggleOrdered=toggleOrdered; window.go=go; window.openPartDialog=openPartDialog; window.closePartDialog=closePartDialog; window.openRestockDialog=openRestockDialog; window.closeRestockDialog=closeRestockDialog; window.viewPartUsage=viewPartUsage; window.viewJob=viewJob; window.closeJobDialog=closeJobDialog; window.deleteJob=deleteJob; window.deletePart=deletePart; window.exportInventory=exportInventory; window.importInventoryCSV=importInventoryCSV; window.exportJobs=exportJobs; window.exportUsage=exportUsage; window.exportMonthlyReport=exportMonthlyReport; window.exportFleet=exportFleet; window.editFleetVehicle=editFleetVehicle; window.deleteFleetVehicle=deleteFleetVehicle; window.clearFleetForm=clearFleetForm; window.resetDemo=resetDemo;
+window.addStaffFromPrompt=addStaffFromPrompt; window.selectClient=selectClient; window.editClient=editClient; window.clearClientForm=clearClientForm; window.exportClients=exportClients; window.importFleetCSV=importFleetCSV; window.escalateTicket=escalateTicket; window.deEscalateTicket=deEscalateTicket; window.exportActivity=exportActivity; window.switchTicketTab=switchTicketTab; window.saveTicket=saveTicket; window.deleteTicket=deleteTicket; window.updateTicketStatus=updateTicketStatus; window.viewTicket=viewTicket; window.closeTicketDialog=closeTicketDialog; window.exportTickets=exportTickets; window.fillTicketFromFleet=fillTicketFromFleet; window.startNewJobCard=startNewJobCard; window.loadJobCardForEdit=loadJobCardForEdit; window.goInventory=goInventory; window.goJobs=goJobs; window.exportDashboardInventory=exportDashboardInventory; window.exportDashboardJobs=exportDashboardJobs; window.viewPlateHistory=viewPlateHistory; window.clearPlateHistorySearch=clearPlateHistorySearch; window.exportPlateHistoryCSV=exportPlateHistoryCSV; window.startAddVehicle=startAddVehicle; window.toggleOrdered=toggleOrdered; window.go=go; window.openPartDialog=openPartDialog; window.closePartDialog=closePartDialog; window.openRestockDialog=openRestockDialog; window.closeRestockDialog=closeRestockDialog; window.viewPartUsage=viewPartUsage; window.viewJob=viewJob; window.closeJobDialog=closeJobDialog; window.deleteJob=deleteJob; window.deletePart=deletePart; window.exportInventory=exportInventory; window.importInventoryCSV=importInventoryCSV; window.exportJobs=exportJobs; window.exportUsage=exportUsage; window.exportMonthlyReport=exportMonthlyReport; window.exportFleet=exportFleet; window.editFleetVehicle=editFleetVehicle; window.deleteFleetVehicle=deleteFleetVehicle; window.clearFleetForm=clearFleetForm; window.resetDemo=resetDemo;
 init();
