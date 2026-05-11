@@ -1024,22 +1024,43 @@ function replacementCellId(month, vehicleId, day){ return `rep_${month}_${vehicl
 function replacementValue(month, vehicleId, day){ return (state.replacements || []).find(r=>!r.type && r.month===month && r.vehicleId===vehicleId && Number(r.day)===Number(day))?.value || ''; }
 function currentReplacementCellSnapshot(){
   const snapshot={};
-  document.querySelectorAll('.rep-cell').forEach(cell=>{ const btn=cell.closest('.rep-entry')?.querySelector('.rep-tick'); snapshot[`${cell.dataset.vehicle}_${cell.dataset.day}`]=btn?.classList.contains('active') ? '✓' : cell.value; });
+  document.querySelectorAll('.rep-cell').forEach(cell=>{
+    snapshot[`${cell.dataset.vehicle}_${cell.dataset.day}`]=cell.value || '';
+  });
   return snapshot;
 }
 function restoreReplacementSnapshot(snapshot){
   if(!snapshot) return;
-  document.querySelectorAll('.rep-cell').forEach(cell=>{ const k=`${cell.dataset.vehicle}_${cell.dataset.day}`; const val=snapshot[k] || ''; const btn=cell.closest('.rep-entry')?.querySelector('.rep-tick'); if(btn) btn.classList.toggle('active', val==='✓'); cell.value = val==='✓' ? '' : val; cell.classList.toggle('has-value', Boolean(val)); });
+  document.querySelectorAll('.rep-cell').forEach(cell=>{
+    const k=`${cell.dataset.vehicle}_${cell.dataset.day}`;
+    const val=snapshot[k] || '';
+    cell.value = val;
+    cell.classList.toggle('is-tick', val==='✓');
+    cell.classList.toggle('has-value', Boolean(val));
+  });
   state.replacementDirty=true;
   toast('Undo applied. Click Save to keep it.');
 }
 function stageReplacementCellInput(cell){
   if(!cell) return;
   if(!guardReplacementEdit()){ cell.blur(); return; }
+  const clean=String(cell.value || '').trim();
+  if(clean && clean !== '✓'){
+    const match=state.vehicles.find(v=>String(v.plate||'').toLowerCase()===clean.toLowerCase());
+    if(match) cell.value=match.plate || clean;
+  }
+  cell.classList.toggle('is-tick', cell.value==='✓');
+  cell.classList.toggle('has-value', Boolean(String(cell.value||'').trim()));
   state.replacementDirty=true;
-  const tickBtn = cell.closest('.rep-entry')?.querySelector('.rep-tick');
-  if(cell.value.trim() && cell.value.trim() !== '✓' && tickBtn) tickBtn.classList.remove('active');
-  cell.classList.toggle('has-value', Boolean(cell.value.trim()) || Boolean(tickBtn?.classList.contains('active')));
+}
+function toggleReplacementTick(input){
+  if(!input) return;
+  const month=state.replacementMonth || today().slice(0,7);
+  if(!canEditReplacementMonth(month)){ toast('This month is locked. Use Override PIN to edit.'); return; }
+  if(!state.replacementUndoStack) state.replacementUndoStack=[];
+  state.replacementUndoStack.push(currentReplacementCellSnapshot());
+  input.value = input.value === '✓' ? '' : '✓';
+  stageReplacementCellInput(input);
 }
 async function saveReplacementCell(vehicleId, day, value){
   const month = state.replacementMonth || today().slice(0,7);
@@ -1059,30 +1080,24 @@ async function saveReplacementTable(){
   const month=state.replacementMonth || today().slice(0,7);
   if(!canEditReplacementMonth(month)){ toast('This month is locked. Use Override PIN to edit.'); return; }
   const cells=[...document.querySelectorAll('.rep-cell')];
-  for(const cell of cells){ const ticked = cell.closest('.rep-entry')?.querySelector('.rep-tick')?.classList.contains('active'); await saveReplacementCell(cell.dataset.vehicle, cell.dataset.day, ticked ? '✓' : cell.value); }
+  for(const cell of cells){ await saveReplacementCell(cell.dataset.vehicle, cell.dataset.day, cell.value); }
   await saveReplacements();
   state.replacementDirty=false;
   toast('Replacements saved');
 }
 function tickReplacementCell(btn){
-  const month=state.replacementMonth || today().slice(0,7);
-  if(!canEditReplacementMonth(month)){ toast('This month is locked. Use Override PIN to edit.'); return; }
-  const cell=btn.closest('td')?.querySelector('.rep-cell');
-  if(!cell) return;
-  if(!state.replacementUndoStack) state.replacementUndoStack=[];
-  state.replacementUndoStack.push(currentReplacementCellSnapshot());
-  const isTicked = btn.classList.contains('active');
-  btn.classList.toggle('active', !isTicked);
-  cell.value = isTicked ? '' : '✓';
-  if(!isTicked) cell.value = '✓';
-  stageReplacementCellInput(cell);
+  const input = btn?.closest('td')?.querySelector('.rep-cell') || btn;
+  toggleReplacementTick(input);
 }
 function pickReplacementFromFleet(input){
   const q=String(input.value || '').trim().toLowerCase();
-  const match=state.vehicles.find(v=>String(v.plate||'').toLowerCase()===q || `${v.plate} — ${modelWithoutYear(v.modelNumber)||''}`.toLowerCase().includes(q));
-  if(match && input.value.length>1){ input.value=match.plate || input.value; const btn=input.closest('.rep-entry')?.querySelector('.rep-tick'); if(btn) btn.classList.remove('active'); }
+  if(q && q !== '✓'){
+    const match=state.vehicles.find(v=>String(v.plate||'').toLowerCase()===q || String(v.plate||'').toLowerCase().includes(q));
+    if(match && input.value.length>1) input.value=match.plate || input.value;
+  }
   stageReplacementCellInput(input);
 }
+
 
 function replacementLockId(month){ return `rep_lock_${month}`.replace(/[^a-zA-Z0-9_-]/g,'_'); }
 function replacementLockRow(month){ return (state.replacements || []).find(r=>r.id===replacementLockId(month) || (r.kind==='lock' && r.month===month)); }
@@ -1105,14 +1120,14 @@ async function lockReplacementMonth(){
 function unlockReplacementMonth(){
   const month=state.replacementMonth || today().slice(0,7);
   const pin=prompt('Enter override PIN to edit this locked month');
-  if(pin !== '2580') { toast('Wrong override PIN'); return; }
+  if(pin !== '3100') { toast('Wrong override PIN'); return; }
   if(!state.replacementUnlockedMonths) state.replacementUnlockedMonths=[];
   if(!state.replacementUnlockedMonths.includes(month)) state.replacementUnlockedMonths.push(month);
   toast(`Override enabled for ${month}. You can edit until you leave/reload this page.`);
   render();
 }
 
-const REPLACEMENT_LOCK_PIN = '2580';
+const REPLACEMENT_LOCK_PIN = '3100';
 function replacementLockId(month){ return `rep_lock_${String(month || '').replace(/[^0-9-]/g,'_')}`; }
 function replacementLockRow(month){ return (state.replacements || []).find(r => r.id === replacementLockId(month) || ((r.kind==='lock' || r.type==='lock') && r.month===month)); }
 function isReplacementMonthLocked(month){ const r=replacementLockRow(month); return Boolean(r && (r.locked || r.kind==='lock' || r.type==='lock')); }
@@ -1170,15 +1185,16 @@ function replacementsHTML(){
 function replacementMatrix(vehicles, days, editable=true){
   const month=state.replacementMonth || today().slice(0,7);
   const dayHeads=Array.from({length:days},(_,i)=>`<th class="rep-day-head">${i+1}</th>`).join('');
-  return `<div class="replacement-help-line"><span><b>Tip:</b> each row is one vehicle. Click ✓ for a normal day, or type a replacement plate in the box.</span><span>${vehicles.length} vehicle${vehicles.length===1?'':'s'} shown</span></div><div class="replacement-scroll"><table class="replacement-table compact-replacement-table"><thead><tr><th class="sticky-col rep-vehicle-head">Client / Vehicle</th><th class="sticky-col-2">Plate</th>${dayHeads}</tr></thead><tbody>${vehicles.map(v=>`<tr><td class="sticky-col rep-vehicle"><b>${esc(fleetClientName(v))}</b><small>${esc(modelWithoutYear(v.modelNumber)||'Vehicle')} ${v.year?`· ${esc(v.year)}`:''}</small></td><td class="sticky-col-2"><span class="fleet-plate">${esc(v.plate)}</span></td>${Array.from({length:days},(_,i)=>{ const d=i+1; const val=replacementValue(month,v.id,d); const isTick=val==='✓'; return `<td class="rep-cell-wrap ${!editable?'locked-cell':''}"><div class="rep-entry"><button type="button" class="rep-tick ${isTick?'active':''}" onclick="tickReplacementCell(this)" ${!editable?'disabled':''}>✓</button><input class="rep-cell ${val?'has-value':''}" data-vehicle="${esc(v.id)}" data-day="${d}" value="${esc(isTick?'':val)}" placeholder="" title="Type replacement plate" list="replacementFleetOptions" ${!editable?'disabled':''}></div></td>`; }).join('')}</tr>`).join('')}</tbody></table></div>`;
+  return `<div class="replacement-help-line"><span><b>Tip:</b> each row is one vehicle. Click a blank day cell once to mark ✓, or type a replacement plate in the same cell.</span><span>${vehicles.length} vehicle${vehicles.length===1?'':'s'} shown</span></div><div class="replacement-scroll"><table class="replacement-table compact-replacement-table"><thead><tr><th class="sticky-col rep-vehicle-head">Client / Vehicle</th><th class="sticky-col-2">Plate</th>${dayHeads}</tr></thead><tbody>${vehicles.map(v=>`<tr><td class="sticky-col rep-vehicle"><b>${esc(fleetClientName(v))}</b><small>${esc(modelWithoutYear(v.modelNumber)||'Vehicle')} ${v.year?`· ${esc(v.year)}`:''}</small></td><td class="sticky-col-2"><span class="fleet-plate">${esc(v.plate)}</span></td>${Array.from({length:days},(_,i)=>{ const d=i+1; const val=replacementValue(month,v.id,d); const isTick=val==='✓'; return `<td class="rep-cell-wrap ${!editable?'locked-cell':''}"><input class="rep-cell ${isTick?'is-tick':''} ${val?'has-value':''}" data-vehicle="${esc(v.id)}" data-day="${d}" value="${esc(val)}" placeholder="" title="Click for ✓ or type replacement plate" list="replacementFleetOptions" onclick="if(!this.value) toggleReplacementTick(this)" oninput="stageReplacementCellInput(this)" onchange="pickReplacementFromFleet(this)" ${!editable?'disabled':''}></td>`; }).join('')}</tr>`).join('')}</tbody></table></div>`;
 }
+
 function markVisibleReplacementDays(){
   const month=state.replacementMonth || today().slice(0,7);
   if(!canEditReplacementMonth(month)){ toast('This month is locked. Use Override PIN to edit.'); return; }
   const cells=[...document.querySelectorAll('.rep-cell')];
   if(!state.replacementUndoStack) state.replacementUndoStack=[];
   state.replacementUndoStack.push(currentReplacementCellSnapshot());
-  cells.forEach(cell=>{ const btn=cell.closest('.rep-entry')?.querySelector('.rep-tick'); if(!cell.value.trim() && !btn?.classList.contains('active')){ if(btn) btn.classList.add('active'); cell.value=''; stageReplacementCellInput(cell); } });
+  cells.forEach(cell=>{ if(!String(cell.value||'').trim()){ cell.value='✓'; stageReplacementCellInput(cell); } });
   toast('Visible blanks filled with ✓. Click Save to keep it.');
 }
 function undoReplacementFill(){
@@ -1201,70 +1217,51 @@ function exportReplacementsCSV(){
 function vehicleHistoryRows(){
   const q=String(state.vehicleHistorySearch || '').trim().toLowerCase();
   let vehicles=state.vehicles.slice();
-  if(q) vehicles=vehicles.filter(v=>[v.plate,v.modelNumber,v.year,fleetClientName(v),v.status,v.ownership,v.notes].join(' ').toLowerCase().includes(q));
+  if(q) vehicles=vehicles.filter(v=>[v.plate,v.modelNumber,v.year,fleetClientName(v),v.customer,v.status,v.ownership,v.notes].join(' ').toLowerCase().includes(q));
   return vehicles.sort((a,b)=>String(a.plate||'').localeCompare(String(b.plate||'')));
 }
-function replacementHistoryForVehicle(v){
-  const plate=String(v.plate||'').trim().toLowerCase();
+function vehicleAssignmentTimeline(v){
+  const plateKey=String(v.plate||'').trim().toLowerCase();
+  const clientNow=fleetClientName(v) || '—';
   const rows=[];
-  (state.replacements||[]).forEach(r=>{
-    if(r.kind==='lock' || r.type==='lock') return;
-    const rowVehicle=state.vehicles.find(x=>x.id===r.vehicleId);
-    const month=String(r.month||'');
-    const day=String(r.day||'').padStart(2,'0');
-    const date=month && day ? `${month}-${day}` : month;
-    if(r.vehicleId===v.id){ rows.push({date, client:r.client||fleetClientName(rowVehicle||{}), type:'Assigned row', detail:r.value==='✓'?'Normal use':`Replacement entered: ${r.value}`}); }
-    else if(String(r.value||'').trim().toLowerCase()===plate){ rows.push({date, client:r.client||fleetClientName(rowVehicle||{}), type:'Used as replacement', detail:`Used for ${rowVehicle?.plate || 'another vehicle'}`}); }
+  rows.push({
+    from:v.outsourceStartDate || v.createdAt?.slice(0,10) || 'Current',
+    to:v.status==='Off-hire' ? (v.outsourceEndDate || 'Off-hire') : 'Present',
+    client:clientNow,
+    status:v.status || 'Current',
+    source:'Current fleet record',
+    notes:`${v.ownership || 'Vehicle'}${v.clientRate ? ' · client rate ' + money(v.clientRate) : ''}`
   });
-  return rows.sort((a,b)=>String(b.date).localeCompare(String(a.date)));
+  (state.logs || []).forEach(log=>{
+    const ref=String(log.reference || log.ref || '').trim().toLowerCase();
+    const details=String(log.details || '').trim();
+    if(ref && ref===plateKey && /client/i.test(log.action || '') && details.includes('→')){
+      const parts=details.split('→').map(x=>x.trim());
+      if(parts.length>=2){
+        rows.push({ from:(log.createdAt||log.time||'').slice(0,10) || '—', to:'Until changed', client:parts[1], status:'Past client change', source:'Fleet edit log', notes:`Previous: ${parts[0]}` });
+      }
+    }
+  });
+  return rows.sort((a,b)=>String(b.from).localeCompare(String(a.from)));
 }
 function vehicleHistoryHTML(){
   const vehicles=vehicleHistoryRows();
-  const selected=vehicles[0];
-  return `<div class="page-head"><div><h1>Fleet</h1><p class="muted">Vehicle history by client/date assignment.</p></div><div class="head-actions"><button class="btn light" onclick="exportVehicleHistoryCSV()">${I('download','icon-sm')} Export CSV</button></div></div>
+  return `<div class="page-head"><div><h1>Fleet</h1><p class="muted">Vehicle assignment history by client.</p></div><div class="head-actions"><button class="btn light" onclick="exportVehicleHistoryCSV()">${I('download','icon-sm')} Export CSV</button></div></div>
   ${fleetSubnavHeader('vehicleHistory')}
-  <section class="panel vehicle-history-panel"><div class="section-title"><div><h3>Vehicle History</h3><p class="muted small-note">Search a plate or vehicle to see which client it is attached to and replacement activity by date.</p></div></div><input id="vehicleHistorySearch" class="fleet-search" placeholder="Search by plate, vehicle, client..." value="${esc(state.vehicleHistorySearch||'')}" autocomplete="off"><div class="vehicle-history-list">${vehicles.map(v=>vehicleHistoryCard(v)).join('') || '<div class="empty">No vehicles found.</div>'}</div></section>`;
+  <section class="panel vehicle-history-panel redesigned-vh"><div class="section-title"><div><h3>Vehicle History</h3><p class="muted small-note">See who has each vehicle now, and the recorded history when a vehicle moves from one client to another.</p></div></div>
+  <input id="vehicleHistorySearch" class="fleet-search" placeholder="Search plate, vehicle, or client..." value="${esc(state.vehicleHistorySearch || '')}" autocomplete="off">
+  <div class="vehicle-history-grid">${vehicles.map(vehicleHistoryCard).join('') || '<div class="empty">No vehicles found.</div>'}</div></section>`;
 }
 function vehicleHistoryCard(v){
-  const hist=replacementHistoryForVehicle(v);
-  return `<article class="fleet-card vehicle-history-card"><div class="fleet-card-main"><div><span class="fleet-plate">${esc(v.plate||'—')}</span><h3>${esc(modelWithoutYear(v.modelNumber)||'Vehicle')}${v.year?` <span class="fleet-year">${esc(v.year)}</span>`:''}</h3><p class="muted">Current client: ${esc(fleetClientName(v))} · ${esc(v.status||'—')} · ${esc(v.ownership||'—')}</p></div></div><div class="history-timeline">${hist.length?hist.slice(0,12).map(h=>`<div class="history-item"><b>${esc(h.date)}</b><span>${esc(h.client)}</span><small>${esc(h.type)} — ${esc(h.detail)}</small></div>`).join(''):'<div class="empty small-empty">No replacement history yet. Current fleet record is shown above.</div>'}</div></article>`;
+  const timeline=vehicleAssignmentTimeline(v);
+  return `<article class="vh-card"><div class="vh-card-top"><div><span class="fleet-plate">${esc(v.plate || '—')}</span><h3>${esc(modelWithoutYear(v.modelNumber)||v.modelNumber||'Vehicle')}${v.year?` <span class="fleet-year">${esc(v.year)}</span>`:''}</h3><p class="muted">Current client: <b>${esc(fleetClientName(v))}</b></p></div><span class="pill ${v.status==='In Use'?'green':v.status==='Off-hire'?'red':'orange'}">${esc(v.status||'—')}</span></div><div class="vh-timeline clean">${timeline.map((r,i)=>`<div class="vh-line ${i===0?'current':''}"><div class="vh-dot"></div><div><b>${esc(r.client)}</b><span>${esc(r.from)} → ${esc(r.to)}</span><small>${esc(r.source)} · ${esc(r.notes||'')}</small></div></div>`).join('')}</div></article>`;
 }
 function exportVehicleHistoryCSV(){
-  const rows=[['Plate','Vehicle','Year','Current Client','Status','Ownership','Date','Client','History Type','Details']];
+  const rows=[['Plate','Vehicle','Year','Client','From','To','Status','Source','Notes']];
   vehicleHistoryRows().forEach(v=>{
-    const hist=replacementHistoryForVehicle(v);
-    if(hist.length){ hist.forEach(h=>rows.push([v.plate||'',modelWithoutYear(v.modelNumber)||'',v.year||'',fleetClientName(v),v.status||'',v.ownership||'',h.date,h.client,h.type,h.detail])); }
-    else rows.push([v.plate||'',modelWithoutYear(v.modelNumber)||'',v.year||'',fleetClientName(v),v.status||'',v.ownership||'','','Current fleet assignment','No replacement history yet']);
+    vehicleAssignmentTimeline(v).forEach(r=>rows.push([v.plate||'', modelWithoutYear(v.modelNumber)||v.modelNumber||'', v.year||'', r.client, r.from, r.to, r.status, r.source, r.notes]));
   });
-  downloadCSV('sarab-vehicle-history.csv', rows);
-}
-
-function vehicleHistoryRows(){
-  const q = String(state.vehicleHistorySearch || '').trim().toLowerCase();
-  let vehicles = state.vehicles.slice();
-  if(q) vehicles = vehicles.filter(v => [v.plate, v.modelNumber, v.year, fleetClientName(v), v.customer, v.status, v.ownership].join(' ').toLowerCase().includes(q));
-  return vehicles.sort((a,b)=>String(a.plate||'').localeCompare(String(b.plate||'')));
-}
-function replacementHistoryForVehicle(v){
-  const rows = (state.replacements || []).filter(r => !r.type && r.vehicleId === v.id && r.value && r.value !== '✓')
-    .sort((a,b)=>String(a.month).localeCompare(String(b.month)) || Number(a.day)-Number(b.day));
-  return rows;
-}
-function vehicleHistoryHTML(){
-  const rows = vehicleHistoryRows();
-  return `<div class="page-head"><div><h1>Fleet</h1><p class="muted">Vehicle history by client and replacement date.</p></div><div class="head-actions"><button class="btn light" onclick="exportVehicleHistoryCSV()">${I('download','icon-sm')} Export CSV</button></div></div>
-  ${fleetSubnavHeader('vehicleHistory')}
-  <section class="panel"><div class="section-title"><div><h3>Vehicle History</h3><p class="muted small-note">Search a plate, client, or model to see where a vehicle is assigned and any replacement usage by month/date.</p></div></div><div class="filters vehicle-history-filters"><input id="vehicleHistorySearch" placeholder="Search plate, vehicle, client..." value="${esc(state.vehicleHistorySearch || '')}" autocomplete="off"></div>
-  <div class="vehicle-history-list">${rows.map(v=>{ const hist=replacementHistoryForVehicle(v); return `<article class="vehicle-history-card"><div class="vh-main"><div><span class="fleet-plate">${esc(v.plate || '—')}</span><h3>${esc(modelWithoutYear(v.modelNumber)||v.modelNumber||'Vehicle')}${v.year?` <span class="fleet-year">${esc(v.year)}</span>`:''}</h3><p class="muted">Current client: <b>${esc(fleetClientName(v))}</b> · ${esc(v.status || '—')} · ${esc(v.ownership || '—')}</p></div><div class="vh-count"><small>Replacement records</small><b>${hist.length}</b></div></div>${hist.length?`<div class="vh-timeline">${hist.map(r=>`<div><b>${esc(r.month)}-${String(r.day).padStart(2,'0')}</b><span>${esc(r.client || fleetClientName(v))}</span><span>Replacement: ${esc(r.value)}</span></div>`).join('')}</div>`:'<div class="empty small-empty">No replacement records for this vehicle yet.</div>'}</article>`; }).join('') || '<div class="empty">No vehicles found.</div>'}</div></section>`;
-}
-function exportVehicleHistoryCSV(){
-  const rows=[['Plate','Vehicle','Year','Current Client','Status','Ownership','Replacement Date','Replacement Plate']];
-  vehicleHistoryRows().forEach(v=>{
-    const hist=replacementHistoryForVehicle(v);
-    if(hist.length){ hist.forEach(r=>rows.push([v.plate||'', modelWithoutYear(v.modelNumber)||v.modelNumber||'', v.year||'', fleetClientName(v), v.status||'', v.ownership||'', `${r.month}-${String(r.day).padStart(2,'0')}`, r.value||''])); }
-    else rows.push([v.plate||'', modelWithoutYear(v.modelNumber)||v.modelNumber||'', v.year||'', fleetClientName(v), v.status||'', v.ownership||'', '', '']);
-  });
-  downloadCSV('sarab-vehicle-history.csv', rows);
+  downloadCSV('sarab-vehicle-assignment-history.csv', rows);
 }
 
 function fleetHTML(){
@@ -1339,9 +1336,14 @@ async function saveFleetVehicle(e){
   const duplicate = fleetDuplicate(vehicle);
   if(duplicate) return toast(`Duplicate fleet vehicle blocked: ${duplicate.plate} already exists`);
   const idx = state.vehicles.findIndex(v => v.id === vehicle.id);
+  const previousVehicle = idx >= 0 ? state.vehicles[idx] : null;
+  const previousClient = previousVehicle ? fleetClientName(previousVehicle) : '';
   if(idx >= 0) state.vehicles[idx] = vehicle; else state.vehicles.unshift(vehicle);
   await saveVehicles();
   await syncClientFromFleetVehicle(vehicle);
+  if(previousVehicle && clientKey(previousClient) !== clientKey(fleetClientName(vehicle))){
+    await logAction('Changed vehicle client', 'Fleet', vehicle.plate, `${previousClient || '—'} → ${fleetClientName(vehicle) || '—'}`, state.user?.name);
+  }
   await logAction(idx >= 0 ? 'Updated fleet vehicle' : 'Added fleet vehicle', 'Fleet', vehicle.plate, `${vehicle.modelNumber}${vehicle.year ? ' ' + vehicle.year : ''} · ${vehicle.status}`, state.user?.name);
   toast('Fleet vehicle saved');
   render();
@@ -1727,21 +1729,29 @@ function toggleFleetVendorField(){
     $('fleetClientRate').disabled = isOffHire;
   }
 }
+function renderAndRefocus(inputId){
+  const el=$(inputId);
+  const cursor=el && typeof el.selectionStart==='number' ? el.selectionStart : null;
+  render();
+  requestAnimationFrame(()=>{
+    const next=$(inputId);
+    if(next){ next.focus(); if(cursor !== null) next.setSelectionRange(cursor, cursor); }
+  });
+}
 function bindPageEvents(){
   if($('searchInput')) $('searchInput').oninput=e=>{state.filters.q=e.target.value; renderInventoryResults();};
   if($('categoryFilter')) $('categoryFilter').onchange=e=>{state.filters.category=e.target.value; renderInventoryResults();};
   if($('stockFilter')) $('stockFilter').onchange=e=>{state.filters.stock=e.target.value; renderInventoryResults();};
   if($('reportMonth')) $('reportMonth').onchange=e=>{state.reportMonth=e.target.value; render();};
   if($('clientSearch')) $('clientSearch').oninput=e=>{state.clientFilter=e.target.value; render();};
-  if($('summarySearch')) $('summarySearch').oninput=e=>{state.summarySearch=e.target.value; render();};
+  if($('summarySearch')) $('summarySearch').oninput=e=>{state.summarySearch=e.target.value; renderAndRefocus('summarySearch');};
   if($('summaryClientFilter')) $('summaryClientFilter').onchange=e=>{state.summaryClient=e.target.value; render();};
   if($('summaryOwnershipFilter')) $('summaryOwnershipFilter').onchange=e=>{state.summaryOwnership=e.target.value; render();};
   if($('summarySortFilter')) $('summarySortFilter').onchange=e=>{state.summarySort=e.target.value; render();};
   if($('replacementClient')) $('replacementClient').onchange=e=>{state.replacementClient=e.target.value; render();};
-  if($('replacementVehicleSearch')) $('replacementVehicleSearch').oninput=e=>{state.replacementVehicleSearch=e.target.value; render();};
+  if($('replacementVehicleSearch')) $('replacementVehicleSearch').oninput=e=>{state.replacementVehicleSearch=e.target.value; renderAndRefocus('replacementVehicleSearch');};
   if($('replacementMonth')) $('replacementMonth').onchange=e=>{state.replacementMonth=e.target.value; render();};
-  if($('vehicleHistorySearch')) $('vehicleHistorySearch').oninput=e=>{state.vehicleHistorySearch=e.target.value; render();};
-  if($('vehicleHistorySearch')) $('vehicleHistorySearch').oninput=e=>{state.vehicleHistorySearch=e.target.value; render();};
+  if($('vehicleHistorySearch')) $('vehicleHistorySearch').oninput=e=>{state.vehicleHistorySearch=e.target.value; renderAndRefocus('vehicleHistorySearch');};
   document.querySelectorAll('.rep-cell').forEach(cell=>{ cell.oninput=()=>stageReplacementCellInput(cell); cell.onchange=()=>pickReplacementFromFleet(cell); });
 
   if($('clientForm')) $('clientForm').onsubmit=saveClient;

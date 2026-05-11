@@ -1097,3 +1097,30 @@ input:disabled{
 .vh-timeline b{color:var(--green-dark);}
 @media(max-width:1250px){.summary-hero{grid-template-columns:1fr 1fr}.fleet-summary-row,.fleet-list-like-summary .summary-breakdown-card{grid-template-columns:1fr}.replacement-filters.upgraded{grid-template-columns:1fr 1fr}}
 @media(max-width:760px){.replacement-help-line,.vh-main{display:grid}.vh-timeline>div{grid-template-columns:1fr}.replacement-filters.upgraded{grid-template-columns:1fr}.compact-replacement-table .sticky-col,.compact-replacement-table .sticky-col-2{position:static!important;left:auto!important}}
+
+/* v51 fixes: cleaner replacements, searchable inputs, vehicle assignment history */
+.compact-replacement-table{border-collapse:separate;border-spacing:0;width:max-content;min-width:100%;}
+.compact-replacement-table .rep-day-head{min-width:44px!important;width:44px!important;text-align:center;}
+.compact-replacement-table .sticky-col{min-width:230px!important;width:230px!important;}
+.compact-replacement-table .sticky-col-2{left:230px!important;min-width:116px!important;width:116px!important;}
+.compact-replacement-table tr{height:auto!important;}
+.rep-cell-wrap{min-width:44px!important;width:44px!important;padding:3px!important;text-align:center!important;vertical-align:middle!important;}
+.rep-cell{width:34px!important;min-width:34px!important;height:30px!important;min-height:30px!important;padding:2px!important;border:1px solid #cfe4d7!important;border-radius:8px!important;text-align:center!important;font-size:13px!important;font-weight:850!important;background:#fff!important;color:var(--ink)!important;}
+.rep-cell.is-tick,.rep-cell.has-value.is-tick{background:#dff4e8!important;color:var(--green-dark)!important;border-color:#8fd1ad!important;}
+.rep-cell.has-value:not(.is-tick){width:70px!important;background:#fff7ed!important;color:#9a3412!important;border-color:#fed7aa!important;}
+.replacement-help-line{position:sticky;left:0;z-index:2;background:#fff;padding:8px 0;}
+.redesigned-vh .fleet-search{width:100%;margin-bottom:16px;}
+.vehicle-history-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:14px;}
+.vh-card{border:1px solid var(--line);border-radius:18px;background:#fff;padding:16px;box-shadow:0 8px 24px rgba(17,24,39,.04);}
+.vh-card-top{display:flex;justify-content:space-between;gap:14px;align-items:flex-start;padding-bottom:12px;border-bottom:1px solid var(--line);}
+.vh-card-top h3{font-size:18px;margin:8px 0 4px;color:var(--ink);}
+.vh-timeline.clean{display:grid;gap:0;margin-top:12px;}
+.vh-line{display:grid;grid-template-columns:18px 1fr;gap:10px;position:relative;padding:0 0 14px;}
+.vh-line:before{content:"";position:absolute;left:6px;top:16px;bottom:0;width:2px;background:#d9eadf;}
+.vh-line:last-child:before{display:none;}
+.vh-dot{width:14px;height:14px;border-radius:50%;background:#d1d5db;margin-top:3px;position:relative;z-index:1;}
+.vh-line.current .vh-dot{background:var(--green);box-shadow:0 0 0 5px #e6f5ec;}
+.vh-line b{display:block;color:var(--ink);font-size:15px;margin-bottom:2px;}
+.vh-line span{display:block;color:var(--green-dark);font-size:13px;font-weight:850;margin-bottom:2px;}
+.vh-line small{display:block;color:var(--muted);font-weight:700;line-height:1.4;}
+@media(max-width:760px){.vehicle-history-grid{grid-template-columns:1fr}.compact-replacement-table .sticky-col,.compact-replacement-table .sticky-col-2{position:static!important;left:auto!important}}
