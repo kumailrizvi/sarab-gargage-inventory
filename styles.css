@@ -1443,3 +1443,16 @@ input:disabled{
 .employee-layout.employee-layout-all .employee-list-panel{width:100%;}
 .employee-table-wrap td .tiny{font-size:12px;margin-top:3px;}
 .employee-tabs .tab{white-space:nowrap;}
+
+/* v62: Employee tenure + DDA-style gratuity preview */
+.employee-gratuity-stack{
+  display:grid !important;
+  grid-template-columns:1fr;
+  gap:8px;
+}
+.employee-gratuity-stack > div{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+}
