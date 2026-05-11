@@ -1865,7 +1865,9 @@ function calcUAEGratuity(startDate, basicSalary, endDate=today()){
   const cap = basic * 24;
   return Math.min(amount, cap);
 }
-function employeeFormDefaults(){ return { id:'', type: state.employeeType || 'SMG', name:'', startDate:'', visaStatus:'Garage', basicSalary:0, netSalary:0, passportCollected:false, hasId:false, drivingLicense:false, undertaking:false, labourPermit:false }; }
+function employeeFormDefaults(){ return { id:'', type: state.employeeType || 'SMG', name:'', startDate:'', currentWorking:true, endDate:'', visaStatus:'Garage', basicSalary:0, netSalary:0, passportCollected:false, hasId:false, drivingLicense:false, undertaking:false, labourPermit:false }; }
+function employeeIsCurrentlyWorking(e){ return e.currentWorking !== false; }
+function employeeGratuityEndDate(e){ return employeeIsCurrentlyWorking(e) ? today() : (e.endDate || today()); }
 function getEditingEmployee(){ return state.employees.find(e => e.id === state.editingEmployeeId) || null; }
 function employeeTypeTabs(){ return `<div class="view-tabs employee-tabs"><button class="tab ${state.employeeType==='SMG'?'active':''}" onclick="state.employeeType='SMG';state.editingEmployeeId='';render()">SMG Employees</button><button class="tab ${state.employeeType==='Outsourced'?'active':''}" onclick="state.employeeType='Outsourced';state.editingEmployeeId='';render()">Outsourced Employees</button></div>`; }
 function employeesHTML(){
@@ -1874,7 +1876,7 @@ function employeesHTML(){
   const rows = state.employees.filter(e => (e.type || 'SMG') === type).filter(e => !q || [e.name,e.visaStatus,e.startDate,e.basicSalary,e.netSalary].join(' ').toLowerCase().includes(q));
   const smg = state.employees.filter(e => (e.type || 'SMG') === 'SMG');
   const out = state.employees.filter(e => e.type === 'Outsourced');
-  const gratuityTotal = smg.reduce((a,e)=>a+calcUAEGratuity(e.startDate,e.basicSalary),0);
+  const gratuityTotal = smg.reduce((a,e)=>a+calcUAEGratuity(e.startDate,e.basicSalary,employeeGratuityEndDate(e)),0);
   return `<div class="page-head"><div><h1>Employees</h1><p class="muted">Manage SMG employees, outsourced employees, documents, salaries, and estimated UAE gratuity.</p></div><button class="btn light" onclick="exportEmployees()">${I('download','icon-sm')} Export CSV</button></div>
   <div class="kpis employee-kpis"><section class="card compact-kpi"><b>${smg.length}</b><span>SMG Employees</span></section><section class="card compact-kpi"><b>${out.length}</b><span>Outsourced Employees</span></section><section class="card compact-kpi"><b>${money(gratuityTotal)}</b><span>Estimated gratuity</span></section></div>
   ${employeeTypeTabs()}
@@ -1889,22 +1891,26 @@ function employeeFormHTML(e){
   if(type === 'Outsourced'){
     return `<form id="employeeForm" onsubmit="saveEmployee(event)"><input id="employeeId" type="hidden" value="${esc(e.id)}" /><input id="employeeType" type="hidden" value="Outsourced" />
     <div class="grid two"><label>Name<input id="empName" required value="${esc(e.name)}" placeholder="Employee name" /></label><label>Start date<input id="empStartDate" type="date" value="${esc(e.startDate)}" /></label></div>
+    <label class="checkbox-line employee-current-line"><input id="empCurrentWorking" type="checkbox" ${employeeIsCurrentlyWorking(e)?'checked':''} onchange="toggleEmployeeEndDate()"/> Currently working</label>
+    <div id="employeeEndDateWrap" class="employee-end-date-wrap" style="${employeeIsCurrentlyWorking(e)?'display:none':''}"><label>End date<input id="empEndDate" type="date" value="${esc(e.endDate||'')}" /></label></div>
     <div class="check-grid"><label><input id="empHasId" type="checkbox" ${e.hasId?'checked':''}/> ID</label><label><input id="empDrivingLicense" type="checkbox" ${e.drivingLicense?'checked':''}/> Driving License</label><label><input id="empUndertaking" type="checkbox" ${e.undertaking?'checked':''}/> Undertaking</label><label><input id="empLabourPermit" type="checkbox" ${e.labourPermit?'checked':''}/> Labour part-time permit</label></div>
     <div class="form-actions"><button type="button" class="btn light" onclick="state.editingEmployeeId='';render()">Clear</button><button class="btn primary" type="submit">Save Employee</button></div></form>`;
   }
   return `<form id="employeeForm" onsubmit="saveEmployee(event)"><input id="employeeId" type="hidden" value="${esc(e.id)}" /><input id="employeeType" type="hidden" value="SMG" />
   <div class="grid two"><label>Name<input id="empName" required value="${esc(e.name)}" placeholder="Employee name" /></label><label>Start date<input id="empStartDate" type="date" value="${esc(e.startDate)}" /></label><label>Visa status<select id="empVisaStatus">${EMPLOYEE_VISA_STATUS.map(v=>`<option ${v===(e.visaStatus||'Garage')?'selected':''}>${esc(v)}</option>`).join('')}</select></label><label>Basic salary (AED)<input id="empBasicSalary" type="number" min="0" step="0.01" value="${Number(e.basicSalary||0)}" /></label><label>Net salary (AED)<input id="empNetSalary" type="number" min="0" step="0.01" value="${Number(e.netSalary||0)}" /></label><label class="checkbox-line"><input id="empPassportCollected" type="checkbox" ${e.passportCollected?'checked':''}/> Passport collected</label></div>
-  <div class="employee-gratuity-preview"><span>Estimated gratuity</span><b>${money(calcUAEGratuity(e.startDate,e.basicSalary))}</b></div>
+  <label class="checkbox-line employee-current-line"><input id="empCurrentWorking" type="checkbox" ${employeeIsCurrentlyWorking(e)?'checked':''} onchange="toggleEmployeeEndDate()"/> Currently working</label>
+  <div id="employeeEndDateWrap" class="employee-end-date-wrap" style="${employeeIsCurrentlyWorking(e)?'display:none':''}"><label>End date<input id="empEndDate" type="date" value="${esc(e.endDate||'')}" /></label></div>
+  <div class="employee-gratuity-preview"><span>Estimated gratuity</span><b>${money(calcUAEGratuity(e.startDate,e.basicSalary,employeeGratuityEndDate(e)))}</b></div>
   <div class="form-actions"><button type="button" class="btn light" onclick="state.editingEmployeeId='';render()">Clear</button><button class="btn primary" type="submit">Save Employee</button></div></form>`;
 }
 function employeeTableHTML(rows,type){
   if(!rows.length) return `<div class="empty">No ${esc(type)} employees yet.</div>`;
   const head = type === 'SMG'
-    ? `<tr><th>Name</th><th>Start date</th><th>Visa status</th><th>Basic</th><th>Net</th><th>Gratuity</th><th>Passport</th><th>Action</th></tr>`
-    : `<tr><th>Name</th><th>Start date</th><th>ID</th><th>Driving License</th><th>Undertaking</th><th>Labour Permit</th><th>Action</th></tr>`;
+    ? `<tr><th>Name</th><th>Status</th><th>Start date</th><th>End date</th><th>Visa status</th><th>Basic</th><th>Net</th><th>Gratuity</th><th>Passport</th><th>Action</th></tr>`
+    : `<tr><th>Name</th><th>Status</th><th>Start date</th><th>End date</th><th>ID</th><th>Driving License</th><th>Undertaking</th><th>Labour Permit</th><th>Action</th></tr>`;
   const body = rows.map(e => type === 'SMG'
-    ? `<tr><td><b>${esc(e.name)}</b></td><td>${esc(e.startDate||'—')}</td><td>${esc(e.visaStatus||'—')}</td><td>${money(e.basicSalary)}</td><td>${money(e.netSalary)}</td><td><b class="green-text">${money(calcUAEGratuity(e.startDate,e.basicSalary))}</b></td><td>${e.passportCollected?'Yes':'No'}</td><td><button class="mini-btn" onclick="editEmployee('${esc(e.id)}')">Edit</button><button class="mini-btn danger" onclick="removeEmployee('${esc(e.id)}')">Remove</button></td></tr>`
-    : `<tr><td><b>${esc(e.name)}</b></td><td>${esc(e.startDate||'—')}</td><td>${e.hasId?'✓':'—'}</td><td>${e.drivingLicense?'✓':'—'}</td><td>${e.undertaking?'✓':'—'}</td><td>${e.labourPermit?'✓':'—'}</td><td><button class="mini-btn" onclick="editEmployee('${esc(e.id)}')">Edit</button><button class="mini-btn danger" onclick="removeEmployee('${esc(e.id)}')">Remove</button></td></tr>`).join('');
+    ? `<tr><td><b>${esc(e.name)}</b></td><td>${employeeIsCurrentlyWorking(e)?'<span class="badge green">Working</span>':'<span class="badge muted-badge">Left</span>'}</td><td>${esc(e.startDate||'—')}</td><td>${employeeIsCurrentlyWorking(e)?'—':esc(e.endDate||'—')}</td><td>${esc(e.visaStatus||'—')}</td><td>${money(e.basicSalary)}</td><td>${money(e.netSalary)}</td><td><b class="green-text">${money(calcUAEGratuity(e.startDate,e.basicSalary,employeeGratuityEndDate(e)))}</b></td><td>${e.passportCollected?'Yes':'No'}</td><td><button class="mini-btn" onclick="editEmployee('${esc(e.id)}')">Edit</button><button class="mini-btn danger" onclick="removeEmployee('${esc(e.id)}')">Remove</button></td></tr>`
+    : `<tr><td><b>${esc(e.name)}</b></td><td>${employeeIsCurrentlyWorking(e)?'<span class="badge green">Working</span>':'<span class="badge muted-badge">Left</span>'}</td><td>${esc(e.startDate||'—')}</td><td>${employeeIsCurrentlyWorking(e)?'—':esc(e.endDate||'—')}</td><td>${e.hasId?'✓':'—'}</td><td>${e.drivingLicense?'✓':'—'}</td><td>${e.undertaking?'✓':'—'}</td><td>${e.labourPermit?'✓':'—'}</td><td><button class="mini-btn" onclick="editEmployee('${esc(e.id)}')">Edit</button><button class="mini-btn danger" onclick="removeEmployee('${esc(e.id)}')">Remove</button></td></tr>`).join('');
   return `<div class="table-wrap employee-table-wrap"><table>${head}<tbody>${body}</tbody></table></div>`;
 }
 async function saveEmployee(ev){
@@ -1913,6 +1919,9 @@ async function saveEmployee(ev){
   const existingId = $('employeeId').value;
   const emp = { id: existingId || id('emp'), type, name:$('empName').value.trim(), startDate:$('empStartDate').value || '', updatedAt:new Date().toISOString(), createdAt: existingId ? (getEditingEmployee()?.createdAt || new Date().toISOString()) : new Date().toISOString() };
   if(!emp.name) return toast('Employee name is required');
+  emp.currentWorking = $('empCurrentWorking') ? $('empCurrentWorking').checked : true;
+  emp.endDate = emp.currentWorking ? '' : (($('empEndDate') && $('empEndDate').value) || '');
+  if(!emp.currentWorking && !emp.endDate) return toast('End date is required when employee is not currently working');
   if(type === 'SMG'){
     emp.visaStatus = $('empVisaStatus').value;
     emp.basicSalary = Number($('empBasicSalary').value || 0);
@@ -1935,10 +1944,12 @@ async function saveEmployee(ev){
 function editEmployee(empId){ const e = state.employees.find(x => x.id === empId); if(!e) return; state.employeeType = e.type || 'SMG'; state.editingEmployeeId = empId; render(); }
 async function removeEmployee(empId){ const e = state.employees.find(x => x.id === empId); if(!e) return; if(!confirm(`Remove ${e.name}?`)) return; state.employees = state.employees.filter(x => x.id !== empId); if(USE_SUPABASE) await deleteRemoteRow('employees', empId); await saveEmployees(); await logAction('Removed employee', 'Employees', e.name, e.type || '', state.user?.name); toast('Employee removed'); render(); }
 function exportEmployees(){
-  const rows = [['Type','Name','Start Date','Visa Status','Basic Salary AED','Net Salary AED','Estimated Gratuity AED','Passport Collected','ID','Driving License','Undertaking','Labour Part Time Permit']];
-  state.employees.forEach(e => rows.push([e.type||'SMG', e.name||'', e.startDate||'', e.visaStatus||'', e.basicSalary||0, e.netSalary||0, calcUAEGratuity(e.startDate,e.basicSalary).toFixed(2), e.passportCollected?'Yes':'No', e.hasId?'Yes':'No', e.drivingLicense?'Yes':'No', e.undertaking?'Yes':'No', e.labourPermit?'Yes':'No']));
+  const rows = [['Type','Name','Currently Working','Start Date','End Date','Visa Status','Basic Salary AED','Net Salary AED','Estimated Gratuity AED','Passport Collected','ID','Driving License','Undertaking','Labour Part Time Permit']];
+  state.employees.forEach(e => rows.push([e.type||'SMG', e.name||'', employeeIsCurrentlyWorking(e)?'Yes':'No', e.startDate||'', employeeIsCurrentlyWorking(e)?'':(e.endDate||''), e.visaStatus||'', e.basicSalary||0, e.netSalary||0, calcUAEGratuity(e.startDate,e.basicSalary,employeeGratuityEndDate(e)).toFixed(2), e.passportCollected?'Yes':'No', e.hasId?'Yes':'No', e.drivingLicense?'Yes':'No', e.undertaking?'Yes':'No', e.labourPermit?'Yes':'No']));
   downloadCSV('sarab-employees.csv', rows);
 }
+
+function toggleEmployeeEndDate(){ const wrap = $('employeeEndDateWrap'); const current = $('empCurrentWorking'); if(wrap && current) wrap.style.display = current.checked ? 'none' : 'block'; }
 
 function settingsHTML(){ return `<div class="page-head"><div><h1>Settings</h1><p class="muted">Settings are currently disabled for garage staff.</p></div></div><section class="card settings-card settings-disabled" aria-disabled="true"><div class="disabled-badge">Disabled</div><h2>Settings locked</h2><p class="muted">This section is greyed out to avoid accidental changes. Only the app owner should update system settings from the code or Supabase dashboard.</p><div class="settings-placeholder"><p><b>Current user</b></p><p>${esc(state.user?.name||'Sarab Al Madina Team')}<br>${esc(state.user?.email||'')}</p><p>Storage mode: ${USE_SUPABASE ? 'Supabase shared database' : 'localStorage local demo'}.</p></div></section>`; }
 

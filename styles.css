@@ -1432,3 +1432,8 @@ input:disabled{
   padding:12px 14px !important;
   margin:12px 0 !important;
 }
+.employee-current-line{margin:12px 0 8px;display:flex;align-items:center;gap:10px;font-weight:800;color:#1f2933}
+.employee-end-date-wrap{margin:8px 0 12px;max-width:260px}
+.employee-end-date-wrap input{width:100%}
+.badge.green{background:#e7f7ee;color:#087541;border:1px solid #bfe8d1}
+.badge.muted-badge{background:#eef2f4;color:#5f6b76;border:1px solid #d8e0e5}
