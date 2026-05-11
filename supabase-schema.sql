@@ -192,3 +192,15 @@ for update to authenticated using (true) with check (true);
 drop policy if exists "garage users can delete replacements" on public.replacements;
 create policy "garage users can delete replacements" on public.replacements
 for delete to authenticated using (true);
+
+-- Employees module
+create table if not exists employees (
+  id text primary key,
+  data jsonb not null,
+  updated_at timestamptz default now()
+);
+alter table employees enable row level security;
+drop policy if exists "Employees are readable by authenticated users" on employees;
+drop policy if exists "Employees are writable by authenticated users" on employees;
+create policy "Employees are readable by authenticated users" on employees for select using (auth.role() = 'authenticated');
+create policy "Employees are writable by authenticated users" on employees for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');

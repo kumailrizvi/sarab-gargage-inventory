@@ -18,7 +18,8 @@ const KEYS = {
   logs: 'sam_logs_v1',
   tickets: 'sam_tickets_v1',
   clients: 'sam_clients_v1',
-  replacements: 'sam_replacements_v1'
+  replacements: 'sam_replacements_v1',
+  employees: 'sam_employees_v1'
 };
 const AED = new Intl.NumberFormat('en-AE', { style: 'currency', currency: 'AED' });
 const today = () => new Date().toISOString().slice(0, 10);
@@ -122,7 +123,7 @@ const seedTickets = [
   ...importedComplaintTickets
 ];
 
-const state = { user:null, view:'dashboard', parts:[], jobs:[], vehicles:[], clients:[], staff:[], logs:[], tickets:[], filters:{ q:'', category:'All', stock:'All' }, vehicleHistoryQuery:'', fleetFilter:'', clientFilter:'', selectedClient:'', summarySearch:'', activityQuery:'', activitySection:'All', ticketTab:'dashboard', ticketSearch:'', ticketStatus:'All', ticketPriority:'All', fleetSubView:'list', replacementMonth:today().slice(0,7), replacementClient:'', replacementVehicleSearch:'', replacementUndoStack:[], replacementDirty:false, replacementUnlockedMonths:[], vehicleHistorySearch:'', replacements:[] };
+const state = { user:null, view:'dashboard', parts:[], jobs:[], vehicles:[], clients:[], employees:[], staff:[], logs:[], tickets:[], filters:{ q:'', category:'All', stock:'All' }, vehicleHistoryQuery:'', fleetFilter:'', clientFilter:'', selectedClient:'', summarySearch:'', activityQuery:'', activitySection:'All', ticketTab:'dashboard', ticketSearch:'', ticketStatus:'All', ticketPriority:'All', fleetSubView:'list', replacementMonth:today().slice(0,7), replacementClient:'', replacementVehicleSearch:'', replacementUndoStack:[], replacementDirty:false, replacementUnlockedMonths:[], vehicleHistorySearch:'', replacements:[], employeeType:'SMG', employeeSearch:'', editingEmployeeId:'' };
 function duplicateKey(value){ return String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, ''); }
 function plateDuplicateKey(value){ return String(value || '').trim().toUpperCase().replace(/[^A-Z0-9]+/g, ''); }
 function inventoryDuplicate(part){
@@ -133,6 +134,8 @@ function fleetDuplicate(vehicle){
 }
 const JOB_STATUSES = ['Not Started','Pending','Work Being Done','Done Completed'];
 const REGISTERED_COMPANIES = ['MBR1','MBR2','Garage','AHU','Travel & Tourism'];
+const EMPLOYEE_TYPES = ['SMG','Outsourced'];
+const EMPLOYEE_VISA_STATUS = ['MBR1','MBR2','Garage','AHU','Travel & Tourism'];
 function extractYearFromModel(model=''){
   const match = String(model || '').match(/\b(19\d{2}|20\d{2})\b/);
   return match ? match[1] : '';
@@ -226,8 +229,8 @@ async function updateJobStatus(jobId, newStatus){
   }
   render();
 }
-function ensureLocalData(){ if(!localStorage.getItem(KEYS.users)) set(KEYS.users, seedUsers); if(!localStorage.getItem(KEYS.parts)) set(KEYS.parts, seedParts); if(!localStorage.getItem(KEYS.jobs)) set(KEYS.jobs, seedJobs); if(!localStorage.getItem(KEYS.vehicles)) set(KEYS.vehicles, seedVehicles); if(!localStorage.getItem(KEYS.staff)) set(KEYS.staff, seedStaff); if(!localStorage.getItem(KEYS.logs)) set(KEYS.logs, []); if(!localStorage.getItem(KEYS.tickets)) set(KEYS.tickets, seedTickets); if(!localStorage.getItem(KEYS.clients)) set(KEYS.clients, seedClients); if(!localStorage.getItem(KEYS.replacements)) set(KEYS.replacements, []); }
-function loadLocalData(){ state.user = get(KEYS.session, null); state.parts = get(KEYS.parts, []); state.jobs = get(KEYS.jobs, []); state.vehicles = get(KEYS.vehicles, []); state.clients = get(KEYS.clients, []); state.staff = get(KEYS.staff, []); state.logs = get(KEYS.logs, []); state.tickets = get(KEYS.tickets, []); state.replacements = get(KEYS.replacements, []); }
+function ensureLocalData(){ if(!localStorage.getItem(KEYS.users)) set(KEYS.users, seedUsers); if(!localStorage.getItem(KEYS.parts)) set(KEYS.parts, seedParts); if(!localStorage.getItem(KEYS.jobs)) set(KEYS.jobs, seedJobs); if(!localStorage.getItem(KEYS.vehicles)) set(KEYS.vehicles, seedVehicles); if(!localStorage.getItem(KEYS.staff)) set(KEYS.staff, seedStaff); if(!localStorage.getItem(KEYS.logs)) set(KEYS.logs, []); if(!localStorage.getItem(KEYS.tickets)) set(KEYS.tickets, seedTickets); if(!localStorage.getItem(KEYS.clients)) set(KEYS.clients, seedClients); if(!localStorage.getItem(KEYS.replacements)) set(KEYS.replacements, []); if(!localStorage.getItem(KEYS.employees)) set(KEYS.employees, []); }
+function loadLocalData(){ state.user = get(KEYS.session, null); state.parts = get(KEYS.parts, []); state.jobs = get(KEYS.jobs, []); state.vehicles = get(KEYS.vehicles, []); state.clients = get(KEYS.clients, []); state.employees = get(KEYS.employees, []); state.staff = get(KEYS.staff, []); state.logs = get(KEYS.logs, []); state.tickets = get(KEYS.tickets, []); state.replacements = get(KEYS.replacements, []); }
 function mergeImportedComplaintTickets(){
   const existing = new Set((state.tickets || []).map(t => `${String(t.ticketNo||'').toLowerCase()}|${String(t.plate||'').replace(/\s+/g,'').toLowerCase()}|${String(t.category||'').toLowerCase()}`));
   const missing = importedComplaintTickets.filter(t => !existing.has(`${String(t.ticketNo||'').toLowerCase()}|${String(t.plate||'').replace(/\s+/g,'').toLowerCase()}|${String(t.category||'').toLowerCase()}`));
@@ -259,6 +262,7 @@ async function loadRemoteData(){
   const jobIdsAdded = normalizeJobs();
   state.vehicles = await fetchRows('vehicles');
   state.clients = await fetchRows('clients', { quiet:true });
+  state.employees = await fetchRows('employees', { quiet:true });
   state.replacements = await fetchRows('replacements', { quiet:true });
   const fleetNormalized = normalizeFleetVehicles();
   state.staff = await fetchRows('staff', { quiet:true });
@@ -328,6 +332,13 @@ async function saveClients(){
   if(error){ console.warn('Could not save clients. Run updated schema for the clients table.', error); } else markRemoteSnapshot();
 }
 
+async function saveEmployees(){
+  if(!USE_SUPABASE){ set(KEYS.employees, state.employees); return; }
+  const rows = state.employees.map(e => ({ id:e.id, data:e, updated_at:new Date().toISOString() }));
+  const { error } = await sb.from('employees').upsert(rows);
+  if(error){ console.warn('Could not save employees. Run updated schema for the employees table.', error); toast('Could not save employees. Run updated schema.'); } else markRemoteSnapshot();
+}
+
 async function saveReplacements(){
   if(!USE_SUPABASE){ set(KEYS.replacements, state.replacements); return; }
   const rows = state.replacements.map(r => ({ id:r.id, data:r, updated_at:new Date().toISOString() }));
@@ -346,12 +357,12 @@ let updateToastVisible = false;
 let remoteWatcherTimer = null;
 function stableDataSignature(items){ return (items || []).map(x => JSON.stringify(x)).sort().join('|'); }
 function currentSharedSignature(){
-  return ['parts','jobs','vehicles','clients','tickets','staff','replacements'].map(k => `${k}:${stableDataSignature(state[k])}`).join('||');
+  return ['parts','jobs','vehicles','clients','tickets','staff','replacements','employees'].map(k => `${k}:${stableDataSignature(state[k])}`).join('||');
 }
 function markRemoteSnapshot(){ remoteSignature = currentSharedSignature(); }
 async function fetchRemoteSignature(){
   if(!USE_SUPABASE) return '';
-  const tables = ['parts','jobs','vehicles','clients','tickets','staff','replacements'];
+  const tables = ['parts','jobs','vehicles','clients','tickets','staff','replacements','employees'];
   const pieces = [];
   for(const table of tables){
     const { data, error } = await sb.from(table).select('id,data');
@@ -500,7 +511,7 @@ function stats(){
   const salesValue = state.parts.reduce((a,p)=>a+(Number(p.qty||0)*Number(p.price||0)),0);
   return { totalUnits, lowCount: low.length, todayJobs: todayJobs.length, partsUsedToday, costValue, salesValue };
 }
-function render(){ if(!USE_SUPABASE) loadData(); const s=stats(); const page=$('page'); const views={dashboard:dashboardHTML, clients:clientsHTML, inventory:inventoryHTML, fleet:fleetHTML, fleetSummary:fleetSummaryHTML, replacements:replacementsHTML, vehicleHistory:vehicleHistoryHTML, tickets:ticketsHTML, job:jobHTML, used:usedHTML, reports:reportsHTML, activity:activityHTML, export:exportHTML, settings:settingsHTML}; page.innerHTML=(views[state.view]||dashboardHTML)(s); bindPageEvents(); hydrateStaticIcons(); }
+function render(){ if(!USE_SUPABASE) loadData(); const s=stats(); const page=$('page'); const views={dashboard:dashboardHTML, clients:clientsHTML, inventory:inventoryHTML, employees:employeesHTML, fleet:fleetHTML, fleetSummary:fleetSummaryHTML, replacements:replacementsHTML, vehicleHistory:vehicleHistoryHTML, tickets:ticketsHTML, job:jobHTML, used:usedHTML, reports:reportsHTML, activity:activityHTML, export:exportHTML, settings:settingsHTML}; page.innerHTML=(views[state.view]||dashboardHTML)(s); bindPageEvents(); hydrateStaticIcons(); }
 function kpi(title,num,sub,icon,warn=false,action=''){ const tone=warn?'orange':''; const moneyClass=String(num).includes('AED')?'money':''; const click=action ? ` onclick="${action}" role="button" tabindex="0"` : ''; return `<section class="card kpi ${action ? 'clickable-kpi' : ''}"${click}><div><h3>${title}</h3><div class="num ${tone} ${moneyClass}">${num}</div><p>${sub}</p></div><div class="kpi-icon ${warn?'warn':''}">${I(icon,'icon-xl')}</div></section>`; }
 function statusSummaryCard(){
   const c = statusCounts();
@@ -1837,6 +1848,98 @@ function exportTickets(){
 }
 
 function exportHTML(){ return `<div class="page-head"><div><h1>Export CSV</h1><p class="muted">Download records for Excel, accounting, backup, or Supabase migration.</p></div></div><div class="export-grid"><section class="card export-card"><h2>Clients CSV</h2><p class="muted">Client database, contract dates, linked fleet and revenue summary.</p><button class="btn primary full" onclick="exportClients()">${I('download','icon-sm')} Export Clients</button></section><section class="card export-card"><h2>Inventory CSV</h2><p class="muted">All parts, quantities, cost value and shelf location.</p><button class="btn primary full" onclick="exportInventory()">${I('download','icon-sm')} Export Inventory</button></section><section class="card export-card"><h2>Jobs CSV</h2><p class="muted">All jobs, cars, labour, totals and parts used.</p><button class="btn primary full" onclick="exportJobs()">${I('download','icon-sm')} Export Jobs</button></section><section class="card export-card"><h2>Parts Used CSV</h2><p class="muted">Every part used against every vehicle/job.</p><button class="btn primary full" onclick="exportUsage()">${I('download','icon-sm')} Export Parts Used</button></section><section class="card export-card"><h2>Fleet CSV</h2><p class="muted">All fleet vehicles, status, rent rate and client rate.</p><button class="btn primary full" onclick="exportFleet()">${I('download','icon-sm')} Export Fleet</button></section><section class="card export-card"><h2>Ticketing CSV</h2><p class="muted">All requests, statuses, priorities, assignments and SLA details.</p><button class="btn primary full" onclick="exportTickets()">${I('download','icon-sm')} Export Tickets</button></section></div>`; }
+
+function calcUAEGratuity(startDate, basicSalary, endDate=today()){
+  const basic = Number(basicSalary || 0);
+  if(!startDate || !basic) return 0;
+  const start = new Date(startDate + 'T00:00:00');
+  const end = new Date(endDate + 'T00:00:00');
+  if(isNaN(start) || isNaN(end) || end <= start) return 0;
+  const days = Math.floor((end - start) / 86400000);
+  if(days < 365) return 0;
+  const years = days / 365;
+  const daily = basic / 30;
+  const firstFive = Math.min(years, 5);
+  const afterFive = Math.max(years - 5, 0);
+  let amount = (firstFive * 21 * daily) + (afterFive * 30 * daily);
+  const cap = basic * 24;
+  return Math.min(amount, cap);
+}
+function employeeFormDefaults(){ return { id:'', type: state.employeeType || 'SMG', name:'', startDate:'', visaStatus:'Garage', basicSalary:0, netSalary:0, passportCollected:false, hasId:false, drivingLicense:false, undertaking:false, labourPermit:false }; }
+function getEditingEmployee(){ return state.employees.find(e => e.id === state.editingEmployeeId) || null; }
+function employeeTypeTabs(){ return `<div class="view-tabs employee-tabs"><button class="tab ${state.employeeType==='SMG'?'active':''}" onclick="state.employeeType='SMG';state.editingEmployeeId='';render()">SMG Employees</button><button class="tab ${state.employeeType==='Outsourced'?'active':''}" onclick="state.employeeType='Outsourced';state.editingEmployeeId='';render()">Outsourced Employees</button></div>`; }
+function employeesHTML(){
+  const type = state.employeeType || 'SMG';
+  const q = String(state.employeeSearch || '').toLowerCase();
+  const rows = state.employees.filter(e => (e.type || 'SMG') === type).filter(e => !q || [e.name,e.visaStatus,e.startDate,e.basicSalary,e.netSalary].join(' ').toLowerCase().includes(q));
+  const smg = state.employees.filter(e => (e.type || 'SMG') === 'SMG');
+  const out = state.employees.filter(e => e.type === 'Outsourced');
+  const gratuityTotal = smg.reduce((a,e)=>a+calcUAEGratuity(e.startDate,e.basicSalary),0);
+  return `<div class="page-head"><div><h1>Employees</h1><p class="muted">Manage SMG employees, outsourced employees, documents, salaries, and estimated UAE gratuity.</p></div><button class="btn light" onclick="exportEmployees()">${I('download','icon-sm')} Export CSV</button></div>
+  <div class="kpis employee-kpis"><section class="card compact-kpi"><b>${smg.length}</b><span>SMG Employees</span></section><section class="card compact-kpi"><b>${out.length}</b><span>Outsourced Employees</span></section><section class="card compact-kpi"><b>${money(gratuityTotal)}</b><span>Estimated gratuity</span></section></div>
+  ${employeeTypeTabs()}
+  <div class="employee-layout">
+    <section class="panel employee-form-panel"><h2>${getEditingEmployee() ? 'Edit' : 'Add'} ${type} Employee</h2>${employeeFormHTML(getEditingEmployee() || employeeFormDefaults())}</section>
+    <section class="panel employee-list-panel"><div class="section-title"><h3>${type} Employee List</h3><button class="mini-btn" onclick="state.editingEmployeeId='';render()">New Employee</button></div><input id="employeeSearch" class="search-input" placeholder="Search employee, visa status, salary..." value="${esc(state.employeeSearch)}" oninput="state.employeeSearch=this.value; renderAndRefocus('employeeSearch')" />${employeeTableHTML(rows,type)}</section>
+  </div>
+  <p class="hint">Gratuity is an estimate based on basic salary and start date using the standard UAE 21/30-day approach. Confirm final calculations with HR/legal before settlement.</p>`;
+}
+function employeeFormHTML(e){
+  const type = e.type || state.employeeType || 'SMG';
+  if(type === 'Outsourced'){
+    return `<form id="employeeForm" onsubmit="saveEmployee(event)"><input id="employeeId" type="hidden" value="${esc(e.id)}" /><input id="employeeType" type="hidden" value="Outsourced" />
+    <div class="grid two"><label>Name<input id="empName" required value="${esc(e.name)}" placeholder="Employee name" /></label><label>Start date<input id="empStartDate" type="date" value="${esc(e.startDate)}" /></label></div>
+    <div class="check-grid"><label><input id="empHasId" type="checkbox" ${e.hasId?'checked':''}/> ID</label><label><input id="empDrivingLicense" type="checkbox" ${e.drivingLicense?'checked':''}/> Driving License</label><label><input id="empUndertaking" type="checkbox" ${e.undertaking?'checked':''}/> Undertaking</label><label><input id="empLabourPermit" type="checkbox" ${e.labourPermit?'checked':''}/> Labour part-time permit</label></div>
+    <div class="form-actions"><button type="button" class="btn light" onclick="state.editingEmployeeId='';render()">Clear</button><button class="btn primary" type="submit">Save Employee</button></div></form>`;
+  }
+  return `<form id="employeeForm" onsubmit="saveEmployee(event)"><input id="employeeId" type="hidden" value="${esc(e.id)}" /><input id="employeeType" type="hidden" value="SMG" />
+  <div class="grid two"><label>Name<input id="empName" required value="${esc(e.name)}" placeholder="Employee name" /></label><label>Start date<input id="empStartDate" type="date" value="${esc(e.startDate)}" /></label><label>Visa status<select id="empVisaStatus">${EMPLOYEE_VISA_STATUS.map(v=>`<option ${v===(e.visaStatus||'Garage')?'selected':''}>${esc(v)}</option>`).join('')}</select></label><label>Basic salary (AED)<input id="empBasicSalary" type="number" min="0" step="0.01" value="${Number(e.basicSalary||0)}" /></label><label>Net salary (AED)<input id="empNetSalary" type="number" min="0" step="0.01" value="${Number(e.netSalary||0)}" /></label><label class="checkbox-line"><input id="empPassportCollected" type="checkbox" ${e.passportCollected?'checked':''}/> Passport collected</label></div>
+  <div class="employee-gratuity-preview"><span>Estimated gratuity</span><b>${money(calcUAEGratuity(e.startDate,e.basicSalary))}</b></div>
+  <div class="form-actions"><button type="button" class="btn light" onclick="state.editingEmployeeId='';render()">Clear</button><button class="btn primary" type="submit">Save Employee</button></div></form>`;
+}
+function employeeTableHTML(rows,type){
+  if(!rows.length) return `<div class="empty">No ${esc(type)} employees yet.</div>`;
+  const head = type === 'SMG'
+    ? `<tr><th>Name</th><th>Start date</th><th>Visa status</th><th>Basic</th><th>Net</th><th>Gratuity</th><th>Passport</th><th>Action</th></tr>`
+    : `<tr><th>Name</th><th>Start date</th><th>ID</th><th>Driving License</th><th>Undertaking</th><th>Labour Permit</th><th>Action</th></tr>`;
+  const body = rows.map(e => type === 'SMG'
+    ? `<tr><td><b>${esc(e.name)}</b></td><td>${esc(e.startDate||'—')}</td><td>${esc(e.visaStatus||'—')}</td><td>${money(e.basicSalary)}</td><td>${money(e.netSalary)}</td><td><b class="green-text">${money(calcUAEGratuity(e.startDate,e.basicSalary))}</b></td><td>${e.passportCollected?'Yes':'No'}</td><td><button class="mini-btn" onclick="editEmployee('${esc(e.id)}')">Edit</button><button class="mini-btn danger" onclick="removeEmployee('${esc(e.id)}')">Remove</button></td></tr>`
+    : `<tr><td><b>${esc(e.name)}</b></td><td>${esc(e.startDate||'—')}</td><td>${e.hasId?'✓':'—'}</td><td>${e.drivingLicense?'✓':'—'}</td><td>${e.undertaking?'✓':'—'}</td><td>${e.labourPermit?'✓':'—'}</td><td><button class="mini-btn" onclick="editEmployee('${esc(e.id)}')">Edit</button><button class="mini-btn danger" onclick="removeEmployee('${esc(e.id)}')">Remove</button></td></tr>`).join('');
+  return `<div class="table-wrap employee-table-wrap"><table>${head}<tbody>${body}</tbody></table></div>`;
+}
+async function saveEmployee(ev){
+  ev.preventDefault();
+  const type = $('employeeType').value;
+  const existingId = $('employeeId').value;
+  const emp = { id: existingId || id('emp'), type, name:$('empName').value.trim(), startDate:$('empStartDate').value || '', updatedAt:new Date().toISOString(), createdAt: existingId ? (getEditingEmployee()?.createdAt || new Date().toISOString()) : new Date().toISOString() };
+  if(!emp.name) return toast('Employee name is required');
+  if(type === 'SMG'){
+    emp.visaStatus = $('empVisaStatus').value;
+    emp.basicSalary = Number($('empBasicSalary').value || 0);
+    emp.netSalary = Number($('empNetSalary').value || 0);
+    emp.passportCollected = $('empPassportCollected').checked;
+  } else {
+    emp.hasId = $('empHasId').checked;
+    emp.drivingLicense = $('empDrivingLicense').checked;
+    emp.undertaking = $('empUndertaking').checked;
+    emp.labourPermit = $('empLabourPermit').checked;
+  }
+  const ix = state.employees.findIndex(x => x.id === emp.id);
+  if(ix >= 0) state.employees[ix] = {...state.employees[ix], ...emp}; else state.employees.unshift(emp);
+  await saveEmployees();
+  await logAction(existingId ? 'Updated employee' : 'Added employee', 'Employees', emp.name, type, state.user?.name);
+  state.editingEmployeeId='';
+  toast('Employee saved');
+  render();
+}
+function editEmployee(empId){ const e = state.employees.find(x => x.id === empId); if(!e) return; state.employeeType = e.type || 'SMG'; state.editingEmployeeId = empId; render(); }
+async function removeEmployee(empId){ const e = state.employees.find(x => x.id === empId); if(!e) return; if(!confirm(`Remove ${e.name}?`)) return; state.employees = state.employees.filter(x => x.id !== empId); if(USE_SUPABASE) await deleteRemoteRow('employees', empId); await saveEmployees(); await logAction('Removed employee', 'Employees', e.name, e.type || '', state.user?.name); toast('Employee removed'); render(); }
+function exportEmployees(){
+  const rows = [['Type','Name','Start Date','Visa Status','Basic Salary AED','Net Salary AED','Estimated Gratuity AED','Passport Collected','ID','Driving License','Undertaking','Labour Part Time Permit']];
+  state.employees.forEach(e => rows.push([e.type||'SMG', e.name||'', e.startDate||'', e.visaStatus||'', e.basicSalary||0, e.netSalary||0, calcUAEGratuity(e.startDate,e.basicSalary).toFixed(2), e.passportCollected?'Yes':'No', e.hasId?'Yes':'No', e.drivingLicense?'Yes':'No', e.undertaking?'Yes':'No', e.labourPermit?'Yes':'No']));
+  downloadCSV('sarab-employees.csv', rows);
+}
+
 function settingsHTML(){ return `<div class="page-head"><div><h1>Settings</h1><p class="muted">Settings are currently disabled for garage staff.</p></div></div><section class="card settings-card settings-disabled" aria-disabled="true"><div class="disabled-badge">Disabled</div><h2>Settings locked</h2><p class="muted">This section is greyed out to avoid accidental changes. Only the app owner should update system settings from the code or Supabase dashboard.</p><div class="settings-placeholder"><p><b>Current user</b></p><p>${esc(state.user?.name||'Sarab Al Madina Team')}<br>${esc(state.user?.email||'')}</p><p>Storage mode: ${USE_SUPABASE ? 'Supabase shared database' : 'localStorage local demo'}.</p></div></section>`; }
 
 function toggleFleetVendorField(){
