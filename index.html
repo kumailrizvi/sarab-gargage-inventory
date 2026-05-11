@@ -50,7 +50,12 @@
           <button class="nav active" data-view="dashboard"><span data-icon="gauge"></span>Dashboard</button>
           <button class="nav" data-view="clients"><span data-icon="user"></span>Clients</button>
           <button class="nav" data-view="inventory"><span data-icon="box"></span>Inventory</button>
-          <button class="nav" data-view="fleet"><span data-icon="car"></span>Fleet</button>
+          <button class="nav fleet-parent" data-view="fleet"><span data-icon="car"></span>Fleet</button>
+          <div class="fleet-subnav">
+            <button class="subnav" data-view="fleet">Fleet List</button>
+            <button class="subnav" data-view="fleetSummary">Client wise summary</button>
+            <button class="subnav" data-view="replacements">Replacements</button>
+          </div>
           <button class="nav" data-view="tickets"><span data-icon="file"></span>Ticketing</button>
           <button class="nav" data-view="job"><span data-icon="clipboard"></span>Job Card</button>
           <button class="nav" data-view="used"><span data-icon="wrench"></span>Parts Used</button>

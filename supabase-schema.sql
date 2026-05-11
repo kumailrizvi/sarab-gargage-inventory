@@ -43,6 +43,12 @@ create table if not exists public.clients (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.replacements (
+  id text primary key,
+  data jsonb not null,
+  updated_at timestamptz not null default now()
+);
+
 alter table public.parts enable row level security;
 alter table public.jobs enable row level security;
 alter table public.vehicles enable row level security;
@@ -50,6 +56,7 @@ alter table public.staff enable row level security;
 alter table public.logs enable row level security;
 alter table public.tickets enable row level security;
 alter table public.clients enable row level security;
+alter table public.replacements enable row level security;
 
 -- Internal garage app: any logged-in user can see and manage shared garage records.
 -- Do not use this for public/customer-facing apps without stricter roles.
@@ -167,4 +174,21 @@ for update to authenticated using (true) with check (true);
 
 drop policy if exists "garage users can delete clients" on public.clients;
 create policy "garage users can delete clients" on public.clients
+for delete to authenticated using (true);
+
+
+drop policy if exists "garage users can read replacements" on public.replacements;
+create policy "garage users can read replacements" on public.replacements
+for select to authenticated using (true);
+
+drop policy if exists "garage users can add replacements" on public.replacements;
+create policy "garage users can add replacements" on public.replacements
+for insert to authenticated with check (true);
+
+drop policy if exists "garage users can update replacements" on public.replacements;
+create policy "garage users can update replacements" on public.replacements
+for update to authenticated using (true) with check (true);
+
+drop policy if exists "garage users can delete replacements" on public.replacements;
+create policy "garage users can delete replacements" on public.replacements
 for delete to authenticated using (true);

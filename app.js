@@ -17,7 +17,8 @@ const KEYS = {
   staff: 'sam_staff_v1',
   logs: 'sam_logs_v1',
   tickets: 'sam_tickets_v1',
-  clients: 'sam_clients_v1'
+  clients: 'sam_clients_v1',
+  replacements: 'sam_replacements_v1'
 };
 const AED = new Intl.NumberFormat('en-AE', { style: 'currency', currency: 'AED' });
 const today = () => new Date().toISOString().slice(0, 10);
@@ -121,7 +122,7 @@ const seedTickets = [
   ...importedComplaintTickets
 ];
 
-const state = { user:null, view:'dashboard', parts:[], jobs:[], vehicles:[], clients:[], staff:[], logs:[], tickets:[], filters:{ q:'', category:'All', stock:'All' }, vehicleHistoryQuery:'', fleetFilter:'', clientFilter:'', selectedClient:'', activityQuery:'', activitySection:'All', ticketTab:'dashboard', ticketSearch:'', ticketStatus:'All', ticketPriority:'All' };
+const state = { user:null, view:'dashboard', parts:[], jobs:[], vehicles:[], clients:[], staff:[], logs:[], tickets:[], filters:{ q:'', category:'All', stock:'All' }, vehicleHistoryQuery:'', fleetFilter:'', clientFilter:'', selectedClient:'', activityQuery:'', activitySection:'All', ticketTab:'dashboard', ticketSearch:'', ticketStatus:'All', ticketPriority:'All', fleetSubView:'list', replacementMonth:today().slice(0,7), replacementClient:'', replacements:[] };
 function duplicateKey(value){ return String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, ''); }
 function plateDuplicateKey(value){ return String(value || '').trim().toUpperCase().replace(/[^A-Z0-9]+/g, ''); }
 function inventoryDuplicate(part){
@@ -208,8 +209,8 @@ async function updateJobStatus(jobId, newStatus){
   }
   render();
 }
-function ensureLocalData(){ if(!localStorage.getItem(KEYS.users)) set(KEYS.users, seedUsers); if(!localStorage.getItem(KEYS.parts)) set(KEYS.parts, seedParts); if(!localStorage.getItem(KEYS.jobs)) set(KEYS.jobs, seedJobs); if(!localStorage.getItem(KEYS.vehicles)) set(KEYS.vehicles, seedVehicles); if(!localStorage.getItem(KEYS.staff)) set(KEYS.staff, seedStaff); if(!localStorage.getItem(KEYS.logs)) set(KEYS.logs, []); if(!localStorage.getItem(KEYS.tickets)) set(KEYS.tickets, seedTickets); if(!localStorage.getItem(KEYS.clients)) set(KEYS.clients, seedClients); }
-function loadLocalData(){ state.user = get(KEYS.session, null); state.parts = get(KEYS.parts, []); state.jobs = get(KEYS.jobs, []); state.vehicles = get(KEYS.vehicles, []); state.clients = get(KEYS.clients, []); state.staff = get(KEYS.staff, []); state.logs = get(KEYS.logs, []); state.tickets = get(KEYS.tickets, []); }
+function ensureLocalData(){ if(!localStorage.getItem(KEYS.users)) set(KEYS.users, seedUsers); if(!localStorage.getItem(KEYS.parts)) set(KEYS.parts, seedParts); if(!localStorage.getItem(KEYS.jobs)) set(KEYS.jobs, seedJobs); if(!localStorage.getItem(KEYS.vehicles)) set(KEYS.vehicles, seedVehicles); if(!localStorage.getItem(KEYS.staff)) set(KEYS.staff, seedStaff); if(!localStorage.getItem(KEYS.logs)) set(KEYS.logs, []); if(!localStorage.getItem(KEYS.tickets)) set(KEYS.tickets, seedTickets); if(!localStorage.getItem(KEYS.clients)) set(KEYS.clients, seedClients); if(!localStorage.getItem(KEYS.replacements)) set(KEYS.replacements, []); }
+function loadLocalData(){ state.user = get(KEYS.session, null); state.parts = get(KEYS.parts, []); state.jobs = get(KEYS.jobs, []); state.vehicles = get(KEYS.vehicles, []); state.clients = get(KEYS.clients, []); state.staff = get(KEYS.staff, []); state.logs = get(KEYS.logs, []); state.tickets = get(KEYS.tickets, []); state.replacements = get(KEYS.replacements, []); }
 function mergeImportedComplaintTickets(){
   const existing = new Set((state.tickets || []).map(t => `${String(t.ticketNo||'').toLowerCase()}|${String(t.plate||'').replace(/\s+/g,'').toLowerCase()}|${String(t.category||'').toLowerCase()}`));
   const missing = importedComplaintTickets.filter(t => !existing.has(`${String(t.ticketNo||'').toLowerCase()}|${String(t.plate||'').replace(/\s+/g,'').toLowerCase()}|${String(t.category||'').toLowerCase()}`));
@@ -241,6 +242,7 @@ async function loadRemoteData(){
   const jobIdsAdded = normalizeJobs();
   state.vehicles = await fetchRows('vehicles');
   state.clients = await fetchRows('clients', { quiet:true });
+  state.replacements = await fetchRows('replacements', { quiet:true });
   const fleetNormalized = normalizeFleetVehicles();
   state.staff = await fetchRows('staff', { quiet:true });
   state.logs = await fetchRows('logs', { quiet:true });
@@ -309,6 +311,13 @@ async function saveClients(){
   if(error){ console.warn('Could not save clients. Run updated schema for the clients table.', error); } else markRemoteSnapshot();
 }
 
+async function saveReplacements(){
+  if(!USE_SUPABASE){ set(KEYS.replacements, state.replacements); return; }
+  const rows = state.replacements.map(r => ({ id:r.id, data:r, updated_at:new Date().toISOString() }));
+  const { error } = await sb.from('replacements').upsert(rows);
+  if(error){ console.warn('Could not save replacements. Run updated schema for the replacements table.', error); } else markRemoteSnapshot();
+}
+
 async function deleteRemoteRow(table, id){
   if(!USE_SUPABASE) return;
   const { error } = await sb.from(table).delete().eq('id', id);
@@ -320,16 +329,16 @@ let updateToastVisible = false;
 let remoteWatcherTimer = null;
 function stableDataSignature(items){ return (items || []).map(x => JSON.stringify(x)).sort().join('|'); }
 function currentSharedSignature(){
-  return ['parts','jobs','vehicles','clients','tickets','staff'].map(k => `${k}:${stableDataSignature(state[k])}`).join('||');
+  return ['parts','jobs','vehicles','clients','tickets','staff','replacements'].map(k => `${k}:${stableDataSignature(state[k])}`).join('||');
 }
 function markRemoteSnapshot(){ remoteSignature = currentSharedSignature(); }
 async function fetchRemoteSignature(){
   if(!USE_SUPABASE) return '';
-  const tables = ['parts','jobs','vehicles','clients','tickets','staff'];
+  const tables = ['parts','jobs','vehicles','clients','tickets','staff','replacements'];
   const pieces = [];
   for(const table of tables){
     const { data, error } = await sb.from(table).select('id,data');
-    if(error) throw error;
+    if(error){ console.warn('Signature skipped table', table, error.message || error); continue; }
     pieces.push(`${table}:${(data || []).map(r => JSON.stringify({id:r.id,...r.data})).sort().join('|')}`);
   }
   return pieces.join('||');
@@ -386,6 +395,7 @@ function bindGlobal(){
   $('partForm').onsubmit=savePartFromForm; $('restockForm').onsubmit=saveRestock;
   $('mobileMenu').onclick=()=> $('sidebar').classList.toggle('open');
   document.querySelectorAll('.nav').forEach(btn => btn.onclick=()=>go(btn.dataset.view));
+  document.querySelectorAll('.subnav').forEach(btn => btn.onclick=()=>go(btn.dataset.view));
 }
 function toggleAuth(mode){ $('loginTab').classList.toggle('active', mode==='login'); $('signupTab').classList.toggle('active', mode==='signup'); $('loginForm').classList.toggle('hidden', mode!=='login'); $('signupForm').classList.toggle('hidden', mode!=='signup'); }
 function showAuth(){ $('authScreen').classList.remove('hidden'); $('appShell').classList.add('hidden'); }
@@ -421,7 +431,7 @@ async function logout(){
   if(USE_SUPABASE) await sb.auth.signOut();
   localStorage.removeItem(KEYS.session); state.user=null; showAuth();
 }
-function go(view){ state.view=view; document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('active', b.dataset.view===view)); $('sidebar').classList.remove('open'); render(); }
+function go(view){ state.view=view; document.querySelectorAll('.subnav').forEach(b=>b.classList.toggle('active', b.dataset.view===view)); document.querySelectorAll('.nav').forEach(b=>{ const v=b.dataset.view; const active = v===view || (v==='fleet' && ['fleet','fleetSummary','replacements'].includes(view)); b.classList.toggle('active', active); }); $('sidebar').classList.remove('open'); render(); }
 function goInventory(stock='All'){ state.filters.stock=stock; state.view='inventory'; document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('active', b.dataset.view==='inventory')); $('sidebar').classList.remove('open'); render(); }
 function goJobs(){ state.view='used'; document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('active', b.dataset.view==='used')); $('sidebar').classList.remove('open'); render(); }
 
@@ -473,7 +483,7 @@ function stats(){
   const salesValue = state.parts.reduce((a,p)=>a+(Number(p.qty||0)*Number(p.price||0)),0);
   return { totalUnits, lowCount: low.length, todayJobs: todayJobs.length, partsUsedToday, costValue, salesValue };
 }
-function render(){ if(!USE_SUPABASE) loadData(); const s=stats(); const page=$('page'); const views={dashboard:dashboardHTML, clients:clientsHTML, inventory:inventoryHTML, fleet:fleetHTML, tickets:ticketsHTML, job:jobHTML, used:usedHTML, reports:reportsHTML, activity:activityHTML, export:exportHTML, settings:settingsHTML}; page.innerHTML=(views[state.view]||dashboardHTML)(s); bindPageEvents(); hydrateStaticIcons(); }
+function render(){ if(!USE_SUPABASE) loadData(); const s=stats(); const page=$('page'); const views={dashboard:dashboardHTML, clients:clientsHTML, inventory:inventoryHTML, fleet:fleetHTML, fleetSummary:fleetSummaryHTML, replacements:replacementsHTML, tickets:ticketsHTML, job:jobHTML, used:usedHTML, reports:reportsHTML, activity:activityHTML, export:exportHTML, settings:settingsHTML}; page.innerHTML=(views[state.view]||dashboardHTML)(s); bindPageEvents(); hydrateStaticIcons(); }
 function kpi(title,num,sub,icon,warn=false,action=''){ const tone=warn?'orange':''; const moneyClass=String(num).includes('AED')?'money':''; const click=action ? ` onclick="${action}" role="button" tabindex="0"` : ''; return `<section class="card kpi ${action ? 'clickable-kpi' : ''}"${click}><div><h3>${title}</h3><div class="num ${tone} ${moneyClass}">${num}</div><p>${sub}</p></div><div class="kpi-icon ${warn?'warn':''}">${I(icon,'icon-xl')}</div></section>`; }
 function statusSummaryCard(){
   const c = statusCounts();
@@ -895,6 +905,135 @@ function renderFleetResults(){
     target.innerHTML = vehicles.length ? fleetTable(vehicles) : '<div class="empty">No fleet vehicles found.</div>';
   }
 }
+function fleetSubnavHeader(active){
+  const tabs = [
+    ['fleet','Fleet List'],
+    ['fleetSummary','Client wise summary'],
+    ['replacements','Replacements']
+  ];
+  return `<div class="fleet-page-tabs">${tabs.map(([view,label])=>`<button class="tab ${active===view?'active':''}" onclick="go('${view}')">${label}</button>`).join('')}</div>`;
+}
+function fleetClientName(v){ return normName(v.customer || 'Unassigned'); }
+function fleetVehicleType(v){ return String(v.modelNumber || v.vtype || 'Vehicle').trim() || 'Vehicle'; }
+function fleetIsOutsourced(v){ return String(v.ownership || '').toLowerCase().includes('outsource') || String(v.plate || '').toUpperCase().includes('(OS)'); }
+function fleetClientSummaryRows(){
+  const map = {};
+  state.vehicles.forEach(v=>{
+    const c = fleetClientName(v);
+    if(!map[c]) map[c]={name:c,total:0,inUse:0,own:0,outsource:0,offHire:0,revenue:0,types:{}, locations:new Set()};
+    const r=map[c];
+    r.total++;
+    if(v.status==='In Use') r.inUse++;
+    if(v.status==='Off-hire') r.offHire++;
+    if(fleetIsOutsourced(v)) r.outsource++; else r.own++;
+    if(v.status==='In Use') r.revenue += Number(v.clientRate || 0);
+    const type=fleetVehicleType(v);
+    r.types[type]=(r.types[type]||0)+1;
+    if(v.location) r.locations.add(v.location);
+  });
+  return Object.values(map).map(r=>({ ...r, typesArr:Object.entries(r.types).sort((a,b)=>b[1]-a[1]), locationsArr:[...r.locations] }));
+}
+function filteredFleetSummaryRows(){
+  const client = $('summaryClientFilter')?.value || state.summaryClient || '';
+  const own = $('summaryOwnershipFilter')?.value || state.summaryOwnership || '';
+  const sort = $('summarySortFilter')?.value || state.summarySort || 'total-desc';
+  state.summaryClient = client; state.summaryOwnership = own; state.summarySort = sort;
+  let vehicles = state.vehicles.slice();
+  if(client) vehicles = vehicles.filter(v=>clientKey(fleetClientName(v))===clientKey(client));
+  if(own==='own') vehicles = vehicles.filter(v=>!fleetIsOutsourced(v));
+  if(own==='outsource') vehicles = vehicles.filter(v=>fleetIsOutsourced(v));
+  const oldVehicles = state.vehicles;
+  state.vehicles = vehicles;
+  let rows = fleetClientSummaryRows();
+  state.vehicles = oldVehicles;
+  rows.sort((a,b)=>{
+    if(sort==='total-asc') return a.total-b.total;
+    if(sort==='inuse-desc') return b.inUse-a.inUse;
+    if(sort==='outsource-desc') return b.outsource-a.outsource;
+    if(sort==='name-asc') return a.name.localeCompare(b.name);
+    return b.total-a.total;
+  });
+  return rows;
+}
+function fleetSummaryHTML(){
+  const rows = filteredFleetSummaryRows();
+  const clients = [...new Set(state.vehicles.map(fleetClientName))].sort((a,b)=>a.localeCompare(b));
+  const totalVehicles = rows.reduce((a,r)=>a+r.total,0);
+  const totalOwn = rows.reduce((a,r)=>a+r.own,0);
+  const totalOut = rows.reduce((a,r)=>a+r.outsource,0);
+  const totalRevenue = rows.reduce((a,r)=>a+r.revenue,0);
+  return `<div class="page-head"><div><h1>Fleet</h1><p class="muted">Client-wise fleet summary.</p></div><div class="head-actions"><button class="btn light" onclick="exportFleetSummaryCSV()">${I('download','icon-sm')} Export CSV</button></div></div>
+    ${fleetSubnavHeader('fleetSummary')}
+    <div class="summary-grid fleet-summary-kpis"><div class="scard"><div class="scard-label">Clients</div><div class="scard-val">${rows.length}</div><div class="scard-sub">With fleet assigned</div></div><div class="scard"><div class="scard-label">Total Vehicles</div><div class="scard-val">${totalVehicles}</div><div class="scard-sub">Filtered view</div></div><div class="scard"><div class="scard-label">Own Fleet</div><div class="scard-val ok">${totalOwn}</div><div class="scard-sub">SMG vehicles</div></div><div class="scard"><div class="scard-label">Outsourced</div><div class="scard-val purple">${totalOut}</div><div class="scard-sub">Vendor vehicles</div></div><div class="scard"><div class="scard-label">Monthly Revenue</div><div class="scard-val money-small">${money(totalRevenue)}</div><div class="scard-sub">In-use client rates</div></div></div>
+    <section class="panel fleet-summary-panel"><div class="filters fleet-summary-filters"><select id="summaryClientFilter"><option value="">All clients</option>${clients.map(c=>`<option value="${esc(c)}" ${state.summaryClient===c?'selected':''}>${esc(c)}</option>`).join('')}</select><select id="summaryOwnershipFilter"><option value="">Own + Outsourced</option><option value="own" ${state.summaryOwnership==='own'?'selected':''}>Own only</option><option value="outsource" ${state.summaryOwnership==='outsource'?'selected':''}>Outsourced only</option></select><select id="summarySortFilter"><option value="total-desc" ${state.summarySort==='total-desc'?'selected':''}>Sort: most vehicles</option><option value="total-asc" ${state.summarySort==='total-asc'?'selected':''}>Sort: fewest vehicles</option><option value="inuse-desc" ${state.summarySort==='inuse-desc'?'selected':''}>Sort: most in use</option><option value="outsource-desc" ${state.summarySort==='outsource-desc'?'selected':''}>Sort: most outsourced</option><option value="name-asc" ${state.summarySort==='name-asc'?'selected':''}>Sort: name A-Z</option></select><button class="btn light" onclick="resetFleetSummaryFilters()">Reset</button></div><div class="view-tabs"><button id="summaryCardsTab" class="tab ${state.summaryView!=='table'?'active':''}" onclick="state.summaryView='cards'; render()">Client cards</button><button id="summaryTableTab" class="tab ${state.summaryView==='table'?'active':''}" onclick="state.summaryView='table'; render()">Summary table</button></div>${state.summaryView==='table' ? fleetSummaryTable(rows) : fleetSummaryCards(rows)}</section>`;
+}
+function fleetSummaryCards(rows){
+  const max = Math.max(1, ...rows.map(r=>r.total));
+  return `<div class="fleet-summary-cards">${rows.map((r,i)=>{ const pct=Math.round((r.total/max)*100); const topTypes=r.typesArr.slice(0,4).map(([t,n])=>`<span class="type-pill">${esc(t)} ×${n}</span>`).join(''); return `<article class="client-summary-card"><div class="cc-header"><div><div class="cc-name">${esc(r.name)}</div><div class="cc-meta"><div class="rank-bar-bg"><div class="rank-bar" style="width:${pct}%"></div></div>${r.total} vehicles</div></div><div class="cc-total">${r.total}</div></div><div class="cc-body"><div class="cc-stat"><div class="cc-stat-label">In Use</div><div class="cc-stat-val">${r.inUse}</div></div><div class="cc-stat"><div class="cc-stat-label">Own</div><div class="cc-stat-val ok">${r.own}</div></div><div class="cc-stat"><div class="cc-stat-label">Outsource</div><div class="cc-stat-val purple">${r.outsource}</div></div><div class="cc-stat"><div class="cc-stat-label">Revenue</div><div class="cc-stat-val money-mini">${money(r.revenue)}</div></div></div><div class="cc-types">${topTypes || '<span class="muted">No type data</span>'}</div></article>`; }).join('') || '<div class="empty">No fleet summary found.</div>'}</div>`;
+}
+function fleetSummaryTable(rows){
+  return `<div class="table-wrap"><table><thead><tr><th>Client</th><th>Total</th><th>In Use</th><th>Own</th><th>Outsourced</th><th>Off-hire</th><th>Monthly Revenue</th><th>Top Vehicle Types</th></tr></thead><tbody>${rows.map(r=>`<tr><td><b>${esc(r.name)}</b></td><td>${r.total}</td><td>${r.inUse}</td><td>${r.own}</td><td>${r.outsource}</td><td>${r.offHire}</td><td>${money(r.revenue)}</td><td>${r.typesArr.slice(0,4).map(([t,n])=>`${esc(t)} (${n})`).join(', ')}</td></tr>`).join('') || '<tr><td colspan="8">No records found.</td></tr>'}</tbody></table></div>`;
+}
+function resetFleetSummaryFilters(){ state.summaryClient=''; state.summaryOwnership=''; state.summarySort='total-desc'; render(); }
+function exportFleetSummaryCSV(){
+  const rows=[['Client','Total Vehicles','In Use','Own Fleet','Outsourced','Off-hire','Monthly Revenue AED','Vehicle Types']];
+  fleetClientSummaryRows().forEach(r=>rows.push([r.name,r.total,r.inUse,r.own,r.outsource,r.offHire,r.revenue,r.typesArr.map(([t,n])=>`${t} (${n})`).join('; ')]));
+  downloadCSV('sarab-fleet-client-wise-summary.csv', rows);
+}
+function daysInMonth(month){ const [y,m]=String(month || today().slice(0,7)).split('-').map(Number); return new Date(y, m, 0).getDate(); }
+function replacementClients(){ return [...new Set(state.vehicles.map(fleetClientName))].sort((a,b)=>a.localeCompare(b)); }
+function replacementVehicles(){
+  const clients=replacementClients();
+  if(!state.replacementClient && clients.length) state.replacementClient=clients[0];
+  return state.vehicles.filter(v=>clientKey(fleetClientName(v))===clientKey(state.replacementClient));
+}
+function replacementCellId(month, vehicleId, day){ return `rep_${month}_${vehicleId}_${day}`.replace(/[^a-zA-Z0-9_-]/g,'_'); }
+function replacementValue(month, vehicleId, day){ return (state.replacements || []).find(r=>r.month===month && r.vehicleId===vehicleId && Number(r.day)===Number(day))?.value || ''; }
+async function saveReplacementCell(vehicleId, day, value){
+  const month = state.replacementMonth || today().slice(0,7);
+  const v = state.vehicles.find(x=>x.id===vehicleId);
+  const clean = String(value || '').trim();
+  const rid = replacementCellId(month, vehicleId, day);
+  const idx=(state.replacements || []).findIndex(r=>r.id===rid);
+  if(clean){
+    const row={ id:rid, month, day:Number(day), vehicleId, plate:v?.plate||'', client:fleetClientName(v||{}), vehicle:v?.modelNumber||'', value:clean, updatedAt:new Date().toISOString(), updatedBy:state.user?.name||state.user?.email||'—' };
+    if(idx>=0) state.replacements[idx]=row; else state.replacements.push(row);
+  } else if(idx>=0){
+    state.replacements.splice(idx,1);
+    await deleteRemoteRow('replacements', rid);
+  }
+  await saveReplacements();
+}
+function replacementsHTML(){
+  const clients=replacementClients();
+  if(!state.replacementMonth) state.replacementMonth=today().slice(0,7);
+  if(!state.replacementClient && clients.length) state.replacementClient=clients[0];
+  const vehicles=replacementVehicles();
+  const days=daysInMonth(state.replacementMonth);
+  return `<div class="page-head"><div><h1>Fleet</h1><p class="muted">Replacement register by client and month.</p></div><div class="head-actions"><button class="btn light" onclick="exportReplacementsCSV()">${I('download','icon-sm')} Export CSV</button></div></div>
+    ${fleetSubnavHeader('replacements')}
+    <section class="panel replacements-panel"><div class="section-title"><div><h3>Replacements</h3><p class="muted small-note">Pick a client and month. Type ✓ when the assigned vehicle was used, or type the replacement vehicle/plate used that day.</p></div></div><div class="filters replacement-filters"><label>Client<select id="replacementClient">${clients.map(c=>`<option value="${esc(c)}" ${state.replacementClient===c?'selected':''}>${esc(c)}</option>`).join('')}</select></label><label>Month<input id="replacementMonth" type="month" value="${esc(state.replacementMonth)}"></label><button class="btn light" onclick="markVisibleReplacementDays()">Fill blanks with ✓</button></div>${vehicles.length ? replacementMatrix(vehicles, days) : '<div class="empty">No vehicles found for this client.</div>'}</section>`;
+}
+function replacementMatrix(vehicles, days){
+  const month=state.replacementMonth || today().slice(0,7);
+  const dayHeads=Array.from({length:days},(_,i)=>`<th>${i+1}</th>`).join('');
+  return `<div class="replacement-scroll"><table class="replacement-table"><thead><tr><th class="sticky-col rep-vehicle-head">Vehicle</th><th class="sticky-col-2">Plate</th>${dayHeads}</tr></thead><tbody>${vehicles.map(v=>`<tr><td class="sticky-col rep-vehicle"><b>${esc(modelWithoutYear(v.modelNumber)||'Vehicle')}</b><small>${esc(v.year || '')}</small></td><td class="sticky-col-2"><span class="fleet-plate">${esc(v.plate)}</span></td>${Array.from({length:days},(_,i)=>{ const d=i+1; const val=replacementValue(month,v.id,d); return `<td><input class="rep-cell" data-vehicle="${esc(v.id)}" data-day="${d}" value="${esc(val)}" placeholder="✓"></td>`; }).join('')}</tr>`).join('')}</tbody></table></div>`;
+}
+async function markVisibleReplacementDays(){
+  const cells=[...document.querySelectorAll('.rep-cell')];
+  for(const cell of cells){ if(!cell.value.trim()){ cell.value='✓'; await saveReplacementCell(cell.dataset.vehicle, cell.dataset.day, '✓'); } }
+  toast('Visible blanks marked');
+}
+function exportReplacementsCSV(){
+  const month=state.replacementMonth || today().slice(0,7);
+  const vehicles=replacementVehicles();
+  const days=daysInMonth(month);
+  const headers=['Client','Vehicle','Year','Plate', ...Array.from({length:days},(_,i)=>`Day ${i+1}`)];
+  const rows=[headers];
+  vehicles.forEach(v=>rows.push([fleetClientName(v), modelWithoutYear(v.modelNumber)||'', v.year||'', v.plate||'', ...Array.from({length:days},(_,i)=>replacementValue(month,v.id,i+1))]));
+  downloadCSV(`sarab-replacements-${month}-${state.replacementClient||'all'}.csv`, rows);
+}
+
 function fleetHTML(){
   const vehicles = filteredFleetVehicles();
   const inUse = state.vehicles.filter(v => v.status === 'In Use').length;
@@ -903,6 +1042,7 @@ function fleetHTML(){
   const monthlyRentCost = state.vehicles.reduce((a,v)=>a+(v.ownership === 'Outsource' && v.status !== 'Off-hire' ? Number(v.rentRate||0) : 0),0);
   const monthlyClientRevenue = state.vehicles.reduce((a,v)=>a+(v.status === 'In Use' ? Number(v.clientRate||0) : 0),0);
   return `<div class="page-head"><div><h1>Fleet</h1><p class="muted">Track SMG vehicles, outsourced vehicles, customers, status, rent cost, and client rate.</p></div><div class="head-actions"><button class="btn light" onclick="importFleetCSV()">${I('download','icon-sm')} Import CSV</button><button class="btn primary" onclick="startAddVehicle()">${I('plus','icon-sm')} Add Vehicle</button></div></div>
+  ${fleetSubnavHeader('fleet')}
   <div class="fleet-hero"><div><small>Fleet Revenue View</small><h2>${money(monthlyClientRevenue)}</h2><p>Client rate total for vehicles marked In Use.</p></div><div><span>Total Fleet</span><b>${state.vehicles.length}</b></div><div><span>In Use</span><b>${inUse}</b></div><div><span>Spare / Backup</span><b>${spare + backup}</b></div><div><span>Outsource Rent</span><b>${money(monthlyRentCost)}</b></div></div>
   <div class="fleet-layout improved"><section id="fleetFormPanel" class="panel fleet-form-card"><div class="section-title"><div><h3>Vehicle Details</h3><p class="muted small-note">Add or edit one vehicle. Plate is split into code + plate number, for example R 14534. If year is typed inside model, the app separates it automatically.</p></div></div>
     <form id="fleetForm" class="grid two">
@@ -1360,6 +1500,13 @@ function bindPageEvents(){
   if($('stockFilter')) $('stockFilter').onchange=e=>{state.filters.stock=e.target.value; renderInventoryResults();};
   if($('reportMonth')) $('reportMonth').onchange=e=>{state.reportMonth=e.target.value; render();};
   if($('clientSearch')) $('clientSearch').oninput=e=>{state.clientFilter=e.target.value; render();};
+  if($('summaryClientFilter')) $('summaryClientFilter').onchange=e=>{state.summaryClient=e.target.value; render();};
+  if($('summaryOwnershipFilter')) $('summaryOwnershipFilter').onchange=e=>{state.summaryOwnership=e.target.value; render();};
+  if($('summarySortFilter')) $('summarySortFilter').onchange=e=>{state.summarySort=e.target.value; render();};
+  if($('replacementClient')) $('replacementClient').onchange=e=>{state.replacementClient=e.target.value; render();};
+  if($('replacementMonth')) $('replacementMonth').onchange=e=>{state.replacementMonth=e.target.value; render();};
+  document.querySelectorAll('.rep-cell').forEach(cell=>{ cell.onchange=()=>saveReplacementCell(cell.dataset.vehicle, cell.dataset.day, cell.value); cell.onblur=()=>saveReplacementCell(cell.dataset.vehicle, cell.dataset.day, cell.value); });
+
   if($('clientForm')) $('clientForm').onsubmit=saveClient;
   if($('activitySearch')) $('activitySearch').oninput=e=>{state.activityQuery=e.target.value; render();};
   if($('activitySection')) $('activitySection').onchange=e=>{state.activitySection=e.target.value; render();};
