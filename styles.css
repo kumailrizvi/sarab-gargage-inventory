@@ -618,3 +618,23 @@ input:disabled{
   color:#6b7280;
   cursor:not-allowed;
 }
+
+/* v40 ticketing / request system */
+.ticket-tabs{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 18px}
+.ticket-tab{border:1px solid var(--line);background:#fff;color:var(--green-dark);border-radius:14px;padding:12px 18px;font-weight:800;cursor:pointer}
+.ticket-tab.active{background:var(--green);color:#fff;border-color:var(--green)}
+.ticket-metrics{display:grid;grid-template-columns:repeat(5,minmax(140px,1fr));gap:14px;margin-bottom:18px}
+.ticket-metric{background:#fff;border:1px solid var(--line);border-radius:22px;padding:18px;box-shadow:var(--shadow)}
+.ticket-metric span{display:block;color:var(--muted);font-weight:800;font-size:13px;text-transform:uppercase;letter-spacing:.03em;margin-bottom:8px}
+.ticket-metric b{font-size:34px;color:var(--green)}
+.ticket-list{display:grid;gap:14px}
+.ticket-row{display:grid;grid-template-columns:120px 1fr 230px;gap:18px;align-items:center;border:1px solid var(--line);border-radius:18px;padding:16px 18px;background:#fff}
+.ticket-row.ticket-overdue{border-color:#fecaca;background:#fffafa}
+.ticket-id b{display:block;color:var(--green);font-size:18px}.ticket-id small{color:var(--muted);font-weight:700}
+.ticket-main h3{margin:0 0 6px;font-size:18px}.ticket-main p{margin:3px 0;color:var(--muted)}
+.ticket-badges{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.ticket-side{display:grid;gap:8px;justify-items:start}.ticket-side small{color:var(--muted);font-weight:700}.ticket-side select{min-height:42px}
+.ticket-actions{display:flex;gap:8px;flex-wrap:wrap}.ticket-filters{grid-template-columns:1fr 210px 210px}
+.bar-fill{background:var(--green);height:100%;border-radius:999px;display:flex;align-items:center;justify-content:flex-end;padding-right:8px;color:#fff;font-weight:800;font-size:12px}
+.bar-row{display:flex;align-items:center;gap:12px;margin:10px 0}.bar-label{width:130px;color:var(--muted);font-weight:800}.bar-track{height:18px;background:#eef6f1;border-radius:999px;flex:1;overflow:hidden}
+@media(max-width:1100px){.ticket-metrics{grid-template-columns:repeat(2,1fr)}.ticket-row{grid-template-columns:1fr}.ticket-side{justify-items:stretch}.ticket-filters{grid-template-columns:1fr}}

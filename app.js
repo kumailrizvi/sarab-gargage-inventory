@@ -15,7 +15,8 @@ const KEYS = {
   jobs: 'sam_jobs_v2',
   vehicles: 'sam_vehicles_v1',
   staff: 'sam_staff_v1',
-  logs: 'sam_logs_v1'
+  logs: 'sam_logs_v1',
+  tickets: 'sam_tickets_v1'
 };
 const AED = new Intl.NumberFormat('en-AE', { style: 'currency', currency: 'AED' });
 const today = () => new Date().toISOString().slice(0, 10);
@@ -82,7 +83,16 @@ const seedVehicles = [
   { id:'v_3', modelNumber:'Mitsubishi Canter 2020', plate:'OUT 303', customer:'Client A', status:'In Use', ownership:'Outsource', rentRate:180, clientRate:300, notes:'Outsourced vehicle', createdAt:'2026-01-01T00:00:00Z' }
 ];
 
-const state = { user:null, view:'dashboard', parts:[], jobs:[], vehicles:[], staff:[], logs:[], filters:{ q:'', category:'All', stock:'All' }, vehicleHistoryQuery:'', fleetFilter:'', activityQuery:'', activitySection:'All' };
+
+const TICKET_STATUSES = ['Open','In Progress','Pending','Resolved'];
+const TICKET_PRIORITIES = ['Low','Medium','High','Critical'];
+const TICKET_CATEGORIES = ['Vehicle Issue','Maintenance Request','Accident / Damage','Driver Complaint','Client Request','Document / Permit','Other'];
+const seedTickets = [
+  { id:'t_1', ticketNo:'REQ-001', date:today(), client:'ALIGN', plate:'18710', vehicle:'Mitsubishi Rosa', category:'Vehicle Issue', priority:'High', status:'Open', requestedBy:'Fleet Manager', assignedTo:'Unassigned', provider:'SMG', location:'Garage', description:'AC not cooling properly.', action:'Awaiting inspection', slaDays:3, createdAt:new Date().toISOString() },
+  { id:'t_2', ticketNo:'REQ-002', date:today(), client:'G4S', plate:'23021', vehicle:'Toyota Hiace', category:'Maintenance Request', priority:'Medium', status:'In Progress', requestedBy:'Operations', assignedTo:'Ahmed', provider:'SMG', location:'Abu Dhabi', description:'Routine service request.', action:'Technician assigned', slaDays:7, createdAt:new Date().toISOString() }
+];
+
+const state = { user:null, view:'dashboard', parts:[], jobs:[], vehicles:[], staff:[], logs:[], tickets:[], filters:{ q:'', category:'All', stock:'All' }, vehicleHistoryQuery:'', fleetFilter:'', activityQuery:'', activitySection:'All', ticketTab:'dashboard', ticketSearch:'', ticketStatus:'All', ticketPriority:'All' };
 const JOB_STATUSES = ['Not Started','Pending','Work Being Done','Done Completed'];
 const REGISTERED_COMPANIES = ['MBR1','MBR2','Garage','AHU','Travel & Tourism'];
 function extractYearFromModel(model=''){
@@ -161,8 +171,8 @@ async function updateJobStatus(jobId, newStatus){
   }
   render();
 }
-function ensureLocalData(){ if(!localStorage.getItem(KEYS.users)) set(KEYS.users, seedUsers); if(!localStorage.getItem(KEYS.parts)) set(KEYS.parts, seedParts); if(!localStorage.getItem(KEYS.jobs)) set(KEYS.jobs, seedJobs); if(!localStorage.getItem(KEYS.vehicles)) set(KEYS.vehicles, seedVehicles); if(!localStorage.getItem(KEYS.staff)) set(KEYS.staff, seedStaff); if(!localStorage.getItem(KEYS.logs)) set(KEYS.logs, []); }
-function loadLocalData(){ state.user = get(KEYS.session, null); state.parts = get(KEYS.parts, []); state.jobs = get(KEYS.jobs, []); state.vehicles = get(KEYS.vehicles, []); state.staff = get(KEYS.staff, []); state.logs = get(KEYS.logs, []); }
+function ensureLocalData(){ if(!localStorage.getItem(KEYS.users)) set(KEYS.users, seedUsers); if(!localStorage.getItem(KEYS.parts)) set(KEYS.parts, seedParts); if(!localStorage.getItem(KEYS.jobs)) set(KEYS.jobs, seedJobs); if(!localStorage.getItem(KEYS.vehicles)) set(KEYS.vehicles, seedVehicles); if(!localStorage.getItem(KEYS.staff)) set(KEYS.staff, seedStaff); if(!localStorage.getItem(KEYS.logs)) set(KEYS.logs, []); if(!localStorage.getItem(KEYS.tickets)) set(KEYS.tickets, seedTickets); }
+function loadLocalData(){ state.user = get(KEYS.session, null); state.parts = get(KEYS.parts, []); state.jobs = get(KEYS.jobs, []); state.vehicles = get(KEYS.vehicles, []); state.staff = get(KEYS.staff, []); state.logs = get(KEYS.logs, []); state.tickets = get(KEYS.tickets, []); }
 async function loadSupabaseSession(){
   const { data, error } = await sb.auth.getSession();
   if(error) console.warn(error);
@@ -187,6 +197,8 @@ async function loadRemoteData(){
   const fleetNormalized = normalizeFleetVehicles();
   state.staff = await fetchRows('staff', { quiet:true });
   state.logs = await fetchRows('logs', { quiet:true });
+  state.tickets = await fetchRows('tickets', { quiet:true });
+  if(state.tickets.length === 0){ state.tickets = seedTickets.map(t => ({...t})); await saveTickets(); }
   if(jobIdsAdded) await saveJobs();
   if(fleetNormalized) await saveVehicles();
   if(state.parts.length === 0){
@@ -230,6 +242,12 @@ async function saveLogs(){
   const rows = state.logs.map(x => ({ id:x.id, data:x, updated_at:new Date().toISOString() }));
   const { error } = await sb.from('logs').upsert(rows);
   if(error){ console.warn('Could not save activity log. Run updated schema if you want activity log shared in Supabase.', error); }
+}
+async function saveTickets(){
+  if(!USE_SUPABASE){ set(KEYS.tickets, state.tickets); return; }
+  const rows = state.tickets.map(t => ({ id:t.id, data:t, updated_at:new Date().toISOString() }));
+  const { error } = await sb.from('tickets').upsert(rows);
+  if(error){ console.warn('Could not save tickets. Run updated schema for the ticketing system.', error); }
 }
 async function deleteRemoteRow(table, id){
   if(!USE_SUPABASE) return;
@@ -357,7 +375,7 @@ function stats(){
   const salesValue = state.parts.reduce((a,p)=>a+(Number(p.qty||0)*Number(p.price||0)),0);
   return { totalUnits, lowCount: low.length, todayJobs: todayJobs.length, partsUsedToday, costValue, salesValue };
 }
-function render(){ if(!USE_SUPABASE) loadData(); const s=stats(); const page=$('page'); const views={dashboard:dashboardHTML, inventory:inventoryHTML, fleet:fleetHTML, job:jobHTML, used:usedHTML, reports:reportsHTML, activity:activityHTML, export:exportHTML, settings:settingsHTML}; page.innerHTML=(views[state.view]||dashboardHTML)(s); bindPageEvents(); hydrateStaticIcons(); }
+function render(){ if(!USE_SUPABASE) loadData(); const s=stats(); const page=$('page'); const views={dashboard:dashboardHTML, inventory:inventoryHTML, fleet:fleetHTML, tickets:ticketsHTML, job:jobHTML, used:usedHTML, reports:reportsHTML, activity:activityHTML, export:exportHTML, settings:settingsHTML}; page.innerHTML=(views[state.view]||dashboardHTML)(s); bindPageEvents(); hydrateStaticIcons(); }
 function kpi(title,num,sub,icon,warn=false,action=''){ const tone=warn?'orange':''; const moneyClass=String(num).includes('AED')?'money':''; const click=action ? ` onclick="${action}" role="button" tabindex="0"` : ''; return `<section class="card kpi ${action ? 'clickable-kpi' : ''}"${click}><div><h3>${title}</h3><div class="num ${tone} ${moneyClass}">${num}</div><p>${sub}</p></div><div class="kpi-icon ${warn?'warn':''}">${I(icon,'icon-xl')}</div></section>`; }
 function statusSummaryCard(){
   const c = statusCounts();
@@ -366,7 +384,7 @@ function statusSummaryCard(){
 function dashboardHTML(s){
   const recentJobs=state.jobs.slice(0,4);
   return `<div class="kpis">${kpi('Total Parts',s.totalUnits,'All units in inventory','box',false,"goInventory('All')")}${kpi('Low Stock',s.lowCount,'Parts need restocking','warning',s.lowCount>0,"goInventory('Low')")}${kpi('Jobs Today',s.todayJobs,'Jobs logged today','clipboard',false,"goJobs()")}${kpi('Parts Used Today',s.partsUsedToday,'Total parts used','wrench',false,"goJobs()")}${statusSummaryCard()}</div>
-  <section class="panel quick"><div class="section-title"><h3>Quick Actions</h3></div><div class="quick-grid"><button class="btn primary large-btn" onclick="openPartDialog()">${I('plus')} Add Part</button><button class="btn primary large-btn" onclick="go('job')">${I('clipboard')} Job Card</button><button class="btn primary large-btn" onclick="openRestockDialog()">${I('cart')} Restock</button><button class="btn primary large-btn" onclick="go('export')">${I('file')} Export CSV</button></div></section>
+  <section class="panel quick"><div class="section-title"><h3>Quick Actions</h3></div><div class="quick-grid"><button class="btn primary large-btn" onclick="openPartDialog()">${I('plus')} Add Part</button><button class="btn primary large-btn" onclick="go('job')">${I('clipboard')} Job Card</button><button class="btn primary large-btn" onclick="go('tickets')">${I('file')} Ticketing</button><button class="btn primary large-btn" onclick="openRestockDialog()">${I('cart')} Restock</button><button class="btn primary large-btn" onclick="go('export')">${I('file')} Export CSV</button></div></section>
   ${plateHistoryPanelHTML('Quickly search a plate number from the dashboard and see all work done for that vehicle.')}
   <div class="dashboard-stack"><section class="panel"><div class="section-title"><h3>Inventory Overview</h3><div class="section-actions"><button class="mini-btn" onclick="exportDashboardInventory()">CSV</button><button class="mini-btn" onclick="go('inventory')">View All Inventory</button></div></div>${inventoryTable(state.parts.slice(0,5), true)}</section><section class="panel recent-jobs-panel"><div class="section-title"><h3>Recent Jobs</h3><div class="section-actions"><button class="mini-btn" onclick="exportDashboardJobs()">CSV</button><button class="mini-btn" onclick="go('used')">View All Jobs</button></div></div>${recentJobs.length?`<div class="recent-job-list-clean">${recentJobs.map(dashboardJobRow).join('')}</div>`:'<div class="empty">No jobs logged yet.</div>'}</section></div>`;
 }
@@ -750,7 +768,165 @@ function exportFleet(){
   ]);
 }
 
-function exportHTML(){ return `<div class="page-head"><div><h1>Export CSV</h1><p class="muted">Download records for Excel, accounting, backup, or Supabase migration.</p></div></div><div class="export-grid"><section class="card export-card"><h2>Inventory CSV</h2><p class="muted">All parts, quantities, cost value and shelf location.</p><button class="btn primary full" onclick="exportInventory()">${I('download','icon-sm')} Export Inventory</button></section><section class="card export-card"><h2>Jobs CSV</h2><p class="muted">All jobs, cars, labour, totals and parts used.</p><button class="btn primary full" onclick="exportJobs()">${I('download','icon-sm')} Export Jobs</button></section><section class="card export-card"><h2>Parts Used CSV</h2><p class="muted">Every part used against every vehicle/job.</p><button class="btn primary full" onclick="exportUsage()">${I('download','icon-sm')} Export Parts Used</button></section><section class="card export-card"><h2>Fleet CSV</h2><p class="muted">All fleet vehicles, status, rent rate and client rate.</p><button class="btn primary full" onclick="exportFleet()">${I('download','icon-sm')} Export Fleet</button></section><section class="card export-card"><h2>Activity Log CSV</h2><p class="muted">Track staff actions across jobs, inventory and fleet.</p><button class="btn primary full" onclick="exportActivity()">${I('download','icon-sm')} Export Activity Log</button></section></div>`; }
+
+function nextTicketNo(){
+  const nums = state.tickets.map(t => Number(String(t.ticketNo || '').replace(/\D/g,''))).filter(Boolean);
+  return `REQ-${String((nums.length ? Math.max(...nums) : 0) + 1).padStart(3,'0')}`;
+}
+function ticketDaysOpen(t){
+  const start = new Date(t.date || t.createdAt || today());
+  const now = new Date();
+  return Math.max(0, Math.floor((now - start) / 86400000));
+}
+function ticketStats(){
+  const total = state.tickets.length;
+  const open = state.tickets.filter(t=>t.status==='Open').length;
+  const progress = state.tickets.filter(t=>t.status==='In Progress').length;
+  const pending = state.tickets.filter(t=>t.status==='Pending').length;
+  const resolved = state.tickets.filter(t=>t.status==='Resolved').length;
+  const escalated = state.tickets.filter(t=>t.status!=='Resolved' && ticketDaysOpen(t) > Number(t.slaDays || 7)).length;
+  return {total, open, progress, pending, resolved, escalated};
+}
+function ticketStatusPill(status){
+  const cls = status === 'Resolved' ? 'green' : status === 'Pending' ? 'orange' : status === 'In Progress' ? 'blue' : 'gray';
+  return `<span class="pill ${cls}">${esc(status || 'Open')}</span>`;
+}
+function ticketPriorityPill(priority){
+  const cls = priority === 'Critical' ? 'red' : priority === 'High' ? 'orange' : priority === 'Medium' ? 'blue' : 'green';
+  return `<span class="pill ${cls}">${esc(priority || 'Medium')}</span>`;
+}
+function ticketOptions(options, selected=''){
+  return options.map(x=>`<option value="${esc(x)}" ${x===selected?'selected':''}>${esc(x)}</option>`).join('');
+}
+function filteredTickets(){
+  const q = String(state.ticketSearch || '').trim().toLowerCase();
+  return state.tickets.filter(t=>{
+    const haystack = [t.ticketNo,t.client,t.plate,t.vehicle,t.category,t.description,t.status,t.priority,t.assignedTo,t.provider,t.location,t.requestedBy].join(' ').toLowerCase();
+    const statusOk = state.ticketStatus === 'All' || t.status === state.ticketStatus;
+    const priorityOk = state.ticketPriority === 'All' || t.priority === state.ticketPriority;
+    return (!q || haystack.includes(q)) && statusOk && priorityOk;
+  });
+}
+function switchTicketTab(tab){ state.ticketTab = tab; render(); }
+function ticketTabsHTML(){
+  const tabs = [['dashboard','Dashboard'],['new','Raise Request'],['tracker','All Tickets'],['escalations','Escalations'],['reports','Reports']];
+  return `<div class="ticket-tabs">${tabs.map(([id,label])=>`<button type="button" class="ticket-tab ${state.ticketTab===id?'active':''}" onclick="switchTicketTab('${id}')">${label}</button>`).join('')}</div>`;
+}
+function ticketsHTML(){
+  return `<div class="page-head"><div><h1>Ticketing</h1><p class="muted">Raise requests, monitor open issues, assign staff/providers, and track escalations.</p></div><button class="btn light" onclick="exportTickets()">${I('download','icon-sm')} Export Tickets CSV</button></div>${ticketTabsHTML()}<div id="ticketContent">${ticketTabContentHTML()}</div>`;
+}
+function ticketTabContentHTML(){
+  if(state.ticketTab==='new') return ticketFormHTML();
+  if(state.ticketTab==='tracker') return ticketTrackerHTML();
+  if(state.ticketTab==='escalations') return ticketEscalationsHTML();
+  if(state.ticketTab==='reports') return ticketReportsHTML();
+  return ticketDashboardHTML();
+}
+function ticketDashboardHTML(){
+  const s = ticketStats();
+  const recent = state.tickets.slice(0,5);
+  return `<div class="ticket-metrics"><section class="ticket-metric"><span>Total Requests</span><b>${s.total}</b></section><section class="ticket-metric"><span>In Progress</span><b class="orange">${s.progress}</b></section><section class="ticket-metric"><span>Resolved</span><b class="ok">${s.resolved}</b></section><section class="ticket-metric"><span>Pending</span><b class="low">${s.pending}</b></section><section class="ticket-metric"><span>Escalated</span><b class="low">${s.escalated}</b></section></div><section class="panel"><div class="section-title"><h3>Recent Requests</h3><button class="mini-btn" onclick="switchTicketTab('tracker')">View All</button></div>${recent.length?`<div class="ticket-list">${recent.map(ticketRowHTML).join('')}</div>`:'<div class="empty">No requests yet.</div>'}</section><section class="panel"><div class="section-title"><h3>Quick Actions</h3></div><div class="quick-grid"><button class="btn primary large-btn" onclick="switchTicketTab('new')">${I('plus')} Raise Request</button><button class="btn primary large-btn" onclick="switchTicketTab('tracker')">${I('clipboard')} View Pipeline</button><button class="btn primary large-btn" onclick="switchTicketTab('escalations')">${I('warning')} Escalations</button></div></section>`;
+}
+function ticketTrackerHTML(){
+  return `<section class="panel"><div class="section-title"><h3>All Tickets</h3><button class="mini-btn" onclick="switchTicketTab('new')">New Request</button></div><div class="filters ticket-filters"><input id="ticketSearch" placeholder="Search ticket, plate, client, issue..." value="${esc(state.ticketSearch)}" autocomplete="off"><select id="ticketStatusFilter">${['All',...TICKET_STATUSES].map(x=>`<option ${x===state.ticketStatus?'selected':''}>${x}</option>`).join('')}</select><select id="ticketPriorityFilter">${['All',...TICKET_PRIORITIES].map(x=>`<option ${x===state.ticketPriority?'selected':''}>${x}</option>`).join('')}</select></div><div id="ticketListResults">${ticketListHTML(filteredTickets())}</div></section>`;
+}
+function renderTicketListOnly(){ const target=$('ticketListResults'); if(target) target.innerHTML = ticketListHTML(filteredTickets()); }
+function ticketListHTML(rows){ return rows.length ? `<div class="ticket-list">${rows.map(ticketRowHTML).join('')}</div>` : '<div class="empty">No tickets found.</div>'; }
+function ticketRowHTML(t){
+  const over = t.status !== 'Resolved' && ticketDaysOpen(t) > Number(t.slaDays || 7);
+  return `<article class="ticket-row ${over?'ticket-overdue':''}"><div class="ticket-id"><b>${esc(t.ticketNo)}</b><small>${esc(t.date || '')}</small></div><div class="ticket-main"><h3>${esc(t.category || 'Request')} · ${esc(t.plate || 'No plate')}</h3><p>${esc(t.vehicle || 'No vehicle')} · ${esc(t.client || 'No client')} · ${esc(t.location || 'No location')}</p><p class="muted">${esc(t.description || '')}</p><div class="ticket-badges">${ticketStatusPill(t.status)}${ticketPriorityPill(t.priority)}${over?'<span class="pill red">SLA Breached</span>':''}</div></div><div class="ticket-side"><small>Assigned to</small><b>${esc(t.assignedTo || 'Unassigned')}</b><small>Provider: ${esc(t.provider || '—')}</small><select onchange="updateTicketStatus('${t.id}', this.value)">${TICKET_STATUSES.map(x=>`<option ${x===t.status?'selected':''}>${x}</option>`).join('')}</select><div class="ticket-actions"><button class="mini-btn" onclick="viewTicket('${t.id}')">Open</button><button class="mini-btn danger" onclick="deleteTicket('${t.id}')">Delete</button></div></div></article>`;
+}
+function ticketFormHTML(){
+  return `<section class="panel"><div class="section-title"><div><h3>Raise a Request</h3><p class="muted small-note">Use this for fleet complaints, maintenance requests, client issues, or internal requests.</p></div><span class="pill green">Next: ${nextTicketNo()}</span></div><form id="ticketForm" class="grid"><div class="grid two"><label>Choose from fleet<select id="ticketFleetSelect"><option value="">Manual entry / not in fleet</option>${fleetVehicleOptionsHTML()}</select></label><label>Date<input id="ticketDate" type="date" value="${today()}" required></label><label>Client<input id="ticketClient" placeholder="Client name"></label><label>Plate Number<input id="ticketPlate" placeholder="R 14534"></label><label>Vehicle<input id="ticketVehicle" placeholder="Toyota Hiace"></label><label>Location<input id="ticketLocation" placeholder="Garage / Abu Dhabi / Client site"></label><label>Category<select id="ticketCategory">${TICKET_CATEGORIES.map(x=>`<option>${esc(x)}</option>`).join('')}</select></label><label>Priority<select id="ticketPriority">${TICKET_PRIORITIES.map(x=>`<option ${x==='Medium'?'selected':''}>${x}</option>`).join('')}</select></label><label>Status<select id="ticketStatus">${TICKET_STATUSES.map(x=>`<option>${x}</option>`).join('')}</select></label><label>SLA deadline<select id="ticketSla"><option value="1">1 day</option><option value="3">3 days</option><option value="7" selected>7 days</option><option value="14">14 days</option></select></label><label>Requested by<input id="ticketRequestedBy" placeholder="Name"></label><label>Assigned to<select id="ticketAssignedTo"><option value="Unassigned">Unassigned</option>${staffNames().map(n=>`<option>${esc(n)}</option>`).join('')}</select></label><label>Service provider<input id="ticketProvider" placeholder="SMG / vendor / garage"></label></div><label>Description<textarea id="ticketDescription" required placeholder="Describe the request or complaint..."></textarea></label><label>Current action / notes<textarea id="ticketAction" placeholder="Awaiting assignment / Sent to provider / Inspection done..."></textarea></label><button class="btn primary large-btn" type="submit">${I('clipboard')} Save Request</button></form></section>`;
+}
+function ticketEscalationsHTML(){
+  const rows = state.tickets.filter(t=>t.status !== 'Resolved' && ticketDaysOpen(t) > Number(t.slaDays || 7));
+  return `<section class="panel"><div class="section-title"><h3>Escalated / Overdue Requests</h3><small class="muted">Open requests beyond SLA deadline.</small></div>${rows.length?`<div class="ticket-list">${rows.map(ticketRowHTML).join('')}</div>`:'<div class="empty">No escalations right now.</div>'}</section>`;
+}
+function ticketReportsHTML(){
+  const byStatus = Object.fromEntries(TICKET_STATUSES.map(x=>[x, state.tickets.filter(t=>t.status===x).length]));
+  const byPriority = Object.fromEntries(TICKET_PRIORITIES.map(x=>[x, state.tickets.filter(t=>t.priority===x).length]));
+  const byCategory = {};
+  state.tickets.forEach(t=>{ byCategory[t.category || 'Other'] = (byCategory[t.category || 'Other'] || 0) + 1; });
+  const bar = (label,val,max)=>`<div class="bar-row"><span class="bar-label">${esc(label)}</span><div class="bar-track"><div class="bar-fill" style="width:${Math.max(5,Math.round((val/(max||1))*100))}%"><span>${val}</span></div></div></div>`;
+  const maxS=Math.max(1,...Object.values(byStatus)), maxP=Math.max(1,...Object.values(byPriority)), maxC=Math.max(1,...Object.values(byCategory));
+  return `<div class="report-grid"><section class="panel"><h3>By Status</h3>${Object.entries(byStatus).map(([k,v])=>bar(k,v,maxS)).join('')}</section><section class="panel"><h3>By Priority</h3>${Object.entries(byPriority).map(([k,v])=>bar(k,v,maxP)).join('')}</section></div><section class="panel"><h3>By Category</h3>${Object.entries(byCategory).map(([k,v])=>bar(k,v,maxC)).join('') || '<div class="empty">No data yet.</div>'}</section>`;
+}
+function fillTicketFromFleet(vehicleId){
+  const v = state.vehicles.find(x=>x.id===vehicleId);
+  if(!v) return;
+  if($('ticketClient')) $('ticketClient').value = v.customer || '';
+  if($('ticketPlate')) $('ticketPlate').value = v.plate || '';
+  if($('ticketVehicle')) $('ticketVehicle').value = `${v.modelNumber || ''}${v.year ? ' ' + v.year : ''}`.trim();
+  if($('ticketProvider')) $('ticketProvider').value = v.ownership === 'Outsource' ? (v.vendorName || '') : 'SMG';
+}
+async function saveTicket(e){
+  e.preventDefault();
+  const ticket = {
+    id: id('t'),
+    ticketNo: nextTicketNo(),
+    date: $('ticketDate').value || today(),
+    client: $('ticketClient').value.trim(),
+    plate: normalizePlatePiece($('ticketPlate').value),
+    vehicle: $('ticketVehicle').value.trim(),
+    location: $('ticketLocation').value.trim(),
+    category: $('ticketCategory').value,
+    priority: $('ticketPriority').value,
+    status: $('ticketStatus').value,
+    requestedBy: $('ticketRequestedBy').value.trim() || state.user?.name || '',
+    assignedTo: $('ticketAssignedTo').value,
+    provider: $('ticketProvider').value.trim(),
+    description: $('ticketDescription').value.trim(),
+    action: $('ticketAction').value.trim() || 'Awaiting assignment',
+    slaDays: Number($('ticketSla').value || 7),
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+  if(!ticket.plate || !ticket.category || !ticket.description) return toast('Plate, category, and description are required');
+  state.tickets.unshift(ticket);
+  await saveTickets();
+  await logAction('Created ticket/request', 'Ticketing', ticket.ticketNo, `${ticket.plate} · ${ticket.category}`, ticket.requestedBy || state.user?.name);
+  toast(`${ticket.ticketNo} saved`);
+  state.ticketTab='tracker';
+  render();
+}
+async function updateTicketStatus(ticketId, status){
+  const t = state.tickets.find(x=>x.id===ticketId);
+  if(!t) return;
+  t.status = status;
+  t.updatedAt = new Date().toISOString();
+  await saveTickets();
+  await logAction('Updated ticket status', 'Ticketing', t.ticketNo, `${t.plate || ''} → ${status}`, state.user?.name);
+  toast('Ticket status updated');
+  render();
+}
+async function deleteTicket(ticketId){
+  if(!confirm('Delete this ticket/request?')) return;
+  const t = state.tickets.find(x=>x.id===ticketId);
+  state.tickets = state.tickets.filter(x=>x.id!==ticketId);
+  await saveTickets();
+  await deleteRemoteRow('tickets', ticketId);
+  if(t) await logAction('Deleted ticket/request', 'Ticketing', t.ticketNo, t.plate || '', state.user?.name);
+  toast('Ticket deleted');
+  render();
+}
+function viewTicket(ticketId){
+  const t = state.tickets.find(x=>x.id===ticketId);
+  if(!t) return;
+  $('jobDialogTitle').textContent = `${t.ticketNo} · ${t.plate}`;
+  const over = t.status !== 'Resolved' && ticketDaysOpen(t) > Number(t.slaDays || 7);
+  $('jobDialogBody').innerHTML = `<div class="part-detail"><p><b>Status:</b></p><div class="status-inline">${ticketStatusPill(t.status)} ${ticketPriorityPill(t.priority)} ${over?'<span class="pill red">SLA Breached</span>':''}</div><p><b>Client:</b> ${esc(t.client || '—')}</p><p><b>Vehicle:</b> ${esc(t.vehicle || '—')}</p><p><b>Plate:</b> ${esc(t.plate || '—')}</p><p><b>Category:</b> ${esc(t.category || '—')}</p><p><b>Location:</b> ${esc(t.location || '—')}</p><p><b>Requested by:</b> ${esc(t.requestedBy || '—')}</p><p><b>Assigned to:</b> ${esc(t.assignedTo || '—')}</p><p><b>Provider:</b> ${esc(t.provider || '—')}</p><p><b>Date:</b> ${esc(t.date || '—')} · <b>SLA:</b> ${Number(t.slaDays || 7)} days · <b>Days open:</b> ${ticketDaysOpen(t)}</p><p><b>Description:</b><br>${esc(t.description || '')}</p><p><b>Action / notes:</b><br>${esc(t.action || '')}</p><label>Change Status<select onchange="updateTicketStatus('${t.id}', this.value)">${TICKET_STATUSES.map(x=>`<option ${x===t.status?'selected':''}>${x}</option>`).join('')}</select></label></div>`;
+  $('jobDialog').showModal();
+}
+function closeTicketDialog(){ closeJobDialog(); }
+function exportTickets(){
+  downloadCSV('sarab-ticketing-requests.csv', [
+    ['Ticket ID','Date','Status','Priority','Client','Plate','Vehicle','Category','Location','Requested By','Assigned To','Provider','SLA Days','Days Open','Description','Action / Notes'],
+    ...state.tickets.map(t=>[t.ticketNo,t.date,t.status,t.priority,t.client,t.plate,t.vehicle,t.category,t.location,t.requestedBy,t.assignedTo,t.provider,t.slaDays,ticketDaysOpen(t),t.description,t.action])
+  ]);
+}
+
+function exportHTML(){ return `<div class="page-head"><div><h1>Export CSV</h1><p class="muted">Download records for Excel, accounting, backup, or Supabase migration.</p></div></div><div class="export-grid"><section class="card export-card"><h2>Inventory CSV</h2><p class="muted">All parts, quantities, cost value and shelf location.</p><button class="btn primary full" onclick="exportInventory()">${I('download','icon-sm')} Export Inventory</button></section><section class="card export-card"><h2>Jobs CSV</h2><p class="muted">All jobs, cars, labour, totals and parts used.</p><button class="btn primary full" onclick="exportJobs()">${I('download','icon-sm')} Export Jobs</button></section><section class="card export-card"><h2>Parts Used CSV</h2><p class="muted">Every part used against every vehicle/job.</p><button class="btn primary full" onclick="exportUsage()">${I('download','icon-sm')} Export Parts Used</button></section><section class="card export-card"><h2>Fleet CSV</h2><p class="muted">All fleet vehicles, status, rent rate and client rate.</p><button class="btn primary full" onclick="exportFleet()">${I('download','icon-sm')} Export Fleet</button></section><section class="card export-card"><h2>Ticketing CSV</h2><p class="muted">All requests, statuses, priorities, assignments and SLA details.</p><button class="btn primary full" onclick="exportTickets()">${I('download','icon-sm')} Export Tickets</button></section><section class="card export-card"><h2>Activity Log CSV</h2><p class="muted">Track staff actions across jobs, inventory and fleet.</p><button class="btn primary full" onclick="exportActivity()">${I('download','icon-sm')} Export Activity Log</button></section></div>`; }
 function settingsHTML(){ return `<div class="page-head"><div><h1>Settings</h1><p class="muted">Settings are currently disabled for garage staff.</p></div></div><section class="card settings-card settings-disabled" aria-disabled="true"><div class="disabled-badge">Disabled</div><h2>Settings locked</h2><p class="muted">This section is greyed out to avoid accidental changes. Only the app owner should update system settings from the code or Supabase dashboard.</p><div class="settings-placeholder"><p><b>Current user</b></p><p>${esc(state.user?.name||'Sarab Al Madina Team')}<br>${esc(state.user?.email||'')}</p><p>Storage mode: ${USE_SUPABASE ? 'Supabase shared database' : 'localStorage local demo'}.</p></div></section>`; }
 
 function toggleFleetVendorField(){
@@ -781,6 +957,10 @@ function bindPageEvents(){
   if($('activitySearch')) $('activitySearch').oninput=e=>{state.activityQuery=e.target.value; render();};
   if($('activitySection')) $('activitySection').onchange=e=>{state.activitySection=e.target.value; render();};
   if($('plateHistorySearch')) $('plateHistorySearch').oninput=e=>{state.vehicleHistoryQuery=e.target.value; renderPlateHistoryResults();};
+  if($('ticketSearch')) $('ticketSearch').oninput=e=>{state.ticketSearch=e.target.value; renderTicketListOnly();};
+  if($('ticketStatusFilter')) $('ticketStatusFilter').onchange=e=>{state.ticketStatus=e.target.value; renderTicketListOnly();};
+  if($('ticketPriorityFilter')) $('ticketPriorityFilter').onchange=e=>{state.ticketPriority=e.target.value; renderTicketListOnly();};
+  if($('ticketForm')){ $('ticketForm').onsubmit=saveTicket; if($('ticketFleetSelect')) $('ticketFleetSelect').onchange=e=>fillTicketFromFleet(e.target.value); }
   if($('fleetForm')){ $('fleetForm').onsubmit=saveFleetVehicle; if($('fleetSearch')) $('fleetSearch').oninput=e=>{state.fleetFilter=e.target.value; renderFleetResults();}; if($('fleetOwnership')) $('fleetOwnership').onchange=toggleFleetVendorField; if($('fleetStatus')) $('fleetStatus').onchange=toggleFleetVendorField; if($('fleetModel')) $('fleetModel').onblur=()=>{ const y=extractYearFromModel($('fleetModel').value); if(y && !$('fleetYear').value){ $('fleetYear').value=y; $('fleetModel').value=modelWithoutYear($('fleetModel').value); } }; toggleFleetVendorField(); }
   if($('jobForm')){ $('addLineBtn').onclick=()=>addPartLine(); $('addCustomBtn').onclick=()=>addCustomCharge(); if($('newJobModeBtn')) $('newJobModeBtn').onclick=startNewJobCard; if($('jobEditSelect')) $('jobEditSelect').onchange=e=>{ if(e.target.value) loadJobCardForEdit(e.target.value); }; if($('jobDate')) $('jobDate').onchange=()=>{ if(!$('jobEditId').value) $('jobCardPreview').textContent=nextJobCardId($('jobDate').value || today()); }; $('jobLabour').oninput=updateJobSummary; $('jobLabourHours').oninput=updateJobSummary; if($('jobFleetSelect')) $('jobFleetSelect').onchange=e=>{ if(e.target.value) fillJobFromFleet(e.target.value); }; if($('jobDoneBySelect')) $('jobDoneBySelect').onchange=e=>{ if(e.target.value) addStaffName(e.target.value); }; if($('jobPlateCode')) $('jobPlateCode').oninput=updateFleetPlateSuggestions; if($('jobPlateNumber')) $('jobPlateNumber').oninput=updateFleetPlateSuggestions; addPartLine(); addCustomCharge('', 0); updateFleetPlateSuggestions(); updateJobSummary(); $('jobForm').onsubmit=saveJob; }
 }
@@ -1167,7 +1347,7 @@ function exportActivity(){
   downloadCSV('sarab-activity-log.csv', rows);
 }
 
-async function resetDemo(){ if(!confirm('Reset all demo data?')) return; if(USE_SUPABASE){ await sb.from('parts').delete().neq('id','__never__'); await sb.from('jobs').delete().neq('id','__never__'); await sb.from('vehicles').delete().neq('id','__never__'); try { await sb.from('staff').delete().neq('id','__never__'); } catch(e) { console.warn(e); } try { await sb.from('logs').delete().neq('id','__never__'); } catch(e) { console.warn(e); } state.parts=seedParts.map(p=>({...p})); state.jobs=seedJobs.map(j=>({...j})); state.vehicles=seedVehicles.map(v=>({...v})); state.staff=seedStaff.map(x=>({...x})); state.logs=[]; await saveParts(); await saveJobs(); await saveVehicles(); await saveStaff(); await saveLogs(); } else { set(KEYS.parts, seedParts); set(KEYS.jobs, seedJobs); set(KEYS.vehicles, seedVehicles); set(KEYS.staff, seedStaff); set(KEYS.logs, []); } state.filters={q:'',category:'All',stock:'All'}; state.vehicleHistoryQuery=''; state.activityQuery=''; state.activitySection='All'; toast('Demo data reset'); render(); }
+async function resetDemo(){ if(!confirm('Reset all demo data?')) return; if(USE_SUPABASE){ await sb.from('parts').delete().neq('id','__never__'); await sb.from('jobs').delete().neq('id','__never__'); await sb.from('vehicles').delete().neq('id','__never__'); try { await sb.from('staff').delete().neq('id','__never__'); } catch(e) { console.warn(e); } try { await sb.from('logs').delete().neq('id','__never__'); } catch(e) { console.warn(e); } try { await sb.from('tickets').delete().neq('id','__never__'); } catch(e) { console.warn(e); } state.parts=seedParts.map(p=>({...p})); state.jobs=seedJobs.map(j=>({...j})); state.vehicles=seedVehicles.map(v=>({...v})); state.staff=seedStaff.map(x=>({...x})); state.logs=[]; state.tickets=seedTickets.map(t=>({...t})); await saveParts(); await saveJobs(); await saveVehicles(); await saveStaff(); await saveLogs(); await saveTickets(); } else { set(KEYS.parts, seedParts); set(KEYS.jobs, seedJobs); set(KEYS.vehicles, seedVehicles); set(KEYS.staff, seedStaff); set(KEYS.logs, []); set(KEYS.tickets, seedTickets); } state.filters={q:'',category:'All',stock:'All'}; state.vehicleHistoryQuery=''; state.activityQuery=''; state.activitySection='All'; state.ticketTab='dashboard'; state.ticketSearch=''; state.ticketStatus='All'; state.ticketPriority='All'; toast('Demo data reset'); render(); }
 
-window.addStaffFromPrompt=addStaffFromPrompt; window.exportActivity=exportActivity; window.startNewJobCard=startNewJobCard; window.loadJobCardForEdit=loadJobCardForEdit; window.goInventory=goInventory; window.goJobs=goJobs; window.exportDashboardInventory=exportDashboardInventory; window.exportDashboardJobs=exportDashboardJobs; window.viewPlateHistory=viewPlateHistory; window.clearPlateHistorySearch=clearPlateHistorySearch; window.exportPlateHistoryCSV=exportPlateHistoryCSV; window.startAddVehicle=startAddVehicle; window.toggleOrdered=toggleOrdered; window.go=go; window.openPartDialog=openPartDialog; window.closePartDialog=closePartDialog; window.openRestockDialog=openRestockDialog; window.closeRestockDialog=closeRestockDialog; window.viewPartUsage=viewPartUsage; window.viewJob=viewJob; window.closeJobDialog=closeJobDialog; window.deleteJob=deleteJob; window.deletePart=deletePart; window.exportInventory=exportInventory; window.importInventoryCSV=importInventoryCSV; window.exportJobs=exportJobs; window.exportUsage=exportUsage; window.exportMonthlyReport=exportMonthlyReport; window.exportFleet=exportFleet; window.editFleetVehicle=editFleetVehicle; window.deleteFleetVehicle=deleteFleetVehicle; window.clearFleetForm=clearFleetForm; window.resetDemo=resetDemo;
+window.addStaffFromPrompt=addStaffFromPrompt; window.exportActivity=exportActivity; window.switchTicketTab=switchTicketTab; window.saveTicket=saveTicket; window.deleteTicket=deleteTicket; window.updateTicketStatus=updateTicketStatus; window.viewTicket=viewTicket; window.closeTicketDialog=closeTicketDialog; window.exportTickets=exportTickets; window.fillTicketFromFleet=fillTicketFromFleet; window.startNewJobCard=startNewJobCard; window.loadJobCardForEdit=loadJobCardForEdit; window.goInventory=goInventory; window.goJobs=goJobs; window.exportDashboardInventory=exportDashboardInventory; window.exportDashboardJobs=exportDashboardJobs; window.viewPlateHistory=viewPlateHistory; window.clearPlateHistorySearch=clearPlateHistorySearch; window.exportPlateHistoryCSV=exportPlateHistoryCSV; window.startAddVehicle=startAddVehicle; window.toggleOrdered=toggleOrdered; window.go=go; window.openPartDialog=openPartDialog; window.closePartDialog=closePartDialog; window.openRestockDialog=openRestockDialog; window.closeRestockDialog=closeRestockDialog; window.viewPartUsage=viewPartUsage; window.viewJob=viewJob; window.closeJobDialog=closeJobDialog; window.deleteJob=deleteJob; window.deletePart=deletePart; window.exportInventory=exportInventory; window.importInventoryCSV=importInventoryCSV; window.exportJobs=exportJobs; window.exportUsage=exportUsage; window.exportMonthlyReport=exportMonthlyReport; window.exportFleet=exportFleet; window.editFleetVehicle=editFleetVehicle; window.deleteFleetVehicle=deleteFleetVehicle; window.clearFleetForm=clearFleetForm; window.resetDemo=resetDemo;
 init();
