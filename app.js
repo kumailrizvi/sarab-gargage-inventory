@@ -1021,22 +1021,25 @@ function replacementFleetDatalist(){
   return `<datalist id="replacementFleetOptions">${state.vehicles.map(v=>`<option value="${esc(v.plate || '')}">${esc(v.plate || '')} — ${esc(modelWithoutYear(v.modelNumber)||'Vehicle')} · ${esc(fleetClientName(v))}</option>`).join('')}</datalist>`;
 }
 function replacementCellId(month, vehicleId, day){ return `rep_${month}_${vehicleId}_${day}`.replace(/[^a-zA-Z0-9_-]/g,'_'); }
-function replacementValue(month, vehicleId, day){ return (state.replacements || []).find(r=>r.month===month && r.vehicleId===vehicleId && Number(r.day)===Number(day))?.value || ''; }
+function replacementValue(month, vehicleId, day){ return (state.replacements || []).find(r=>!r.type && r.month===month && r.vehicleId===vehicleId && Number(r.day)===Number(day))?.value || ''; }
 function currentReplacementCellSnapshot(){
   const snapshot={};
-  document.querySelectorAll('.rep-cell').forEach(cell=>{ snapshot[`${cell.dataset.vehicle}_${cell.dataset.day}`]=cell.value; });
+  document.querySelectorAll('.rep-cell').forEach(cell=>{ const btn=cell.closest('.rep-entry')?.querySelector('.rep-tick'); snapshot[`${cell.dataset.vehicle}_${cell.dataset.day}`]=btn?.classList.contains('active') ? '✓' : cell.value; });
   return snapshot;
 }
 function restoreReplacementSnapshot(snapshot){
   if(!snapshot) return;
-  document.querySelectorAll('.rep-cell').forEach(cell=>{ const k=`${cell.dataset.vehicle}_${cell.dataset.day}`; cell.value=snapshot[k] || ''; });
+  document.querySelectorAll('.rep-cell').forEach(cell=>{ const k=`${cell.dataset.vehicle}_${cell.dataset.day}`; const val=snapshot[k] || ''; const btn=cell.closest('.rep-entry')?.querySelector('.rep-tick'); if(btn) btn.classList.toggle('active', val==='✓'); cell.value = val==='✓' ? '' : val; cell.classList.toggle('has-value', Boolean(val)); });
   state.replacementDirty=true;
   toast('Undo applied. Click Save to keep it.');
 }
 function stageReplacementCellInput(cell){
   if(!cell) return;
+  if(!guardReplacementEdit()){ cell.blur(); return; }
   state.replacementDirty=true;
-  cell.classList.toggle('has-value', Boolean(cell.value.trim()));
+  const tickBtn = cell.closest('.rep-entry')?.querySelector('.rep-tick');
+  if(cell.value.trim() && cell.value.trim() !== '✓' && tickBtn) tickBtn.classList.remove('active');
+  cell.classList.toggle('has-value', Boolean(cell.value.trim()) || Boolean(tickBtn?.classList.contains('active')));
 }
 async function saveReplacementCell(vehicleId, day, value){
   const month = state.replacementMonth || today().slice(0,7);
@@ -1056,7 +1059,7 @@ async function saveReplacementTable(){
   const month=state.replacementMonth || today().slice(0,7);
   if(!canEditReplacementMonth(month)){ toast('This month is locked. Use Override PIN to edit.'); return; }
   const cells=[...document.querySelectorAll('.rep-cell')];
-  for(const cell of cells){ await saveReplacementCell(cell.dataset.vehicle, cell.dataset.day, cell.value); }
+  for(const cell of cells){ const ticked = cell.closest('.rep-entry')?.querySelector('.rep-tick')?.classList.contains('active'); await saveReplacementCell(cell.dataset.vehicle, cell.dataset.day, ticked ? '✓' : cell.value); }
   await saveReplacements();
   state.replacementDirty=false;
   toast('Replacements saved');
@@ -1068,13 +1071,16 @@ function tickReplacementCell(btn){
   if(!cell) return;
   if(!state.replacementUndoStack) state.replacementUndoStack=[];
   state.replacementUndoStack.push(currentReplacementCellSnapshot());
-  cell.value = cell.value.trim()==='✓' ? '' : '✓';
+  const isTicked = btn.classList.contains('active');
+  btn.classList.toggle('active', !isTicked);
+  cell.value = isTicked ? '' : '✓';
+  if(!isTicked) cell.value = '✓';
   stageReplacementCellInput(cell);
 }
 function pickReplacementFromFleet(input){
   const q=String(input.value || '').trim().toLowerCase();
   const match=state.vehicles.find(v=>String(v.plate||'').toLowerCase()===q || `${v.plate} — ${modelWithoutYear(v.modelNumber)||''}`.toLowerCase().includes(q));
-  if(match && input.value.length>1){ input.value=match.plate || input.value; }
+  if(match && input.value.length>1){ input.value=match.plate || input.value; const btn=input.closest('.rep-entry')?.querySelector('.rep-tick'); if(btn) btn.classList.remove('active'); }
   stageReplacementCellInput(input);
 }
 
@@ -1105,6 +1111,46 @@ function unlockReplacementMonth(){
   toast(`Override enabled for ${month}. You can edit until you leave/reload this page.`);
   render();
 }
+
+const REPLACEMENT_LOCK_PIN = '2580';
+function replacementLockId(month){ return `rep_lock_${String(month || '').replace(/[^0-9-]/g,'_')}`; }
+function replacementLockRow(month){ return (state.replacements || []).find(r => r.id === replacementLockId(month) || ((r.kind==='lock' || r.type==='lock') && r.month===month)); }
+function isReplacementMonthLocked(month){ const r=replacementLockRow(month); return Boolean(r && (r.locked || r.kind==='lock' || r.type==='lock')); }
+function canEditReplacementMonth(month){ return !isReplacementMonthLocked(month) || sessionStorage.getItem(`replacement_unlock_${month}`) === 'yes'; }
+function replacementLockNotice(month){
+  if(!isReplacementMonthLocked(month)) return '';
+  const unlocked = canEditReplacementMonth(month);
+  return `<div class="lock-notice ${unlocked?'unlocked':''}"><b>${unlocked?'Override active':'Month locked'}</b><span>${unlocked?'You can edit this month until the page is refreshed.':'This month cannot be edited unless you enter the override PIN.'}</span>${!unlocked?`<button class="mini-btn" onclick="unlockReplacementMonth()">Unlock with PIN</button>`:''}</div>`;
+}
+async function lockReplacementMonth(){
+  const month = state.replacementMonth || today().slice(0,7);
+  if(!confirm(`Lock ${month}? Once locked, it cannot be edited without the override PIN.`)) return;
+  const row = { id: replacementLockId(month), type:'lock', month, locked:true, lockedAt:new Date().toISOString(), lockedBy:state.user?.name||state.user?.email||'—' };
+  const idx = (state.replacements || []).findIndex(r=>r.id===row.id);
+  if(idx>=0) state.replacements[idx]=row; else state.replacements.push(row);
+  await saveReplacements();
+  sessionStorage.removeItem(`replacement_unlock_${month}`);
+  toast(`Month ${month} locked`);
+  render();
+}
+function unlockReplacementMonth(){
+  const month = state.replacementMonth || today().slice(0,7);
+  const pin = prompt('Enter override PIN to edit this locked month');
+  if(pin === REPLACEMENT_LOCK_PIN){
+    sessionStorage.setItem(`replacement_unlock_${month}`, 'yes');
+    toast('Override accepted. You can edit this month now.');
+    render();
+  } else if(pin !== null){
+    toast('Wrong PIN');
+  }
+}
+function guardReplacementEdit(){
+  const month = state.replacementMonth || today().slice(0,7);
+  if(canEditReplacementMonth(month)) return true;
+  toast('This month is locked. Use override PIN to edit.');
+  return false;
+}
+
 function replacementsHTML(){
   const clients=replacementClients();
   if(!state.replacementMonth) state.replacementMonth=today().slice(0,7);
@@ -1123,8 +1169,8 @@ function replacementsHTML(){
 }
 function replacementMatrix(vehicles, days, editable=true){
   const month=state.replacementMonth || today().slice(0,7);
-  const dayHeads=Array.from({length:days},(_,i)=>`<th>${i+1}</th>`).join('');
-  return `<div class="replacement-scroll"><table class="replacement-table"><thead><tr><th class="sticky-col rep-vehicle-head">Client / Vehicle</th><th class="sticky-col-2">Plate</th>${dayHeads}</tr></thead><tbody>${vehicles.map(v=>`<tr><td class="sticky-col rep-vehicle"><b>${esc(fleetClientName(v))}</b><small>${esc(modelWithoutYear(v.modelNumber)||'Vehicle')} ${v.year?`· ${esc(v.year)}`:''}</small></td><td class="sticky-col-2"><span class="fleet-plate">${esc(v.plate)}</span></td>${Array.from({length:days},(_,i)=>{ const d=i+1; const val=replacementValue(month,v.id,d); return `<td class="rep-cell-wrap ${!editable?'locked-cell':''}"><button type="button" class="rep-tick" onclick="tickReplacementCell(this)" ${!editable?'disabled':''}>✓</button><input class="rep-cell ${val?'has-value':''}" data-vehicle="${esc(v.id)}" data-day="${d}" value="${esc(val)}" placeholder="Plate" list="replacementFleetOptions" ${!editable?'disabled':''}></td>`; }).join('')}</tr>`).join('')}</tbody></table></div>`;
+  const dayHeads=Array.from({length:days},(_,i)=>`<th class="rep-day-head">${i+1}</th>`).join('');
+  return `<div class="replacement-help-line"><span><b>Tip:</b> each row is one vehicle. Click ✓ for a normal day, or type a replacement plate in the box.</span><span>${vehicles.length} vehicle${vehicles.length===1?'':'s'} shown</span></div><div class="replacement-scroll"><table class="replacement-table compact-replacement-table"><thead><tr><th class="sticky-col rep-vehicle-head">Client / Vehicle</th><th class="sticky-col-2">Plate</th>${dayHeads}</tr></thead><tbody>${vehicles.map(v=>`<tr><td class="sticky-col rep-vehicle"><b>${esc(fleetClientName(v))}</b><small>${esc(modelWithoutYear(v.modelNumber)||'Vehicle')} ${v.year?`· ${esc(v.year)}`:''}</small></td><td class="sticky-col-2"><span class="fleet-plate">${esc(v.plate)}</span></td>${Array.from({length:days},(_,i)=>{ const d=i+1; const val=replacementValue(month,v.id,d); const isTick=val==='✓'; return `<td class="rep-cell-wrap ${!editable?'locked-cell':''}"><div class="rep-entry"><button type="button" class="rep-tick ${isTick?'active':''}" onclick="tickReplacementCell(this)" ${!editable?'disabled':''}>✓</button><input class="rep-cell ${val?'has-value':''}" data-vehicle="${esc(v.id)}" data-day="${d}" value="${esc(isTick?'':val)}" placeholder="" title="Type replacement plate" list="replacementFleetOptions" ${!editable?'disabled':''}></div></td>`; }).join('')}</tr>`).join('')}</tbody></table></div>`;
 }
 function markVisibleReplacementDays(){
   const month=state.replacementMonth || today().slice(0,7);
@@ -1132,10 +1178,11 @@ function markVisibleReplacementDays(){
   const cells=[...document.querySelectorAll('.rep-cell')];
   if(!state.replacementUndoStack) state.replacementUndoStack=[];
   state.replacementUndoStack.push(currentReplacementCellSnapshot());
-  cells.forEach(cell=>{ if(!cell.value.trim()){ cell.value='✓'; stageReplacementCellInput(cell); } });
+  cells.forEach(cell=>{ const btn=cell.closest('.rep-entry')?.querySelector('.rep-tick'); if(!cell.value.trim() && !btn?.classList.contains('active')){ if(btn) btn.classList.add('active'); cell.value=''; stageReplacementCellInput(cell); } });
   toast('Visible blanks filled with ✓. Click Save to keep it.');
 }
 function undoReplacementFill(){
+  if(!guardReplacementEdit()) return;
   const snapshot=(state.replacementUndoStack || []).pop();
   if(!snapshot){ toast('Nothing to undo'); return; }
   restoreReplacementSnapshot(snapshot);
@@ -1161,7 +1208,7 @@ function replacementHistoryForVehicle(v){
   const plate=String(v.plate||'').trim().toLowerCase();
   const rows=[];
   (state.replacements||[]).forEach(r=>{
-    if(r.kind==='lock') return;
+    if(r.kind==='lock' || r.type==='lock') return;
     const rowVehicle=state.vehicles.find(x=>x.id===r.vehicleId);
     const month=String(r.month||'');
     const day=String(r.day||'').padStart(2,'0');
@@ -1191,6 +1238,35 @@ function exportVehicleHistoryCSV(){
   });
   downloadCSV('sarab-vehicle-history.csv', rows);
 }
+
+function vehicleHistoryRows(){
+  const q = String(state.vehicleHistorySearch || '').trim().toLowerCase();
+  let vehicles = state.vehicles.slice();
+  if(q) vehicles = vehicles.filter(v => [v.plate, v.modelNumber, v.year, fleetClientName(v), v.customer, v.status, v.ownership].join(' ').toLowerCase().includes(q));
+  return vehicles.sort((a,b)=>String(a.plate||'').localeCompare(String(b.plate||'')));
+}
+function replacementHistoryForVehicle(v){
+  const rows = (state.replacements || []).filter(r => !r.type && r.vehicleId === v.id && r.value && r.value !== '✓')
+    .sort((a,b)=>String(a.month).localeCompare(String(b.month)) || Number(a.day)-Number(b.day));
+  return rows;
+}
+function vehicleHistoryHTML(){
+  const rows = vehicleHistoryRows();
+  return `<div class="page-head"><div><h1>Fleet</h1><p class="muted">Vehicle history by client and replacement date.</p></div><div class="head-actions"><button class="btn light" onclick="exportVehicleHistoryCSV()">${I('download','icon-sm')} Export CSV</button></div></div>
+  ${fleetSubnavHeader('vehicleHistory')}
+  <section class="panel"><div class="section-title"><div><h3>Vehicle History</h3><p class="muted small-note">Search a plate, client, or model to see where a vehicle is assigned and any replacement usage by month/date.</p></div></div><div class="filters vehicle-history-filters"><input id="vehicleHistorySearch" placeholder="Search plate, vehicle, client..." value="${esc(state.vehicleHistorySearch || '')}" autocomplete="off"></div>
+  <div class="vehicle-history-list">${rows.map(v=>{ const hist=replacementHistoryForVehicle(v); return `<article class="vehicle-history-card"><div class="vh-main"><div><span class="fleet-plate">${esc(v.plate || '—')}</span><h3>${esc(modelWithoutYear(v.modelNumber)||v.modelNumber||'Vehicle')}${v.year?` <span class="fleet-year">${esc(v.year)}</span>`:''}</h3><p class="muted">Current client: <b>${esc(fleetClientName(v))}</b> · ${esc(v.status || '—')} · ${esc(v.ownership || '—')}</p></div><div class="vh-count"><small>Replacement records</small><b>${hist.length}</b></div></div>${hist.length?`<div class="vh-timeline">${hist.map(r=>`<div><b>${esc(r.month)}-${String(r.day).padStart(2,'0')}</b><span>${esc(r.client || fleetClientName(v))}</span><span>Replacement: ${esc(r.value)}</span></div>`).join('')}</div>`:'<div class="empty small-empty">No replacement records for this vehicle yet.</div>'}</article>`; }).join('') || '<div class="empty">No vehicles found.</div>'}</div></section>`;
+}
+function exportVehicleHistoryCSV(){
+  const rows=[['Plate','Vehicle','Year','Current Client','Status','Ownership','Replacement Date','Replacement Plate']];
+  vehicleHistoryRows().forEach(v=>{
+    const hist=replacementHistoryForVehicle(v);
+    if(hist.length){ hist.forEach(r=>rows.push([v.plate||'', modelWithoutYear(v.modelNumber)||v.modelNumber||'', v.year||'', fleetClientName(v), v.status||'', v.ownership||'', `${r.month}-${String(r.day).padStart(2,'0')}`, r.value||''])); }
+    else rows.push([v.plate||'', modelWithoutYear(v.modelNumber)||v.modelNumber||'', v.year||'', fleetClientName(v), v.status||'', v.ownership||'', '', '']);
+  });
+  downloadCSV('sarab-vehicle-history.csv', rows);
+}
+
 function fleetHTML(){
   const vehicles = filteredFleetVehicles();
   const inUse = state.vehicles.filter(v => v.status === 'In Use').length;
@@ -1664,6 +1740,7 @@ function bindPageEvents(){
   if($('replacementClient')) $('replacementClient').onchange=e=>{state.replacementClient=e.target.value; render();};
   if($('replacementVehicleSearch')) $('replacementVehicleSearch').oninput=e=>{state.replacementVehicleSearch=e.target.value; render();};
   if($('replacementMonth')) $('replacementMonth').onchange=e=>{state.replacementMonth=e.target.value; render();};
+  if($('vehicleHistorySearch')) $('vehicleHistorySearch').oninput=e=>{state.vehicleHistorySearch=e.target.value; render();};
   if($('vehicleHistorySearch')) $('vehicleHistorySearch').oninput=e=>{state.vehicleHistorySearch=e.target.value; render();};
   document.querySelectorAll('.rep-cell').forEach(cell=>{ cell.oninput=()=>stageReplacementCellInput(cell); cell.onchange=()=>pickReplacementFromFleet(cell); });
 
