@@ -2085,7 +2085,7 @@ function employeeHistoryHTML(){
   const body = rows.map(e=>{
     const hist = (e.assignmentHistory && e.assignmentHistory.length ? e.assignmentHistory : (e.assignedCompany || e.assignedVehicle ? [{from:e.startDate||'—', to:'Present', company:e.assignedCompany||'—', vehicle:e.assignedVehicle||'—', note:'Current assignment'}] : []));
     const tickets=(state.employeeTickets||[]).filter(t=>String(t.employee||'').toLowerCase()===String(e.name||'').toLowerCase());
-    return `<tr><td><b>${esc(e.name)}</b><div class="muted tiny">${esc(e.type||'SMG')}</div></td><td>${esc(e.assignedCompany||'—')}</td><td>${esc(e.assignedVehicle||'—')}</td><td>${employeeIsCurrentlyWorking(e)?'<span class="badge green">Working</span>':'<span class="badge muted-badge">Left</span>'}</td><td>${hist.length}</td><td>${tickets.length ? `<details><summary class="mini-btn">${tickets.length} ticket(s)</summary><div class="history-table-mini"><table><tr><th>Date</th><th>Category</th><th>Status</th><th>Approval</th><th>Notes</th></tr>${tickets.map(t=>`<tr><td>${esc(t.date||'—')}</td><td>${esc(t.category||'—')}</td><td>${esc(t.status||'Open')}</td><td>${esc(t.approvalStatus||'Pending Approval')}</td><td>${isLeaveTicket(t)?`${esc(t.leaveStartDate||'—')} → ${esc(t.leaveEndDate||'—')} (${leaveDurationText(t.leaveStartDate,t.leaveEndDate)})${t.returnToDutyDate?` Returned: ${esc(t.returnToDutyDate)}`:ticketLeaveOverstay(t)?' OVERSTAY ALERT':''}`:esc(t.notes||'')}</td></tr>`).join('')}</table></div></details>` : '<span class="muted">—</span>'}</td><td><details><summary class="mini-btn">Open history</summary><div class="history-table-mini"><table><tr><th>From</th><th>To</th><th>Company / Client</th><th>Vehicle</th><th>Note</th></tr>${hist.map(h=>`<tr><td>${esc(h.from||'—')}</td><td>${esc(h.to||'Present')}</td><td>${esc(h.company||'—')}</td><td>${esc(h.vehicle||'—')}</td><td>${esc(h.note||'')}</td></tr>`).join('')}</table></div></details></td></tr>`;
+    return `<tr><td><b>${esc(e.name)}</b><div class="muted tiny">${esc(e.type||'SMG')}</div></td><td>${esc(e.assignedCompany||'—')}</td><td>${esc(e.assignedVehicle||'—')}</td><td>${employeeIsCurrentlyWorking(e)?'<span class="badge green">Working</span>':'<span class="badge muted-badge">Left</span>'}</td><td>${hist.length}</td><td>${tickets.length ? `<details><summary class="mini-btn">${tickets.length} ticket(s)</summary><div class="history-table-mini"><table><tr><th>Date</th><th>Category</th><th>Status</th><th>Approval</th><th>Notes</th></tr>${tickets.map(t=>`<tr><td>${esc(t.date||'—')}</td><td>${esc(t.category||'—')}</td><td>${esc(t.status||'Open')}</td><td>${esc(t.approvalStatus||'Pending Approval')}</td><td>${isLeaveTicket(t)?`${esc(t.leaveStartDate||'—')} → ${esc(t.leaveEndDate||'—')} (${leaveDurationText(t.leaveStartDate,t.leaveEndDate)})${t.returnToDutyDate?` Returned: ${esc(t.returnToDutyDate)}`:''}${ticketLeaveOverstay(t)?` OVERSTAY: ${ticketOverstayDays(t)} day${ticketOverstayDays(t)===1?'':'s'}`:''}`:esc(t.notes||'')}</td></tr>`).join('')}</table></div></details>` : '<span class="muted">—</span>'}</td><td><details><summary class="mini-btn">Open history</summary><div class="history-table-mini"><table><tr><th>From</th><th>To</th><th>Company / Client</th><th>Vehicle</th><th>Note</th></tr>${hist.map(h=>`<tr><td>${esc(h.from||'—')}</td><td>${esc(h.to||'Present')}</td><td>${esc(h.company||'—')}</td><td>${esc(h.vehicle||'—')}</td><td>${esc(h.note||'')}</td></tr>`).join('')}</table></div></details></td></tr>`;
   }).join('');
   return `<div class="page-head"><div><h1>Employees History</h1><p class="muted">Track which company/client and vehicle each employee was assigned to over time.</p></div><button class="btn light" onclick="exportEmployeeHistoryCSV()">${I('download','icon-sm')} Export CSV</button></div>${employeeTypeTabs()}<section class="panel"><input id="employeeSearch" class="search-input" placeholder="Search employee, vehicle, company..." value="${esc(state.employeeSearch||'')}" oninput="state.employeeSearch=this.value; renderAndRefocus('employeeSearch')" /><div class="table-wrap"><table><tr><th>Employee</th><th>Current Company</th><th>Current Vehicle</th><th>Status</th><th>History entries</th><th>Employee Tickets</th><th>Details</th></tr><tbody>${body || '<tr><td colspan="7" class="muted">No employee history yet.</td></tr>'}</tbody></table></div></section>`;
 }
@@ -2096,19 +2096,41 @@ function exportEmployeeHistoryCSV(){
 }
 const EMPLOYEE_TICKET_CATEGORIES=['Fine inquiries','Advance request','Leave request','Accidents','Complaints against driver'];
 function isLeaveTicket(t){ return String(t?.category||'').toLowerCase()==='leave request'; }
+function daysBetweenDates(start,end,inclusive=false){
+  if(!start || !end) return 0;
+  const a=new Date(`${start}T00:00:00`);
+  const b=new Date(`${end}T00:00:00`);
+  if(Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) return 0;
+  const diff=Math.round((b-a)/(24*60*60*1000));
+  return inclusive ? diff + 1 : diff;
+}
+function ticketOverstayDays(t){
+  if(!isLeaveTicket(t) || t.approvalStatus !== 'Approved' || !t.leaveEndDate) return 0;
+  const checkDate = t.returnToDutyDate || t.returnedAt || today();
+  const days = daysBetweenDates(t.leaveEndDate, checkDate, false);
+  return days > 0 ? days : 0;
+}
 function ticketLeaveOverstay(t){
-  if(!isLeaveTicket(t) || t.approvalStatus !== 'Approved') return false;
-  if(t.returnToDutyDate || t.returnedAt) return false;
-  if(!t.leaveEndDate) return false;
-  return today() > t.leaveEndDate;
+  return ticketOverstayDays(t) > 0;
 }
 function leaveDurationText(start,end){
   if(!start || !end) return '—';
-  const a=new Date(start+'T00:00:00');
-  const b=new Date(end+'T00:00:00');
-  if(isNaN(a)||isNaN(b)||b<a) return '—';
-  const days=Math.round((b-a)/(24*60*60*1000))+1;
+  const days=daysBetweenDates(start,end,true);
+  if(days <= 0) return '—';
   return `${days} day${days===1?'':'s'}`;
+}
+function leaveReturnStatusHTML(t){
+  if(!isLeaveTicket(t)) return '<span class="muted">—</span>';
+  const overDays=ticketOverstayDays(t);
+  const duration=leaveDurationText(t.leaveStartDate,t.leaveEndDate);
+  const dateLine=`<div><b>${esc(t.leaveStartDate||'—')}</b> → <b>${esc(t.leaveEndDate||'—')}</b></div><div class="muted tiny">Duration: ${esc(duration)}</div>`;
+  if(t.returnToDutyDate){
+    return `${dateLine}<span class="badge green">Returned ${esc(t.returnToDutyDate)}</span>${overDays?` <span class="badge danger-badge">Overstay ${overDays} day${overDays===1?'':'s'}</span>`:''}`;
+  }
+  if(overDays){
+    return `${dateLine}<span class="badge danger-badge">Overstay alert: ${overDays} day${overDays===1?'':'s'}</span>`;
+  }
+  return `${dateLine}<span class="badge orange">Return pending</span>`;
 }
 function toggleEmployeeLeaveFields(){
   const cat=$('employeeTicketCategory')?.value;
@@ -2127,7 +2149,7 @@ function employeeTicketsHTML(){
 }
 function employeeTicketTable(rows){
   return `<div class="table-wrap"><table><tr><th>Date</th><th>Employee</th><th>Category</th><th>Status</th><th>Approval</th><th>Leave / Return</th><th>Notes</th><th>Action</th></tr><tbody>${rows.map(t=>{
-    const leaveInfo = isLeaveTicket(t) ? `<div><b>${esc(t.leaveStartDate||'—')}</b> → <b>${esc(t.leaveEndDate||'—')}</b></div><div class="muted tiny">Duration: ${esc(leaveDurationText(t.leaveStartDate,t.leaveEndDate))}</div>${t.returnToDutyDate?`<span class="badge green">Returned ${esc(t.returnToDutyDate)}</span>`: ticketLeaveOverstay(t)?'<span class="badge danger-badge">Overstay alert</span>': '<span class="badge orange">Return pending</span>'}` : '<span class="muted">—</span>';
+    const leaveInfo = leaveReturnStatusHTML(t);
     return `<tr class="${ticketLeaveOverstay(t)?'overstay-row':''}"><td>${esc(t.date||'—')}</td><td><b>${esc(t.employee||'—')}</b></td><td>${esc(t.category||'—')}</td><td>${esc(t.status||'Open')}</td><td>${employeeTicketApprovalBadge(t)}</td><td>${leaveInfo}</td><td>${esc(t.notes||'')}</td><td><button class="mini-btn" onclick="editEmployeeTicket('${esc(t.id)}')">Edit</button><button class="mini-btn ${t.approvalStatus==='Approved'?'warning':''}" onclick="approveEmployeeTicket('${esc(t.id)}')">${t.approvalStatus==='Approved'?'Approved':'Approve'}</button>${isLeaveTicket(t)&&t.approvalStatus==='Approved'&&!t.returnToDutyDate?`<button class="mini-btn" onclick="markReturnToDuty('${esc(t.id)}')">Return to duty</button>`:''}<button class="mini-btn danger" onclick="removeEmployeeTicket('${esc(t.id)}')">Remove</button></td></tr>`;
   }).join('') || '<tr><td colspan="8" class="muted">No employee tickets yet.</td></tr>'}</tbody></table></div>`;
 }
@@ -2196,7 +2218,7 @@ async function markReturnToDuty(ticketId){
 }
 function editEmployeeTicket(id){ const t=(state.employeeTickets||[]).find(x=>x.id===id); if(!t) return; state.editingEmployeeTicketId=id; render(); }
 async function removeEmployeeTicket(id){ const t=(state.employeeTickets||[]).find(x=>x.id===id); if(!t || !confirm('Remove this employee ticket?')) return; state.employeeTickets=state.employeeTickets.filter(x=>x.id!==id); if(USE_SUPABASE) await deleteRemoteRow('employee_tickets', id); await saveEmployeeTickets(); toast('Ticket removed'); render(); }
-function exportEmployeeTicketsCSV(){ downloadCSV('sarab-employee-tickets.csv', [['Date','Employee','Category','Status','Approval Status','Approved At','Approved By','Leave Start Date','Leave End Date','Leave Duration','Return To Duty Date','Overstay Alert','Notes'], ...(state.employeeTickets||[]).map(t=>[t.date,t.employee,t.category,t.status,t.approvalStatus||'Pending Approval',t.approvedAt||'',t.approvedBy||'',t.leaveStartDate||'',t.leaveEndDate||'',leaveDurationText(t.leaveStartDate,t.leaveEndDate),t.returnToDutyDate||'',ticketLeaveOverstay(t)?'Yes':'No',t.notes])]); }
+function exportEmployeeTicketsCSV(){ downloadCSV('sarab-employee-tickets.csv', [['Date','Employee','Category','Status','Approval Status','Approved At','Approved By','Leave Start Date','Leave End Date','Leave Duration','Return To Duty Date','Overstay Alert','Notes'], ...(state.employeeTickets||[]).map(t=>[t.date,t.employee,t.category,t.status,t.approvalStatus||'Pending Approval',t.approvedAt||'',t.approvedBy||'',t.leaveStartDate||'',t.leaveEndDate||'',leaveDurationText(t.leaveStartDate,t.leaveEndDate),t.returnToDutyDate||'',ticketLeaveOverstay(t)?`Yes - ${ticketOverstayDays(t)} day${ticketOverstayDays(t)===1?'':'s'}`:'No',t.notes])]); }
 
 function salikRowForVehicle(v){ return (state.salik||[]).find(r=>r.vehicleId===v.id) || { id:`salik_${v.id}`, vehicleId:v.id, incurred:0, crossCharged:0 }; }
 function salikHTML(){
