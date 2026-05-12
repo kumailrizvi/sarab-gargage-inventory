@@ -1759,3 +1759,10 @@ input:disabled{
 @media(max-width:1100px){
   .employee-ticket-layout{grid-template-columns:1fr!important;}
 }
+
+
+/* v71: hide leave fields unless category is Leave request */
+.employee-ticket-layout .leave-fields.leave-hidden,
+.leave-fields.leave-hidden{
+  display:none!important;
+}
