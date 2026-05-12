@@ -1025,7 +1025,7 @@ function fleetSummaryHTML(){
     </section>`;
 }
 function fleetSummaryCards(rows){
-  return `<div class="fleet-summary-list clean-like-fleet">${rows.map(r=>`<article class="fleet-summary-row ${state.summaryClient===r.name?'selected':''}" onclick="state.summaryClient='${esc(r.name)}'; render()"><div><h3>${esc(r.name)}</h3><p class="muted">${r.total} vehicles · ${r.inUse} in use · ${r.outsource} outsourced</p><div class="summary-type-line">${r.typesArr.slice(0,4).map(([t,n])=>`<span>${esc(t)} × ${n}</span>`).join('') || '<span>No type data</span>'}</div></div><div class="summary-row-metrics"><div><small>Total</small><b>${r.total}</b></div><div><small>Own</small><b>${r.own}</b></div><div><small>Outsource</small><b>${r.outsource}</b></div><div><small>Revenue</small><b>${money(r.revenue)}</b></div></div></article>`).join('') || '<div class="empty">No fleet summary found.</div>'}</div>`;
+  return `<div class="fleet-summary-list clean-like-fleet">${rows.map(r=>{ const typeTotal=(r.typesArr||[]).reduce((a,x)=>a+Number(x[1]||0),0); return `<article class="fleet-summary-row ${state.summaryClient===r.name?'selected':''}" onclick="state.summaryClient='${esc(r.name)}'; render()"><div><h3>${esc(r.name)}</h3><p class="muted">${r.total} vehicles · ${r.inUse} in use · ${r.outsource} outsourced</p><div class="summary-type-line">${(r.typesArr||[]).map(([t,n])=>`<span>${esc(t)} × ${n}</span>`).join('') || '<span>No type data</span>'}${typeTotal && typeTotal < r.total ? `<span>Other / blank × ${r.total-typeTotal}</span>` : ''}</div></div><div class="summary-row-metrics"><div><small>Total</small><b>${r.total}</b></div><div><small>Own</small><b>${r.own}</b></div><div><small>Outsource</small><b>${r.outsource}</b></div><div><small>Revenue</small><b>${money(r.revenue)}</b></div></div></article>`; }).join('') || '<div class="empty">No fleet summary found.</div>'}</div>`;
 }
 function fleetSummaryTable(rows){
   return `<div class="table-wrap"><table><thead><tr><th>Client</th><th>Total</th><th>In Use</th><th>Own</th><th>Outsourced</th><th>Off-hire</th><th>Monthly Revenue</th><th>Top Vehicle Types</th></tr></thead><tbody>${rows.map(r=>`<tr><td><b>${esc(r.name)}</b></td><td>${r.total}</td><td>${r.inUse}</td><td>${r.own}</td><td>${r.outsource}</td><td>${r.offHire}</td><td>${money(r.revenue)}</td><td>${r.typesArr.slice(0,4).map(([t,n])=>`${esc(t)} (${n})`).join(', ')}</td></tr>`).join('') || '<tr><td colspan="8">No records found.</td></tr>'}</tbody></table></div>`;
@@ -2320,7 +2320,18 @@ function exportPlateHistoryCSV(){
   downloadCSV(`sarab-plate-history-${plateQuery.replace(/\s+/g,'-')}.csv`, rows);
 }
 
-function csvEscape(v){ return `"${String(v??'').replace(/"/g,'""')}"`; }
+function cleanCSVText(v){
+  let s = String(v ?? '');
+  // Clean common mojibake/non-breaking-space characters that Windows Excel can show as Â/Ã/Ä.
+  s = s.replace(/ /g, ' ');
+  s = s.replace(/TOYOT[ÃÂÄÀÁ]/gi, m => m[0]===m[0].toUpperCase() ? 'TOYOTA' : 'Toyota');
+  s = s.replace(/MITSUBISH[ÃÂÄÀÁ]/gi, m => m[0]===m[0].toUpperCase() ? 'MITSUBISHI' : 'Mitsubishi');
+  s = s.replace(/NISS[ÃÂÄÀÁ]N/gi, m => m[0]===m[0].toUpperCase() ? 'NISSAN' : 'Nissan');
+  s = s.replace(/[ÂÃÄ]/g, '');
+  s = s.replace(/\s+/g, ' ').trim();
+  return s;
+}
+function csvEscape(v){ return `"${cleanCSVText(v).replace(/"/g,'""')}"`; }
 function downloadCSV(name, rows){ const csv='sep=,\r\n'+rows.map(r=>r.map(csvEscape).join(',')).join('\r\n'); const blob=new Blob(['\ufeff', csv],{type:'text/csv;charset=utf-8'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=name; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); }
 
 function exportDashboardInventory(){
