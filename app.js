@@ -149,8 +149,11 @@ function normalizeFleetVehicles(){
   let changed = false;
   state.vehicles.forEach(v => {
     if(!v.year){ const y = extractYearFromModel(v.modelNumber); if(y){ v.year = y; v.modelNumber = modelWithoutYear(v.modelNumber); changed = true; } }
-    if(!v.registeredCompany) { v.registeredCompany = 'Garage'; changed = true; }
+    if(v.ownership === 'Outsource') {
+      if(v.registeredCompany) { v.registeredCompany = ''; changed = true; }
+    } else if(!v.registeredCompany) { v.registeredCompany = 'Garage'; changed = true; }
     if(!v.fuelChip) { v.fuelChip = 'No'; changed = true; }
+    if(!v.assignedDriver) { v.assignedDriver = 'Without driver'; changed = true; }
     if(v.ownership !== 'Outsource' && v.vendorName) { v.vendorName = ''; changed = true; }
     if(v.ownership !== 'Outsource' && (v.outsourceStartDate || v.outsourceEndDate)) { v.outsourceStartDate = ''; v.outsourceEndDate = ''; changed = true; }
     if(v.status === 'Off-hire' && (Number(v.rentRate || 0) !== 0 || Number(v.clientRate || 0) !== 0)) { v.rentRate = 0; v.clientRate = 0; changed = true; }
@@ -941,7 +944,7 @@ function reportsHTML(s){
 function filteredFleetVehicles(){
   const q = String(state.fleetFilter || '').trim().toLowerCase();
   return state.vehicles.filter(v => {
-    const haystack = [v.modelNumber, v.year, v.plate, v.customer, v.status, v.ownership, v.registeredCompany, v.fuelChip, v.vendorName, v.outsourceStartDate, v.outsourceEndDate, v.notes].join(' ').toLowerCase();
+    const haystack = [v.modelNumber, v.year, v.plate, v.customer, v.status, v.ownership, v.registeredCompany, v.fuelChip, v.vendorName, v.outsourceStartDate, v.outsourceEndDate, v.assignedDriver, v.notes].join(' ').toLowerCase();
     return !q || haystack.includes(q);
   });
 }
@@ -994,7 +997,7 @@ function filteredFleetSummaryRows(){
   const q=String(search || '').trim().toLowerCase();
   let vehicles = state.vehicles.slice();
   if(client) vehicles = vehicles.filter(v=>clientKey(fleetClientName(v))===clientKey(client));
-  if(q) vehicles = vehicles.filter(v=>[fleetClientName(v), v.plate, v.modelNumber, v.year, v.status, v.ownership, v.registeredCompany].join(' ').toLowerCase().includes(q));
+  if(q) vehicles = vehicles.filter(v=>[fleetClientName(v), v.plate, v.modelNumber, v.year, v.status, v.ownership, v.registeredCompany, v.assignedDriver].join(' ').toLowerCase().includes(q));
   if(own==='own') vehicles = vehicles.filter(v=>!fleetIsOutsourced(v));
   if(own==='outsource') vehicles = vehicles.filter(v=>fleetIsOutsourced(v));
   const oldVehicles = state.vehicles;
@@ -1015,7 +1018,7 @@ function selectedSummaryVehicles(){
   const q=String(state.summarySearch || '').trim().toLowerCase();
   let vehicles=state.vehicles.slice();
   if(client) vehicles=vehicles.filter(v=>clientKey(fleetClientName(v))===clientKey(client));
-  if(q) vehicles=vehicles.filter(v=>[fleetClientName(v), v.plate, v.modelNumber, v.year, v.status, v.ownership, v.registeredCompany].join(' ').toLowerCase().includes(q));
+  if(q) vehicles=vehicles.filter(v=>[fleetClientName(v), v.plate, v.modelNumber, v.year, v.status, v.ownership, v.registeredCompany, v.assignedDriver].join(' ').toLowerCase().includes(q));
   if(state.summaryOwnership==='own') vehicles=vehicles.filter(v=>!fleetIsOutsourced(v));
   if(state.summaryOwnership==='outsource') vehicles=vehicles.filter(v=>fleetIsOutsourced(v));
   return vehicles.sort((a,b)=>fleetClientName(a).localeCompare(fleetClientName(b)) || String(a.plate||'').localeCompare(String(b.plate||'')));
@@ -1408,6 +1411,14 @@ function exportVehicleHistoryCSV(){
   downloadCSV('sarab-vehicle-client-history.csv', rows);
 }
 
+
+function fleetDriverOptionsHTML(selected=''){
+  const names = ['Without driver', ...new Set((state.employees || []).map(e=>String(e.name || '').trim()).filter(Boolean))];
+  if(selected && !names.some(n=>n.toLowerCase()===String(selected).toLowerCase())) names.push(selected);
+  return names.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('');
+}
+function isFleetOutsourceForm(){ return $('fleetOwnership') && $('fleetOwnership').value === 'Outsource'; }
+
 function fleetHTML(){
   const vehicles = filteredFleetVehicles();
   const inUse = state.vehicles.filter(v => v.status === 'In Use').length;
@@ -1423,10 +1434,11 @@ function fleetHTML(){
       <input id="fleetId" type="hidden">
       <label>Vehicle model<input id="fleetModel" required placeholder="Toyota Hiace"></label>
       <label>Year<input id="fleetYear" type="number" min="1980" max="2100" step="1" placeholder="2022"></label>
-      <label>Registered company<select id="fleetRegisteredCompany">${REGISTERED_COMPANIES.map(x=>`<option>${x}</option>`).join('')}</select></label>
+      <label>Registered company<select id="fleetRegisteredCompany"><option value="">Not applicable / outsourced</option>${REGISTERED_COMPANIES.map(x=>`<option>${x}</option>`).join('')}</select><small id="fleetRegisteredCompanyNote" class="muted tiny hidden">Outsourced vehicles do not need a registered company.</small></label>
       <label>Fuel chip<select id="fleetFuelChip"><option value="Yes">Has company fuel chip</option><option value="No">No company fuel chip</option></select></label>
       <div class="plate-fields"><label>Plate code<input id="fleetPlateCode" required placeholder="R" maxlength="8"></label><label>Plate number<input id="fleetPlateNumber" required placeholder="14534"></label></div>
       <label>Customer<input id="fleetCustomer" placeholder="Customer / client name"></label>
+      <label>Assigned driver<input id="fleetAssignedDriver" list="fleetDriverOptions" placeholder="Without driver / employee name"><datalist id="fleetDriverOptions">${fleetDriverOptionsHTML()}</datalist></label>
       <label>Status<select id="fleetStatus"><option>In Use</option><option>Spare</option><option>Back-up</option><option>Off-hire</option></select></label>
       <label>Vehicle type<select id="fleetOwnership"><option>SMG Vehicle</option><option>Outsource</option></select></label>
       <div id="fleetVendorWrap" class="wide hidden outsource-fields"><label>Vendor name of outsourced vehicle<input id="fleetVendorName" placeholder="Vendor / supplier name"></label><div class="grid two outsource-date-grid"><label>Start date<input id="fleetOutsourceStartDate" type="date"></label><label>End date<input id="fleetOutsourceEndDate" type="date"></label></div></div>
@@ -1438,7 +1450,7 @@ function fleetHTML(){
     <section class="panel fleet-list-card"><div class="section-title"><div><h3>Fleet List</h3><p class="muted small-note">Search updates instantly while typing.</p></div><button class="mini-btn" onclick="exportFleet()">Export Fleet CSV</button></div><input id="fleetSearch" placeholder="Search by plate, model, customer, status..." value="${esc(state.fleetFilter || '')}" autocomplete="off" class="fleet-search"><div id="fleetResults">${vehicles.length ? fleetTable(vehicles) : '<div class="empty">No fleet vehicles found.</div>'}</div></section></div>`;
 }
 function fleetTable(vehicles){
-  return `<div class="fleet-cards">${vehicles.map(v=>{ const year = v.year || extractYearFromModel(v.modelNumber); const model = modelWithoutYear(v.modelNumber); return `<article class="fleet-card"><div class="fleet-card-main"><div><span class="fleet-plate">${esc(v.plate)}</span><h3>${esc(model)}${year ? ` <span class="fleet-year">${esc(year)}</span>` : ''}</h3><p class="muted">${esc(v.customer || 'No customer added')}</p></div><span class="pill ${v.status === 'In Use' ? 'green' : v.status === 'Back-up' ? 'orange' : v.status === 'Off-hire' ? 'red' : ''}">${esc(v.status)}</span></div><div class="fleet-meta fleet-meta-expanded"><div><small>Registered Co.</small><b>${esc(v.registeredCompany || 'Garage')}</b></div><div><small>Fuel Chip</small><b>${esc(v.fuelChip === 'Yes' ? 'Yes' : 'No')}</b></div><div><small>Type</small><b>${esc(v.ownership)}</b></div><div><small>Vendor</small><b>${v.ownership === 'Outsource' ? esc(v.vendorName || '—') : '—'}</b></div><div><small>Outsource Dates</small><b>${v.ownership === 'Outsource' ? `${esc(v.outsourceStartDate || '—')} → ${esc(v.outsourceEndDate || '—')}` : '—'}</b></div><div><small>Rent Rate</small><b>${v.ownership === 'Outsource' && v.status !== 'Off-hire' ? money(v.rentRate) : '—'}</b></div><div><small>Client Rate</small><b>${v.status === 'In Use' ? money(v.clientRate) : '—'}</b></div></div>${v.notes ? `<p class="fleet-notes">${esc(v.notes)}</p>` : ''}<div class="fleet-actions"><button class="mini-btn" onclick="editFleetVehicle('${v.id}')">Edit</button><button class="mini-btn danger" onclick="deleteFleetVehicle('${v.id}')">Delete</button></div></article>`; }).join('')}</div>`;
+  return `<div class="fleet-cards">${vehicles.map(v=>{ const year = v.year || extractYearFromModel(v.modelNumber); const model = modelWithoutYear(v.modelNumber); return `<article class="fleet-card"><div class="fleet-card-main"><div><span class="fleet-plate">${esc(v.plate)}</span><h3>${esc(model)}${year ? ` <span class="fleet-year">${esc(year)}</span>` : ''}</h3><p class="muted">${esc(v.customer || 'No customer added')}</p></div><span class="pill ${v.status === 'In Use' ? 'green' : v.status === 'Back-up' ? 'orange' : v.status === 'Off-hire' ? 'red' : ''}">${esc(v.status)}</span></div><div class="fleet-meta fleet-meta-expanded"><div><small>Registered Co.</small><b>${v.ownership === 'Outsource' ? '—' : esc(v.registeredCompany || 'Garage')}</b></div><div><small>Fuel Chip</small><b>${esc(v.fuelChip === 'Yes' ? 'Yes' : 'No')}</b></div><div><small>Assigned Driver</small><b>${esc(v.assignedDriver || 'Without driver')}</b></div><div><small>Type</small><b>${esc(v.ownership)}</b></div><div><small>Vendor</small><b>${v.ownership === 'Outsource' ? esc(v.vendorName || '—') : '—'}</b></div><div><small>Outsource Dates</small><b>${v.ownership === 'Outsource' ? `${esc(v.outsourceStartDate || '—')} → ${esc(v.outsourceEndDate || '—')}` : '—'}</b></div><div><small>Rent Rate</small><b>${v.ownership === 'Outsource' && v.status !== 'Off-hire' ? money(v.rentRate) : '—'}</b></div><div><small>Client Rate</small><b>${v.status === 'In Use' ? money(v.clientRate) : '—'}</b></div></div>${v.notes ? `<p class="fleet-notes">${esc(v.notes)}</p>` : ''}<div class="fleet-actions"><button class="mini-btn" onclick="editFleetVehicle('${v.id}')">Edit</button><button class="mini-btn danger" onclick="deleteFleetVehicle('${v.id}')">Delete</button></div></article>`; }).join('')}</div>`;
 }
 
 async function syncClientFromFleetVehicle(vehicle){
@@ -1462,8 +1474,9 @@ async function saveFleetVehicle(e){
     plateCode: normalizePlatePiece($('fleetPlateCode').value),
     plateNumber: normalizePlatePiece($('fleetPlateNumber').value),
     year: autoYear,
-    registeredCompany: $('fleetRegisteredCompany').value,
+    registeredCompany: $('fleetOwnership').value === 'Outsource' ? '' : $('fleetRegisteredCompany').value,
     fuelChip: $('fleetFuelChip').value,
+    assignedDriver: ($('fleetAssignedDriver')?.value || 'Without driver').trim() || 'Without driver',
     vendorName: $('fleetOwnership').value === 'Outsource' ? $('fleetVendorName').value.trim() : '',
     outsourceStartDate: $('fleetOwnership').value === 'Outsource' ? $('fleetOutsourceStartDate').value : '',
     outsourceEndDate: $('fleetOwnership').value === 'Outsource' ? $('fleetOutsourceEndDate').value : '',
@@ -1515,8 +1528,9 @@ function editFleetVehicle(vehicleId){
   $('fleetId').value = v.id;
   $('fleetModel').value = modelWithoutYear(v.modelNumber || '');
   $('fleetYear').value = v.year || extractYearFromModel(v.modelNumber || '');
-  $('fleetRegisteredCompany').value = v.registeredCompany || 'Garage';
+  $('fleetRegisteredCompany').value = v.ownership === 'Outsource' ? '' : (v.registeredCompany || 'Garage');
   $('fleetFuelChip').value = v.fuelChip || 'No';
+  if($('fleetAssignedDriver')) $('fleetAssignedDriver').value = v.assignedDriver || 'Without driver';
   const plateParts = splitPlate(v.plate || '');
   $('fleetPlateCode').value = v.plateCode || plateParts.code || '';
   $('fleetPlateNumber').value = v.plateNumber || plateParts.license || '';
@@ -1534,9 +1548,10 @@ function editFleetVehicle(vehicleId){
 }
 function clearFleetForm(){
   if(state.view !== 'fleet') { go('fleet'); return; }
-  ['fleetId','fleetModel','fleetYear','fleetPlateCode','fleetPlateNumber','fleetCustomer','fleetVendorName','fleetOutsourceStartDate','fleetOutsourceEndDate','fleetNotes'].forEach(id => { if($(id)) $(id).value=''; });
+  ['fleetId','fleetModel','fleetYear','fleetPlateCode','fleetPlateNumber','fleetCustomer','fleetAssignedDriver','fleetVendorName','fleetOutsourceStartDate','fleetOutsourceEndDate','fleetNotes'].forEach(id => { if($(id)) $(id).value=''; });
   if($('fleetStatus')) $('fleetStatus').value='In Use';
   if($('fleetRegisteredCompany')) $('fleetRegisteredCompany').value='Garage';
+  if($('fleetAssignedDriver')) $('fleetAssignedDriver').value='Without driver';
   if($('fleetFuelChip')) $('fleetFuelChip').value='No';
   if($('fleetOwnership')) $('fleetOwnership').value='SMG Vehicle';
   toggleFleetVendorField();
@@ -1592,8 +1607,9 @@ function importFleetCSV(){
           id: existing?.id || id('v'),
           modelNumber:modelWithoutYear(modelRaw),
           year:firstValue(obj,['Year'], existing?.year || extractYearFromModel(modelRaw)),
-          registeredCompany:firstValue(obj,['Registered Company','Company'], existing?.registeredCompany || 'Garage'),
+          registeredCompany: ownership === 'Outsource' ? '' : firstValue(obj,['Registered Company','Company'], existing?.registeredCompany || 'Garage'),
           fuelChip:firstValue(obj,['Fuel Chip','Company Fuel Chip'], existing?.fuelChip || 'No'),
+          assignedDriver:firstValue(obj,['Assigned Driver','Driver','Assigned Employee'], existing?.assignedDriver || 'Without driver'),
           plate,
           plateCode:firstValue(obj,['Plate Code'], existing?.plateCode || parts.code),
           plateNumber:firstValue(obj,['Plate Number','License Number'], existing?.plateNumber || parts.license),
@@ -1625,13 +1641,13 @@ function importFleetCSV(){
 
 function exportFleet(){
   downloadCSV('sarab-fleet.csv', [
-    ['Vehicle Model','Year','Registered Company','Fuel Chip','Plate Code','Plate Number','Number Plate','Customer','Status','Vehicle Type','Vendor Name','Outsource Start Date','Outsource End Date','Outsource Rent Rate AED','Client Rate AED','Total AED','Notes'],
+    ['Vehicle Model','Year','Registered Company','Fuel Chip','Plate Code','Plate Number','Number Plate','Customer','Assigned Driver','Status','Vehicle Type','Vendor Name','Outsource Start Date','Outsource End Date','Outsource Rent Rate AED','Client Rate AED','Total AED','Notes'],
     ...state.vehicles.map(v=>{
       const parts=splitPlate(v.plate);
       const rent=Number(v.ownership === 'Outsource' && v.status !== 'Off-hire' ? v.rentRate || 0 : 0);
       const client=Number(v.status === 'In Use' ? v.clientRate || 0 : 0);
       const total=client-rent;
-      return [modelWithoutYear(v.modelNumber),v.year || extractYearFromModel(v.modelNumber),v.registeredCompany || 'Garage',v.fuelChip || 'No',v.plateCode || parts.code,v.plateNumber || parts.license,v.plate,v.customer,v.status,v.ownership,v.ownership === 'Outsource' ? (v.vendorName || '') : '',v.ownership === 'Outsource' ? (v.outsourceStartDate || '') : '',v.ownership === 'Outsource' ? (v.outsourceEndDate || '') : '',rent,client,total,v.notes];
+      return [modelWithoutYear(v.modelNumber),v.year || extractYearFromModel(v.modelNumber),v.ownership === 'Outsource' ? '' : (v.registeredCompany || 'Garage'),v.fuelChip || 'No',v.plateCode || parts.code,v.plateNumber || parts.license,v.plate,v.customer,v.assignedDriver || 'Without driver',v.status,v.ownership,v.ownership === 'Outsource' ? (v.vendorName || '') : '',v.ownership === 'Outsource' ? (v.outsourceStartDate || '') : '',v.ownership === 'Outsource' ? (v.outsourceEndDate || '') : '',rent,client,total,v.notes];
     })
   ]);
 }
@@ -2212,6 +2228,13 @@ function toggleFleetVendorField(){
   if($('fleetClientRate')){
     if(isOffHire) $('fleetClientRate').value = 0;
     $('fleetClientRate').disabled = isOffHire;
+  }
+  if($('fleetRegisteredCompany')){
+    $('fleetRegisteredCompany').disabled = isOutsource;
+    $('fleetRegisteredCompany').closest('label')?.classList.toggle('field-disabled', isOutsource);
+    if($('fleetRegisteredCompanyNote')) $('fleetRegisteredCompanyNote').classList.toggle('hidden', !isOutsource);
+    if(isOutsource) $('fleetRegisteredCompany').value = '';
+    else if(!$('fleetRegisteredCompany').value) $('fleetRegisteredCompany').value = 'Garage';
   }
 }
 function renderAndRefocus(inputId, cursorOverride=null){
