@@ -204,3 +204,27 @@ drop policy if exists "Employees are readable by authenticated users" on employe
 drop policy if exists "Employees are writable by authenticated users" on employees;
 create policy "Employees are readable by authenticated users" on employees for select using (auth.role() = 'authenticated');
 create policy "Employees are writable by authenticated users" on employees for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+
+-- Employee ticketing module
+create table if not exists employee_tickets (
+  id text primary key,
+  data jsonb not null,
+  updated_at timestamptz default now()
+);
+alter table employee_tickets enable row level security;
+drop policy if exists "Employee tickets readable by authenticated users" on employee_tickets;
+drop policy if exists "Employee tickets writable by authenticated users" on employee_tickets;
+create policy "Employee tickets readable by authenticated users" on employee_tickets for select using (auth.role() = 'authenticated');
+create policy "Employee tickets writable by authenticated users" on employee_tickets for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+
+-- SALIK module
+create table if not exists salik (
+  id text primary key,
+  data jsonb not null,
+  updated_at timestamptz default now()
+);
+alter table salik enable row level security;
+drop policy if exists "SALIK readable by authenticated users" on salik;
+drop policy if exists "SALIK writable by authenticated users" on salik;
+create policy "SALIK readable by authenticated users" on salik for select using (auth.role() = 'authenticated');
+create policy "SALIK writable by authenticated users" on salik for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');

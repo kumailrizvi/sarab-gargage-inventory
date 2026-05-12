@@ -19,7 +19,9 @@ const KEYS = {
   tickets: 'sam_tickets_v1',
   clients: 'sam_clients_v1',
   replacements: 'sam_replacements_v1',
-  employees: 'sam_employees_v1'
+  employees: 'sam_employees_v1',
+  employeeTickets: 'sam_employee_tickets_v1',
+  salik: 'sam_salik_v1'
 };
 const AED = new Intl.NumberFormat('en-AE', { style: 'currency', currency: 'AED' });
 const today = () => new Date().toISOString().slice(0, 10);
@@ -123,7 +125,7 @@ const seedTickets = [
   ...importedComplaintTickets
 ];
 
-const state = { user:null, view:'dashboard', parts:[], jobs:[], vehicles:[], clients:[], employees:[], staff:[], logs:[], tickets:[], filters:{ q:'', category:'All', stock:'All' }, vehicleHistoryQuery:'', fleetFilter:'', clientFilter:'', selectedClient:'', summarySearch:'', activityQuery:'', activitySection:'All', ticketTab:'dashboard', ticketSearch:'', ticketStatus:'All', ticketPriority:'All', fleetSubView:'list', replacementMonth:today().slice(0,7), replacementClient:'', replacementVehicleSearch:'', replacementUndoStack:[], replacementDirty:false, replacementUnlockedMonths:[], vehicleHistorySearch:'', replacements:[], employeeType:'SMG', employeeSearch:'', editingEmployeeId:'' };
+const state = { user:null, view:'dashboard', parts:[], jobs:[], vehicles:[], clients:[], employees:[], staff:[], logs:[], tickets:[], filters:{ q:'', category:'All', stock:'All' }, vehicleHistoryQuery:'', fleetFilter:'', clientFilter:'', selectedClient:'', summarySearch:'', activityQuery:'', activitySection:'All', ticketTab:'dashboard', ticketSearch:'', ticketStatus:'All', ticketPriority:'All', fleetSubView:'list', replacementMonth:today().slice(0,7), replacementClient:'', replacementVehicleSearch:'', replacementUndoStack:[], replacementDirty:false, replacementUnlockedMonths:[], vehicleHistorySearch:'', replacements:[], employeeType:'All', employeeSearch:'', editingEmployeeId:'', employeeTicketSearch:'', editingEmployeeTicketId:'', salikSearch:'' };
 function duplicateKey(value){ return String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, ''); }
 function plateDuplicateKey(value){ return String(value || '').trim().toUpperCase().replace(/[^A-Z0-9]+/g, ''); }
 function inventoryDuplicate(part){
@@ -229,8 +231,8 @@ async function updateJobStatus(jobId, newStatus){
   }
   render();
 }
-function ensureLocalData(){ if(!localStorage.getItem(KEYS.users)) set(KEYS.users, seedUsers); if(!localStorage.getItem(KEYS.parts)) set(KEYS.parts, seedParts); if(!localStorage.getItem(KEYS.jobs)) set(KEYS.jobs, seedJobs); if(!localStorage.getItem(KEYS.vehicles)) set(KEYS.vehicles, seedVehicles); if(!localStorage.getItem(KEYS.staff)) set(KEYS.staff, seedStaff); if(!localStorage.getItem(KEYS.logs)) set(KEYS.logs, []); if(!localStorage.getItem(KEYS.tickets)) set(KEYS.tickets, seedTickets); if(!localStorage.getItem(KEYS.clients)) set(KEYS.clients, seedClients); if(!localStorage.getItem(KEYS.replacements)) set(KEYS.replacements, []); if(!localStorage.getItem(KEYS.employees)) set(KEYS.employees, []); }
-function loadLocalData(){ state.user = get(KEYS.session, null); state.parts = get(KEYS.parts, []); state.jobs = get(KEYS.jobs, []); state.vehicles = get(KEYS.vehicles, []); state.clients = get(KEYS.clients, []); state.employees = get(KEYS.employees, []); state.staff = get(KEYS.staff, []); state.logs = get(KEYS.logs, []); state.tickets = get(KEYS.tickets, []); state.replacements = get(KEYS.replacements, []); }
+function ensureLocalData(){ if(!localStorage.getItem(KEYS.users)) set(KEYS.users, seedUsers); if(!localStorage.getItem(KEYS.parts)) set(KEYS.parts, seedParts); if(!localStorage.getItem(KEYS.jobs)) set(KEYS.jobs, seedJobs); if(!localStorage.getItem(KEYS.vehicles)) set(KEYS.vehicles, seedVehicles); if(!localStorage.getItem(KEYS.staff)) set(KEYS.staff, seedStaff); if(!localStorage.getItem(KEYS.logs)) set(KEYS.logs, []); if(!localStorage.getItem(KEYS.tickets)) set(KEYS.tickets, seedTickets); if(!localStorage.getItem(KEYS.clients)) set(KEYS.clients, seedClients); if(!localStorage.getItem(KEYS.replacements)) set(KEYS.replacements, []); if(!localStorage.getItem(KEYS.employees)) set(KEYS.employees, []); if(!localStorage.getItem(KEYS.employeeTickets)) set(KEYS.employeeTickets, []); if(!localStorage.getItem(KEYS.salik)) set(KEYS.salik, []); }
+function loadLocalData(){ state.user = get(KEYS.session, null); state.parts = get(KEYS.parts, []); state.jobs = get(KEYS.jobs, []); state.vehicles = get(KEYS.vehicles, []); state.clients = get(KEYS.clients, []); state.employees = get(KEYS.employees, []); state.staff = get(KEYS.staff, []); state.logs = get(KEYS.logs, []); state.tickets = get(KEYS.tickets, []); state.replacements = get(KEYS.replacements, []); state.employeeTickets = get(KEYS.employeeTickets, []); state.salik = get(KEYS.salik, []); }
 function mergeImportedComplaintTickets(){
   const existing = new Set((state.tickets || []).map(t => `${String(t.ticketNo||'').toLowerCase()}|${String(t.plate||'').replace(/\s+/g,'').toLowerCase()}|${String(t.category||'').toLowerCase()}`));
   const missing = importedComplaintTickets.filter(t => !existing.has(`${String(t.ticketNo||'').toLowerCase()}|${String(t.plate||'').replace(/\s+/g,'').toLowerCase()}|${String(t.category||'').toLowerCase()}`));
@@ -264,6 +266,8 @@ async function loadRemoteData(){
   state.clients = await fetchRows('clients', { quiet:true });
   state.employees = await fetchRows('employees', { quiet:true });
   state.replacements = await fetchRows('replacements', { quiet:true });
+  state.employeeTickets = await fetchRows('employee_tickets', { quiet:true });
+  state.salik = await fetchRows('salik', { quiet:true });
   const fleetNormalized = normalizeFleetVehicles();
   state.staff = await fetchRows('staff', { quiet:true });
   state.logs = await fetchRows('logs', { quiet:true });
@@ -339,6 +343,21 @@ async function saveEmployees(){
   if(error){ console.warn('Could not save employees. Run updated schema for the employees table.', error); toast('Could not save employees. Run updated schema.'); } else markRemoteSnapshot();
 }
 
+
+async function saveEmployeeTickets(){
+  if(!USE_SUPABASE){ set(KEYS.employeeTickets, state.employeeTickets); return; }
+  const rows = (state.employeeTickets || []).map(t => ({ id:t.id, data:t, updated_at:new Date().toISOString() }));
+  const { error } = await sb.from('employee_tickets').upsert(rows);
+  if(error){ console.warn('Could not save employee tickets. Run updated schema for employee_tickets.', error); } else markRemoteSnapshot();
+}
+
+async function saveSalik(){
+  if(!USE_SUPABASE){ set(KEYS.salik, state.salik); return; }
+  const rows = (state.salik || []).map(r => ({ id:r.id, data:r, updated_at:new Date().toISOString() }));
+  const { error } = await sb.from('salik').upsert(rows);
+  if(error){ console.warn('Could not save SALIK. Run updated schema for salik.', error); } else markRemoteSnapshot();
+}
+
 async function saveReplacements(){
   if(!USE_SUPABASE){ set(KEYS.replacements, state.replacements); return; }
   const rows = state.replacements.map(r => ({ id:r.id, data:r, updated_at:new Date().toISOString() }));
@@ -357,17 +376,17 @@ let updateToastVisible = false;
 let remoteWatcherTimer = null;
 function stableDataSignature(items){ return (items || []).map(x => JSON.stringify(x)).sort().join('|'); }
 function currentSharedSignature(){
-  return ['parts','jobs','vehicles','clients','tickets','staff','replacements','employees'].map(k => `${k}:${stableDataSignature(state[k])}`).join('||');
+  return ['parts','jobs','vehicles','clients','tickets','staff','replacements','employees','employeeTickets','salik'].map(k => `${k}:${stableDataSignature(state[k])}`).join('||');
 }
 function markRemoteSnapshot(){ remoteSignature = currentSharedSignature(); }
 async function fetchRemoteSignature(){
   if(!USE_SUPABASE) return '';
-  const tables = ['parts','jobs','vehicles','clients','tickets','staff','replacements','employees'];
+  const tables = [['parts','parts'],['jobs','jobs'],['vehicles','vehicles'],['clients','clients'],['tickets','tickets'],['staff','staff'],['replacements','replacements'],['employees','employees'],['employeeTickets','employee_tickets'],['salik','salik']];
   const pieces = [];
-  for(const table of tables){
+  for(const [key, table] of tables){
     const { data, error } = await sb.from(table).select('id,data');
     if(error){ console.warn('Signature skipped table', table, error.message || error); continue; }
-    pieces.push(`${table}:${(data || []).map(r => JSON.stringify({id:r.id,...r.data})).sort().join('|')}`);
+    pieces.push(`${key}:${(data || []).map(r => JSON.stringify({id:r.id,...r.data})).sort().join('|')}`);
   }
   return pieces.join('||');
 }
@@ -459,7 +478,7 @@ async function logout(){
   if(USE_SUPABASE) await sb.auth.signOut();
   localStorage.removeItem(KEYS.session); state.user=null; showAuth();
 }
-function go(view){ state.view=view; document.querySelectorAll('.subnav').forEach(b=>b.classList.toggle('active', b.dataset.view===view)); document.querySelectorAll('.nav').forEach(b=>{ const v=b.dataset.view; const active = v===view || (v==='fleet' && ['fleet','fleetSummary','replacements','vehicleHistory'].includes(view)); b.classList.toggle('active', active); }); $('sidebar').classList.remove('open'); render(); }
+function go(view){ state.view=view; document.querySelectorAll('.subnav').forEach(b=>b.classList.toggle('active', b.dataset.view===view)); document.querySelectorAll('.nav').forEach(b=>{ const v=b.dataset.view; const active = v===view || (v==='fleet' && ['fleet','fleetSummary','replacements','vehicleHistory','salik'].includes(view)); b.classList.toggle('active', active || (v==='employees' && ['employees','employeeHistory','employeeTickets'].includes(view))); }); $('sidebar').classList.remove('open'); render(); }
 function goInventory(stock='All'){ state.filters.stock=stock; state.view='inventory'; document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('active', b.dataset.view==='inventory')); $('sidebar').classList.remove('open'); render(); }
 function goJobs(){ state.view='used'; document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('active', b.dataset.view==='used')); $('sidebar').classList.remove('open'); render(); }
 
@@ -511,7 +530,7 @@ function stats(){
   const salesValue = state.parts.reduce((a,p)=>a+(Number(p.qty||0)*Number(p.price||0)),0);
   return { totalUnits, lowCount: low.length, todayJobs: todayJobs.length, partsUsedToday, costValue, salesValue };
 }
-function render(){ if(!USE_SUPABASE) loadData(); const s=stats(); const page=$('page'); const views={dashboard:dashboardHTML, clients:clientsHTML, inventory:inventoryHTML, employees:employeesHTML, fleet:fleetHTML, fleetSummary:fleetSummaryHTML, replacements:replacementsHTML, vehicleHistory:vehicleHistoryHTML, tickets:ticketsHTML, job:jobHTML, used:usedHTML, reports:reportsHTML, activity:activityHTML, export:exportHTML, settings:settingsHTML}; page.innerHTML=(views[state.view]||dashboardHTML)(s); bindPageEvents(); hydrateStaticIcons(); }
+function render(){ if(!USE_SUPABASE) loadData(); const s=stats(); const page=$('page'); const views={dashboard:dashboardHTML, clients:clientsHTML, inventory:inventoryHTML, employees:employeesHTML, employeeHistory:employeeHistoryHTML, employeeTickets:employeeTicketsHTML, fleet:fleetHTML, fleetSummary:fleetSummaryHTML, replacements:replacementsHTML, vehicleHistory:vehicleHistoryHTML, salik:salikHTML, tickets:ticketsHTML, job:jobHTML, used:usedHTML, reports:reportsHTML, activity:activityHTML, export:exportHTML, settings:settingsHTML}; page.innerHTML=(views[state.view]||dashboardHTML)(s); bindPageEvents(); hydrateStaticIcons(); }
 function kpi(title,num,sub,icon,warn=false,action=''){ const tone=warn?'orange':''; const moneyClass=String(num).includes('AED')?'money':''; const click=action ? ` onclick="${action}" role="button" tabindex="0"` : ''; return `<section class="card kpi ${action ? 'clickable-kpi' : ''}"${click}><div><h3>${title}</h3><div class="num ${tone} ${moneyClass}">${num}</div><p>${sub}</p></div><div class="kpi-icon ${warn?'warn':''}">${I(icon,'icon-xl')}</div></section>`; }
 function statusSummaryCard(){
   const c = statusCounts();
@@ -938,7 +957,8 @@ function fleetSubnavHeader(active){
     ['fleet','Fleet List'],
     ['fleetSummary','Client wise summary'],
     ['replacements','Replacements'],
-    ['vehicleHistory','Vehicle History']
+    ['vehicleHistory','Vehicle History'],
+    ['salik','SALIK']
   ];
   return `<div class="fleet-page-tabs">${tabs.map(([view,label])=>`<button class="tab ${active===view?'active':''}" onclick="go('${view}')">${label}</button>`).join('')}</div>`;
 }
@@ -1892,17 +1912,17 @@ function calcUAEGratuity(startDate, basicSalary, endDate=today()){
   const cap = basic * 24;
   return Math.min(gratuityDays * daily, cap);
 }
-function employeeFormDefaults(){ return { id:'', type: state.employeeType || 'SMG', name:'', startDate:'', currentWorking:true, endDate:'', visaStatus:'Garage', basicSalary:0, netSalary:0, passportCollected:false, passportRequested:false, hasId:false, hasIdRequested:false, drivingLicense:false, drivingLicenseRequested:false, undertaking:false, undertakingRequested:false, labourPermit:false, labourPermitRequested:false }; }
+function employeeFormDefaults(){ return { id:'', type: state.employeeType || 'SMG', name:'', startDate:'', currentWorking:true, endDate:'', visaStatus:'Garage', basicSalary:0, netSalary:0, passportCollected:false, passportRequested:false, hasId:false, hasIdRequested:false, drivingLicense:false, drivingLicenseRequested:false, undertaking:false, undertakingRequested:false, labourPermit:false, labourPermitRequested:false, assignedCompany:'', assignedVehicle:'' }; }
 function employeeIsCurrentlyWorking(e){ return e.currentWorking !== false; }
 function employeeGratuityEndDate(e){ return employeeIsCurrentlyWorking(e) ? today() : (e.endDate || today()); }
 function getEditingEmployee(){ return state.employees.find(e => e.id === state.editingEmployeeId) || null; }
-function employeeTypeTabs(){ return `<div class="view-tabs employee-tabs"><button class="tab ${state.employeeType==='All'?'active':''}" onclick="state.employeeType='All';state.editingEmployeeId='';render()">All Employees</button><button class="tab ${state.employeeType==='SMG'?'active':''}" onclick="state.employeeType='SMG';state.editingEmployeeId='';render()">SMG Employees</button><button class="tab ${state.employeeType==='Outsourced'?'active':''}" onclick="state.employeeType='Outsourced';state.editingEmployeeId='';render()">Outsourced Employees</button></div>`; }
+function employeeTypeTabs(){ return `<div class="view-tabs employee-tabs"><button class="tab ${state.view==='employees' && state.employeeType==='All'?'active':''}" onclick="state.view='employees';state.employeeType='All';state.editingEmployeeId='';render()">All Employees</button><button class="tab ${state.view==='employees' && state.employeeType==='SMG'?'active':''}" onclick="state.view='employees';state.employeeType='SMG';state.editingEmployeeId='';render()">SMG Employees</button><button class="tab ${state.view==='employees' && state.employeeType==='Outsourced'?'active':''}" onclick="state.view='employees';state.employeeType='Outsourced';state.editingEmployeeId='';render()">Outsourced Employees</button><button class="tab ${state.view==='employeeHistory'?'active':''}" onclick="go('employeeHistory')">Employees History</button><button class="tab ${state.view==='employeeTickets'?'active':''}" onclick="go('employeeTickets')">Employee Ticketing</button></div>`; }
 function employeesHTML(){
   const type = state.employeeType || 'All';
   const q = String(state.employeeSearch || '').toLowerCase();
   const rows = state.employees
     .filter(e => type === 'All' || (e.type || 'SMG') === type)
-    .filter(e => !q || [e.type,e.name,e.visaStatus,e.startDate,e.endDate,e.basicSalary,e.netSalary].join(' ').toLowerCase().includes(q));
+    .filter(e => !q || [e.type,e.name,e.visaStatus,e.startDate,e.endDate,e.basicSalary,e.netSalary,e.assignedCompany,e.assignedVehicle].join(' ').toLowerCase().includes(q));
   const smg = state.employees.filter(e => (e.type || 'SMG') === 'SMG');
   const out = state.employees.filter(e => e.type === 'Outsourced');
   const gratuityTotal = smg.reduce((a,e)=>a+calcUAEGratuity(e.startDate,e.basicSalary,employeeGratuityEndDate(e)),0);
@@ -1918,18 +1938,19 @@ function employeesHTML(){
   </div>
   <p class="hint">Gratuity is an estimate based on basic salary and start date using the standard UAE 21/30-day approach. Confirm final calculations with HR/legal before settlement.</p>`;
 }
+function employeeVehicleDatalist(){ return `<datalist id="employeeVehicleOptions">${state.vehicles.map(v=>`<option value="${esc(v.plate||'')}">${esc(v.plate||'')} — ${esc(v.modelNumber||'Vehicle')} · ${esc(fleetClientName(v))}</option>`).join('')}</datalist>`; }
 function employeeFormHTML(e){
   const type = e.type || state.employeeType || 'SMG';
   if(type === 'Outsourced'){
     return `<form id="employeeForm" onsubmit="saveEmployee(event)"><input id="employeeId" type="hidden" value="${esc(e.id)}" /><input id="employeeType" type="hidden" value="Outsourced" />
-    <div class="grid two"><label>Name<input id="empName" required value="${esc(e.name)}" placeholder="Employee name" /></label><label>Start date<input id="empStartDate" type="date" value="${esc(e.startDate)}" /></label></div>
+    <div class="grid two"><label>Name<input id="empName" required value="${esc(e.name)}" placeholder="Employee name" /></label><label>Start date<input id="empStartDate" type="date" value="${esc(e.startDate)}" /></label><label>Assigned company<input id="empAssignedCompany" value="${esc(e.assignedCompany||'')}" placeholder="Client / company" /></label><label>Assigned vehicle<input id="empAssignedVehicle" list="employeeVehicleOptions" value="${esc(e.assignedVehicle||'')}" placeholder="Plate / vehicle" /></label></div>${employeeVehicleDatalist()}
     <label class="checkbox-line employee-current-line"><input id="empCurrentWorking" type="checkbox" ${employeeIsCurrentlyWorking(e)?'checked':''} onchange="toggleEmployeeEndDate()"/> Currently working</label>
     <div id="employeeEndDateWrap" class="employee-end-date-wrap" style="${employeeIsCurrentlyWorking(e)?'display:none':''}"><label>End date<input id="empEndDate" type="date" value="${esc(e.endDate||'')}" /></label></div>
     <div class="check-grid"><label><input id="empHasId" type="checkbox" ${e.hasId?'checked':''}/> ID</label><label><input id="empDrivingLicense" type="checkbox" ${e.drivingLicense?'checked':''}/> Driving License</label><label><input id="empUndertaking" type="checkbox" ${e.undertaking?'checked':''}/> Undertaking</label><label><input id="empLabourPermit" type="checkbox" ${e.labourPermit?'checked':''}/> Labour part-time permit</label></div>
     <div class="form-actions"><button type="button" class="btn light" onclick="state.editingEmployeeId='';render()">Clear</button><button class="btn primary" type="submit">Save Employee</button></div></form>`;
   }
   return `<form id="employeeForm" onsubmit="saveEmployee(event)"><input id="employeeId" type="hidden" value="${esc(e.id)}" /><input id="employeeType" type="hidden" value="SMG" />
-  <div class="grid two"><label>Name<input id="empName" required value="${esc(e.name)}" placeholder="Employee name" /></label><label>Start date<input id="empStartDate" type="date" value="${esc(e.startDate)}" /></label><label>Visa status<select id="empVisaStatus">${EMPLOYEE_VISA_STATUS.map(v=>`<option ${v===(e.visaStatus||'Garage')?'selected':''}>${esc(v)}</option>`).join('')}</select></label><label>Basic salary (AED)<input id="empBasicSalary" type="number" min="0" step="0.01" value="${Number(e.basicSalary||0)}" /></label><label>Net salary (AED)<input id="empNetSalary" type="number" min="0" step="0.01" value="${Number(e.netSalary||0)}" /></label><label class="checkbox-line"><input id="empPassportCollected" type="checkbox" ${e.passportCollected?'checked':''}/> Passport collected</label></div>
+  <div class="grid two"><label>Name<input id="empName" required value="${esc(e.name)}" placeholder="Employee name" /></label><label>Start date<input id="empStartDate" type="date" value="${esc(e.startDate)}" /></label><label>Assigned company<input id="empAssignedCompany" value="${esc(e.assignedCompany||'')}" placeholder="Client / company" /></label><label>Assigned vehicle<input id="empAssignedVehicle" list="employeeVehicleOptions" value="${esc(e.assignedVehicle||'')}" placeholder="Plate / vehicle" /></label><label>Visa status<select id="empVisaStatus">${EMPLOYEE_VISA_STATUS.map(v=>`<option ${v===(e.visaStatus||'Garage')?'selected':''}>${esc(v)}</option>`).join('')}</select></label><label>Basic salary (AED)<input id="empBasicSalary" type="number" min="0" step="0.01" value="${Number(e.basicSalary||0)}" /></label><label>Net salary (AED)<input id="empNetSalary" type="number" min="0" step="0.01" value="${Number(e.netSalary||0)}" /></label><label class="checkbox-line"><input id="empPassportCollected" type="checkbox" ${e.passportCollected?'checked':''}/> Passport collected</label></div>${employeeVehicleDatalist()}
   <label class="checkbox-line employee-current-line"><input id="empCurrentWorking" type="checkbox" ${employeeIsCurrentlyWorking(e)?'checked':''} onchange="toggleEmployeeEndDate()"/> Currently working</label>
   <div id="employeeEndDateWrap" class="employee-end-date-wrap" style="${employeeIsCurrentlyWorking(e)?'display:none':''}"><label>End date<input id="empEndDate" type="date" value="${esc(e.endDate||'')}" /></label></div>
   <div class="employee-gratuity-preview employee-gratuity-stack"><div><span>Total tenure</span><b>${employeeTenureText(e.startDate,employeeGratuityEndDate(e))}</b></div><div><span>Estimated gratuity</span><b>${money(calcUAEGratuity(e.startDate,e.basicSalary,employeeGratuityEndDate(e)))}</b></div></div>
@@ -1965,16 +1986,16 @@ function employeeTableHTML(rows,type){
   if(type === 'All'){
     const body = rows.map(e => {
       const isSMG = (e.type || 'SMG') === 'SMG';
-      return `<tr><td><b>${esc(e.name)}</b><div class="muted tiny">${esc(e.type || 'SMG')}</div></td><td>${employeeIsCurrentlyWorking(e)?'<span class="badge green">Working</span>':'<span class="badge muted-badge">Left</span>'}</td><td>${esc(e.startDate||'—')}</td><td>${employeeIsCurrentlyWorking(e)?'—':esc(e.endDate||'—')}</td><td>${employeeTenureText(e.startDate,employeeGratuityEndDate(e))}</td><td>${isSMG ? esc(e.visaStatus||'—') : 'Outsourced'}</td><td>${isSMG ? money(e.basicSalary) : '—'}</td><td>${isSMG ? money(e.netSalary) : '—'}</td><td>${isSMG ? `<b class="green-text">${money(calcUAEGratuity(e.startDate,e.basicSalary,employeeGratuityEndDate(e)))}</b>` : '—'}</td><td>${isSMG ? `<div class="doc-mini-row"><span>Passport</span>${employeeDocStatusCell(e,'passportCollected','passportRequested','Passport')}</div>` : employeeOutsourcedDocsHTML(e)}</td><td><button class="mini-btn" onclick="editEmployee('${esc(e.id)}')">Edit</button><button class="mini-btn danger" onclick="removeEmployee('${esc(e.id)}')">Remove</button></td></tr>`;
+      return `<tr><td><b>${esc(e.name)}</b><div class="muted tiny">${esc(e.type || 'SMG')}</div></td><td>${employeeIsCurrentlyWorking(e)?'<span class="badge green">Working</span>':'<span class="badge muted-badge">Left</span>'}</td><td>${esc(e.startDate||'—')}</td><td>${employeeIsCurrentlyWorking(e)?'—':esc(e.endDate||'—')}</td><td>${employeeTenureText(e.startDate,employeeGratuityEndDate(e))}</td><td>${esc(e.assignedCompany||'—')}</td><td>${esc(e.assignedVehicle||'—')}</td><td>${isSMG ? esc(e.visaStatus||'—') : 'Outsourced'}</td><td>${isSMG ? money(e.basicSalary) : '—'}</td><td>${isSMG ? money(e.netSalary) : '—'}</td><td>${isSMG ? `<b class="green-text">${money(calcUAEGratuity(e.startDate,e.basicSalary,employeeGratuityEndDate(e)))}</b>` : '—'}</td><td>${isSMG ? `<div class="doc-mini-row"><span>Passport</span>${employeeDocStatusCell(e,'passportCollected','passportRequested','Passport')}</div>` : employeeOutsourcedDocsHTML(e)}</td><td><button class="mini-btn" onclick="editEmployee('${esc(e.id)}')">Edit</button><button class="mini-btn danger" onclick="removeEmployee('${esc(e.id)}')">Remove</button></td></tr>`;
     }).join('');
-    return `<div class="table-wrap employee-table-wrap"><table><tr><th>Name</th><th>Status</th><th>Start date</th><th>End date</th><th>Total tenure</th><th>Visa / Type</th><th>Basic</th><th>Net</th><th>Gratuity</th><th>Documents</th><th>Action</th></tr><tbody>${body}</tbody></table></div>`;
+    return `<div class="table-wrap employee-table-wrap"><table><tr><th>Name</th><th>Status</th><th>Start date</th><th>End date</th><th>Total tenure</th><th>Assigned Company</th><th>Assigned Vehicle</th><th>Visa / Type</th><th>Basic</th><th>Net</th><th>Gratuity</th><th>Documents</th><th>Action</th></tr><tbody>${body}</tbody></table></div>`;
   }
   const head = type === 'SMG'
-    ? `<tr><th>Name</th><th>Status</th><th>Start date</th><th>End date</th><th>Total tenure</th><th>Visa status</th><th>Basic</th><th>Net</th><th>Gratuity</th><th>Passport</th><th>Action</th></tr>`
-    : `<tr><th>Name</th><th>Status</th><th>Start date</th><th>End date</th><th>Total tenure</th><th>ID</th><th>Driving License</th><th>Undertaking</th><th>Labour Permit</th><th>Action</th></tr>`;
+    ? `<tr><th>Name</th><th>Status</th><th>Start date</th><th>End date</th><th>Total tenure</th><th>Assigned Company</th><th>Assigned Vehicle</th><th>Visa status</th><th>Basic</th><th>Net</th><th>Gratuity</th><th>Passport</th><th>Action</th></tr>`
+    : `<tr><th>Name</th><th>Status</th><th>Start date</th><th>End date</th><th>Total tenure</th><th>Assigned Company</th><th>Assigned Vehicle</th><th>ID</th><th>Driving License</th><th>Undertaking</th><th>Labour Permit</th><th>Action</th></tr>`;
   const body = rows.map(e => type === 'SMG'
-    ? `<tr><td><b>${esc(e.name)}</b></td><td>${employeeIsCurrentlyWorking(e)?'<span class="badge green">Working</span>':'<span class="badge muted-badge">Left</span>'}</td><td>${esc(e.startDate||'—')}</td><td>${employeeIsCurrentlyWorking(e)?'—':esc(e.endDate||'—')}</td><td>${employeeTenureText(e.startDate,employeeGratuityEndDate(e))}</td><td>${esc(e.visaStatus||'—')}</td><td>${money(e.basicSalary)}</td><td>${money(e.netSalary)}</td><td><b class="green-text">${money(calcUAEGratuity(e.startDate,e.basicSalary,employeeGratuityEndDate(e)))}</b></td><td>${employeeDocStatusCell(e,'passportCollected','passportRequested','Passport')}</td><td><button class="mini-btn" onclick="editEmployee('${esc(e.id)}')">Edit</button><button class="mini-btn danger" onclick="removeEmployee('${esc(e.id)}')">Remove</button></td></tr>`
-    : `<tr><td><b>${esc(e.name)}</b></td><td>${employeeIsCurrentlyWorking(e)?'<span class="badge green">Working</span>':'<span class="badge muted-badge">Left</span>'}</td><td>${esc(e.startDate||'—')}</td><td>${employeeIsCurrentlyWorking(e)?'—':esc(e.endDate||'—')}</td><td>${employeeTenureText(e.startDate,employeeGratuityEndDate(e))}</td><td>${employeeDocStatusCell(e,'hasId','hasIdRequested','ID')}</td><td>${employeeDocStatusCell(e,'drivingLicense','drivingLicenseRequested','Driving License')}</td><td>${employeeDocStatusCell(e,'undertaking','undertakingRequested','Undertaking')}</td><td>${employeeDocStatusCell(e,'labourPermit','labourPermitRequested','Labour Permit')}</td><td><button class="mini-btn" onclick="editEmployee('${esc(e.id)}')">Edit</button><button class="mini-btn danger" onclick="removeEmployee('${esc(e.id)}')">Remove</button></td></tr>`).join('');
+    ? `<tr><td><b>${esc(e.name)}</b></td><td>${employeeIsCurrentlyWorking(e)?'<span class="badge green">Working</span>':'<span class="badge muted-badge">Left</span>'}</td><td>${esc(e.startDate||'—')}</td><td>${employeeIsCurrentlyWorking(e)?'—':esc(e.endDate||'—')}</td><td>${employeeTenureText(e.startDate,employeeGratuityEndDate(e))}</td><td>${esc(e.assignedCompany||'—')}</td><td>${esc(e.assignedVehicle||'—')}</td><td>${esc(e.visaStatus||'—')}</td><td>${money(e.basicSalary)}</td><td>${money(e.netSalary)}</td><td><b class="green-text">${money(calcUAEGratuity(e.startDate,e.basicSalary,employeeGratuityEndDate(e)))}</b></td><td>${employeeDocStatusCell(e,'passportCollected','passportRequested','Passport')}</td><td><button class="mini-btn" onclick="editEmployee('${esc(e.id)}')">Edit</button><button class="mini-btn danger" onclick="removeEmployee('${esc(e.id)}')">Remove</button></td></tr>`
+    : `<tr><td><b>${esc(e.name)}</b></td><td>${employeeIsCurrentlyWorking(e)?'<span class="badge green">Working</span>':'<span class="badge muted-badge">Left</span>'}</td><td>${esc(e.startDate||'—')}</td><td>${employeeIsCurrentlyWorking(e)?'—':esc(e.endDate||'—')}</td><td>${employeeTenureText(e.startDate,employeeGratuityEndDate(e))}</td><td>${esc(e.assignedCompany||'—')}</td><td>${esc(e.assignedVehicle||'—')}</td><td>${employeeDocStatusCell(e,'hasId','hasIdRequested','ID')}</td><td>${employeeDocStatusCell(e,'drivingLicense','drivingLicenseRequested','Driving License')}</td><td>${employeeDocStatusCell(e,'undertaking','undertakingRequested','Undertaking')}</td><td>${employeeDocStatusCell(e,'labourPermit','labourPermitRequested','Labour Permit')}</td><td><button class="mini-btn" onclick="editEmployee('${esc(e.id)}')">Edit</button><button class="mini-btn danger" onclick="removeEmployee('${esc(e.id)}')">Remove</button></td></tr>`).join('');
   return `<div class="table-wrap employee-table-wrap"><table>${head}<tbody>${body}</tbody></table></div>`;
 }
 async function saveEmployee(ev){
@@ -1983,6 +2004,8 @@ async function saveEmployee(ev){
   const existingId = $('employeeId').value;
   const emp = { id: existingId || id('emp'), type, name:$('empName').value.trim(), startDate:$('empStartDate').value || '', updatedAt:new Date().toISOString(), createdAt: existingId ? (getEditingEmployee()?.createdAt || new Date().toISOString()) : new Date().toISOString() };
   if(!emp.name) return toast('Employee name is required');
+  emp.assignedCompany = $('empAssignedCompany') ? $('empAssignedCompany').value.trim() : '';
+  emp.assignedVehicle = $('empAssignedVehicle') ? $('empAssignedVehicle').value.trim() : '';
   emp.currentWorking = $('empCurrentWorking') ? $('empCurrentWorking').checked : true;
   emp.endDate = emp.currentWorking ? '' : (($('empEndDate') && $('empEndDate').value) || '');
   if(!emp.currentWorking && !emp.endDate) return toast('End date is required when employee is not currently working');
@@ -2004,6 +2027,17 @@ async function saveEmployee(ev){
     emp.labourPermitRequested = emp.labourPermit ? false : Boolean(existingEmployee?.labourPermitRequested);
   }
   const ix = state.employees.findIndex(x => x.id === emp.id);
+  const oldEmp = ix >= 0 ? state.employees[ix] : null;
+  const oldAssign = `${oldEmp?.assignedCompany||''}|${oldEmp?.assignedVehicle||''}`;
+  const newAssign = `${emp.assignedCompany||''}|${emp.assignedVehicle||''}`;
+  emp.assignmentHistory = oldEmp?.assignmentHistory || [];
+  if(!oldEmp && (emp.assignedCompany || emp.assignedVehicle)){ emp.assignmentHistory.push({from:emp.startDate||today(), to:'Present', company:emp.assignedCompany||'—', vehicle:emp.assignedVehicle||'—', note:'Initial assignment'}); }
+  if(oldEmp && oldAssign !== newAssign){
+    const d=today();
+    const last = emp.assignmentHistory[emp.assignmentHistory.length-1];
+    if(last && (!last.to || last.to==='Present')) last.to=d;
+    emp.assignmentHistory.push({from:d, to:'Present', company:emp.assignedCompany||'—', vehicle:emp.assignedVehicle||'—', note:'Assignment changed'});
+  }
   if(ix >= 0) state.employees[ix] = {...state.employees[ix], ...emp}; else state.employees.unshift(emp);
   await saveEmployees();
   await logAction(existingId ? 'Updated employee' : 'Added employee', 'Employees', emp.name, type, state.user?.name);
@@ -2014,12 +2048,60 @@ async function saveEmployee(ev){
 function editEmployee(empId){ const e = state.employees.find(x => x.id === empId); if(!e) return; state.employeeType = e.type || 'SMG'; state.editingEmployeeId = empId; render(); }
 async function removeEmployee(empId){ const e = state.employees.find(x => x.id === empId); if(!e) return; if(!confirm(`Remove ${e.name}?`)) return; state.employees = state.employees.filter(x => x.id !== empId); if(USE_SUPABASE) await deleteRemoteRow('employees', empId); await saveEmployees(); await logAction('Removed employee', 'Employees', e.name, e.type || '', state.user?.name); toast('Employee removed'); render(); }
 function exportEmployees(){
-  const rows = [['Type','Name','Currently Working','Start Date','End Date','Total Tenure','Visa Status','Basic Salary AED','Net Salary AED','Estimated Gratuity AED','Passport Collected','Passport Requested','ID','ID Requested','Driving License','Driving License Requested','Undertaking','Undertaking Requested','Labour Part Time Permit','Labour Permit Requested']];
-  state.employees.forEach(e => rows.push([e.type||'SMG', e.name||'', employeeIsCurrentlyWorking(e)?'Yes':'No', e.startDate||'', employeeIsCurrentlyWorking(e)?'':(e.endDate||''), employeeTenureText(e.startDate,employeeGratuityEndDate(e)), e.visaStatus||'', e.basicSalary||0, e.netSalary||0, calcUAEGratuity(e.startDate,e.basicSalary,employeeGratuityEndDate(e)).toFixed(2), e.passportCollected?'Yes':'No', e.passportRequested?'Yes':'No', e.hasId?'Yes':'No', e.hasIdRequested?'Yes':'No', e.drivingLicense?'Yes':'No', e.drivingLicenseRequested?'Yes':'No', e.undertaking?'Yes':'No', e.undertakingRequested?'Yes':'No', e.labourPermit?'Yes':'No', e.labourPermitRequested?'Yes':'No']));
+  const rows = [['Type','Name','Currently Working','Start Date','End Date','Total Tenure','Assigned Company','Assigned Vehicle','Visa Status','Basic Salary AED','Net Salary AED','Estimated Gratuity AED','Passport Collected','Passport Requested','ID','ID Requested','Driving License','Driving License Requested','Undertaking','Undertaking Requested','Labour Part Time Permit','Labour Permit Requested']];
+  state.employees.forEach(e => rows.push([e.type||'SMG', e.name||'', employeeIsCurrentlyWorking(e)?'Yes':'No', e.startDate||'', employeeIsCurrentlyWorking(e)?'':(e.endDate||''), employeeTenureText(e.startDate,employeeGratuityEndDate(e)), e.assignedCompany||'', e.assignedVehicle||'', e.visaStatus||'', e.basicSalary||0, e.netSalary||0, calcUAEGratuity(e.startDate,e.basicSalary,employeeGratuityEndDate(e)).toFixed(2), e.passportCollected?'Yes':'No', e.passportRequested?'Yes':'No', e.hasId?'Yes':'No', e.hasIdRequested?'Yes':'No', e.drivingLicense?'Yes':'No', e.drivingLicenseRequested?'Yes':'No', e.undertaking?'Yes':'No', e.undertakingRequested?'Yes':'No', e.labourPermit?'Yes':'No', e.labourPermitRequested?'Yes':'No']));
   downloadCSV('sarab-employees.csv', rows);
 }
 
 function toggleEmployeeEndDate(){ const wrap = $('employeeEndDateWrap'); const current = $('empCurrentWorking'); if(wrap && current) wrap.style.display = current.checked ? 'none' : 'block'; }
+
+function employeeHistoryHTML(){
+  const q = String(state.employeeSearch || '').toLowerCase();
+  const rows = (state.employees || []).filter(e => !q || [e.name,e.assignedCompany,e.assignedVehicle,e.type,e.visaStatus].join(' ').toLowerCase().includes(q));
+  const body = rows.map(e=>{
+    const hist = (e.assignmentHistory && e.assignmentHistory.length ? e.assignmentHistory : (e.assignedCompany || e.assignedVehicle ? [{from:e.startDate||'—', to:'Present', company:e.assignedCompany||'—', vehicle:e.assignedVehicle||'—', note:'Current assignment'}] : []));
+    return `<tr><td><b>${esc(e.name)}</b><div class="muted tiny">${esc(e.type||'SMG')}</div></td><td>${esc(e.assignedCompany||'—')}</td><td>${esc(e.assignedVehicle||'—')}</td><td>${employeeIsCurrentlyWorking(e)?'<span class="badge green">Working</span>':'<span class="badge muted-badge">Left</span>'}</td><td>${hist.length}</td><td><details><summary class="mini-btn">Open history</summary><div class="history-table-mini"><table><tr><th>From</th><th>To</th><th>Company / Client</th><th>Vehicle</th><th>Note</th></tr>${hist.map(h=>`<tr><td>${esc(h.from||'—')}</td><td>${esc(h.to||'Present')}</td><td>${esc(h.company||'—')}</td><td>${esc(h.vehicle||'—')}</td><td>${esc(h.note||'')}</td></tr>`).join('')}</table></div></details></td></tr>`;
+  }).join('');
+  return `<div class="page-head"><div><h1>Employees History</h1><p class="muted">Track which company/client and vehicle each employee was assigned to over time.</p></div><button class="btn light" onclick="exportEmployeeHistoryCSV()">${I('download','icon-sm')} Export CSV</button></div>${employeeTypeTabs()}<section class="panel"><input id="employeeSearch" class="search-input" placeholder="Search employee, vehicle, company..." value="${esc(state.employeeSearch||'')}" oninput="state.employeeSearch=this.value; renderAndRefocus('employeeSearch')" /><div class="table-wrap"><table><tr><th>Employee</th><th>Current Company</th><th>Current Vehicle</th><th>Status</th><th>History entries</th><th>Details</th></tr><tbody>${body || '<tr><td colspan="6" class="muted">No employee history yet.</td></tr>'}</tbody></table></div></section>`;
+}
+function exportEmployeeHistoryCSV(){
+  const rows=[['Employee','Type','From','To','Company / Client','Vehicle','Note']];
+  (state.employees||[]).forEach(e=>{ const hist=(e.assignmentHistory&&e.assignmentHistory.length?e.assignmentHistory:[{from:e.startDate||'',to:'Present',company:e.assignedCompany||'',vehicle:e.assignedVehicle||'',note:'Current assignment'}]); hist.forEach(h=>rows.push([e.name||'',e.type||'SMG',h.from||'',h.to||'Present',h.company||'',h.vehicle||'',h.note||''])); });
+  downloadCSV('sarab-employee-history.csv', rows);
+}
+const EMPLOYEE_TICKET_CATEGORIES=['Fine inquiries','Advance request','Leave request','Accidents','Complaints against driver'];
+function employeeTicketsHTML(){
+  const q=String(state.employeeTicketSearch||'').toLowerCase();
+  const rows=(state.employeeTickets||[]).filter(t=>!q||[t.employee,t.category,t.status,t.notes,t.date].join(' ').toLowerCase().includes(q));
+  return `<div class="page-head"><div><h1>Employee Ticketing</h1><p class="muted">Track employee requests, fines, leave, accidents and complaints.</p></div><button class="btn light" onclick="exportEmployeeTicketsCSV()">${I('download','icon-sm')} Export CSV</button></div>${employeeTypeTabs()}<div class="employee-ticket-layout"><section class="panel"><h2>${state.editingEmployeeTicketId?'Edit':'New'} Employee Ticket</h2><form onsubmit="saveEmployeeTicket(event)" class="grid"><input id="employeeTicketId" type="hidden" value="${esc(state.editingEmployeeTicketId||'')}"><label>Employee<select id="employeeTicketEmployee"><option value="">Choose employee</option>${(state.employees||[]).map(e=>`<option>${esc(e.name)}</option>`).join('')}</select></label><label>Category<select id="employeeTicketCategory">${EMPLOYEE_TICKET_CATEGORIES.map(c=>`<option>${esc(c)}</option>`).join('')}</select></label><label>Date<input id="employeeTicketDate" type="date" value="${today()}"></label><label>Status<select id="employeeTicketStatus"><option>Open</option><option>In Progress</option><option>Resolved</option></select></label><label class="wide">Notes<textarea id="employeeTicketNotes" placeholder="Details, amount, requested dates, complaint info..."></textarea></label><div class="form-actions wide"><button class="btn light" type="button" onclick="state.editingEmployeeTicketId='';render()">Clear</button><button class="btn primary" type="submit">Save Ticket</button></div></form></section><section class="panel"><div class="section-title"><h3>Employee Tickets</h3></div><input id="employeeTicketSearch" class="search-input" placeholder="Search tickets..." value="${esc(state.employeeTicketSearch||'')}" oninput="state.employeeTicketSearch=this.value; renderAndRefocus('employeeTicketSearch')">${employeeTicketTable(rows)}</section></div>`;
+}
+function employeeTicketTable(rows){
+  return `<div class="table-wrap"><table><tr><th>Date</th><th>Employee</th><th>Category</th><th>Status</th><th>Notes</th><th>Action</th></tr><tbody>${rows.map(t=>`<tr><td>${esc(t.date||'—')}</td><td><b>${esc(t.employee||'—')}</b></td><td>${esc(t.category||'—')}</td><td>${esc(t.status||'Open')}</td><td>${esc(t.notes||'')}</td><td><button class="mini-btn" onclick="editEmployeeTicket('${esc(t.id)}')">Edit</button><button class="mini-btn danger" onclick="removeEmployeeTicket('${esc(t.id)}')">Remove</button></td></tr>`).join('') || '<tr><td colspan="6" class="muted">No employee tickets yet.</td></tr>'}</tbody></table></div>`;
+}
+async function saveEmployeeTicket(ev){
+  ev.preventDefault();
+  const existingId=$('employeeTicketId').value;
+  const row={ id: existingId||id('et'), employee:$('employeeTicketEmployee').value, category:$('employeeTicketCategory').value, date:$('employeeTicketDate').value||today(), status:$('employeeTicketStatus').value, notes:$('employeeTicketNotes').value.trim(), updatedAt:new Date().toISOString(), createdAt: existingId ? (state.employeeTickets.find(x=>x.id===existingId)?.createdAt||new Date().toISOString()) : new Date().toISOString() };
+  if(!row.employee) return toast('Choose employee');
+  const ix=(state.employeeTickets||[]).findIndex(x=>x.id===row.id); if(ix>=0) state.employeeTickets[ix]=row; else { if(!state.employeeTickets) state.employeeTickets=[]; state.employeeTickets.unshift(row); }
+  await saveEmployeeTickets(); await logAction(existingId?'Updated employee ticket':'Added employee ticket','Employees',row.employee,row.category,state.user?.name); state.editingEmployeeTicketId=''; toast('Employee ticket saved'); render();
+}
+function editEmployeeTicket(id){ const t=(state.employeeTickets||[]).find(x=>x.id===id); if(!t) return; state.editingEmployeeTicketId=id; render(); setTimeout(()=>{ if($('employeeTicketEmployee')) $('employeeTicketEmployee').value=t.employee||''; if($('employeeTicketCategory')) $('employeeTicketCategory').value=t.category||EMPLOYEE_TICKET_CATEGORIES[0]; if($('employeeTicketDate')) $('employeeTicketDate').value=t.date||today(); if($('employeeTicketStatus')) $('employeeTicketStatus').value=t.status||'Open'; if($('employeeTicketNotes')) $('employeeTicketNotes').value=t.notes||''; },0); }
+async function removeEmployeeTicket(id){ const t=(state.employeeTickets||[]).find(x=>x.id===id); if(!t || !confirm('Remove this employee ticket?')) return; state.employeeTickets=state.employeeTickets.filter(x=>x.id!==id); if(USE_SUPABASE) await deleteRemoteRow('employee_tickets', id); await saveEmployeeTickets(); toast('Ticket removed'); render(); }
+function exportEmployeeTicketsCSV(){ downloadCSV('sarab-employee-tickets.csv', [['Date','Employee','Category','Status','Notes'], ...(state.employeeTickets||[]).map(t=>[t.date,t.employee,t.category,t.status,t.notes])]); }
+
+function salikRowForVehicle(v){ return (state.salik||[]).find(r=>r.vehicleId===v.id) || { id:`salik_${v.id}`, vehicleId:v.id, incurred:0, crossCharged:0 }; }
+function salikHTML(){
+  const q=String(state.salikSearch||'').toLowerCase();
+  const vehicles=state.vehicles.filter(v=>!q||[v.plate,v.modelNumber,fleetClientName(v),v.status].join(' ').toLowerCase().includes(q));
+  const totalIncurred=state.vehicles.reduce((a,v)=>a+Number(salikRowForVehicle(v).incurred||0),0);
+  const totalCharged=state.vehicles.reduce((a,v)=>a+Number(salikRowForVehicle(v).crossCharged||0),0);
+  return `<div class="page-head"><div><h1>Fleet</h1><p class="muted">SALIK incurred and cross-charged by vehicle.</p></div><div class="head-actions"><button class="btn light" onclick="exportSalikCSV()">${I('download','icon-sm')} Export CSV</button><button class="btn primary" onclick="saveSalikTable()">Save SALIK</button></div></div>${fleetSubnavHeader('salik')}<section class="panel"><div class="kpis"><section class="card compact-kpi"><b>${money(totalIncurred)}</b><span>Total SALIK incurred</span></section><section class="card compact-kpi"><b>${money(totalCharged)}</b><span>Total cross charged</span></section><section class="card compact-kpi"><b>${money(totalCharged-totalIncurred)}</b><span>Difference</span></section></div><input id="salikSearch" class="search-input" placeholder="Search plate, vehicle, client..." value="${esc(state.salikSearch||'')}" oninput="state.salikSearch=this.value; renderAndRefocus('salikSearch')">${salikTable(vehicles)}</section>`;
+}
+function salikTable(vehicles){ return `<div class="table-wrap"><table><tr><th>Plate</th><th>Vehicle</th><th>Client</th><th>Status</th><th>SALIK incurred</th><th>SALIK cross charged</th><th>Difference</th></tr><tbody>${vehicles.map(v=>{ const r=salikRowForVehicle(v); return `<tr><td><span class="fleet-plate">${esc(v.plate||'—')}</span></td><td><b>${esc(v.modelNumber||'Vehicle')}</b></td><td>${esc(fleetClientName(v))}</td><td>${esc(v.status||'—')}</td><td><input class="salik-input" data-vehicle="${esc(v.id)}" data-field="incurred" type="number" min="0" step="0.01" value="${Number(r.incurred||0)}" oninput="stageSalikInput(this)"></td><td><input class="salik-input" data-vehicle="${esc(v.id)}" data-field="crossCharged" type="number" min="0" step="0.01" value="${Number(r.crossCharged||0)}" oninput="stageSalikInput(this)"></td><td><b class="${Number(r.crossCharged||0)-Number(r.incurred||0)>=0?'green-text':'orange'}">${money(Number(r.crossCharged||0)-Number(r.incurred||0))}</b></td></tr>`; }).join('')}</tbody></table></div>`; }
+function stageSalikInput(input){ const vehicleId=input.dataset.vehicle; const field=input.dataset.field; if(!state.salik) state.salik=[]; let r=state.salik.find(x=>x.vehicleId===vehicleId); if(!r){ r={id:`salik_${vehicleId}`,vehicleId,incurred:0,crossCharged:0}; state.salik.push(r); } r[field]=Number(input.value||0); r.updatedAt=new Date().toISOString(); }
+async function saveSalikTable(){ await saveSalik(); await logAction('Saved SALIK table','Fleet','SALIK','Updated incurred/cross-charged values',state.user?.name); toast('SALIK saved'); render(); }
+function exportSalikCSV(){ const rows=[['Plate','Vehicle','Client','Status','SALIK Incurred AED','SALIK Cross Charged AED','Difference AED']]; state.vehicles.forEach(v=>{ const r=salikRowForVehicle(v); rows.push([v.plate||'',v.modelNumber||'',fleetClientName(v),v.status||'',Number(r.incurred||0),Number(r.crossCharged||0),Number(r.crossCharged||0)-Number(r.incurred||0)]); }); downloadCSV('sarab-salik.csv', rows); }
 
 function settingsHTML(){ return `<div class="page-head"><div><h1>Settings</h1><p class="muted">Settings are currently disabled for garage staff.</p></div></div><section class="card settings-card settings-disabled" aria-disabled="true"><div class="disabled-badge">Disabled</div><h2>Settings locked</h2><p class="muted">This section is greyed out to avoid accidental changes. Only the app owner should update system settings from the code or Supabase dashboard.</p><div class="settings-placeholder"><p><b>Current user</b></p><p>${esc(state.user?.name||'Sarab Al Madina Team')}<br>${esc(state.user?.email||'')}</p><p>Storage mode: ${USE_SUPABASE ? 'Supabase shared database' : 'localStorage local demo'}.</p></div></section>`; }
 
