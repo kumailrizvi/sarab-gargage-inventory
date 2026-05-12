@@ -2098,7 +2098,7 @@ function calcUAEGratuity(startDate, basicSalary, endDate=today()){
   const cap = basic * 24;
   return Math.min(gratuityDays * daily, cap);
 }
-function employeeFormDefaults(){ return { id:'', type: state.employeeType || 'SMG', name:'', startDate:'', currentWorking:true, endDate:'', visaStatus:'Garage', basicSalary:0, netSalary:0, passportCollected:false, passportRequested:false, hasId:false, hasIdRequested:false, drivingLicense:false, drivingLicenseRequested:false, undertaking:false, undertakingRequested:false, labourPermit:false, labourPermitRequested:false, assignedCompany:'', assignedVehicle:'', passportExpiryDate:'', drivingLicenseExpiryDate:'', hasActivePermit:false, permitCategory:'', permitExpiryDate:'' }; }
+function employeeFormDefaults(){ return { id:'', type: state.employeeType || 'SMG', name:'', startDate:'', currentWorking:true, endDate:'', visaStatus:'Garage', basicSalary:0, netSalary:0, passportCollected:false, passportRequested:false, hasId:false, hasIdRequested:false, drivingLicense:false, drivingLicenseRequested:false, undertaking:false, undertakingRequested:false, labourPermit:false, labourPermitRequested:false, assignedCompany:'', assignedVehicle:'', passportExpiryDate:'', drivingLicenseExpiryDate:'', hasActivePermit:false, permitCategory:'', permitExpiryDate:'', permitRecordedAt:'' }; }
 function employeeIsCurrentlyWorking(e){ return e.currentWorking !== false; }
 function employeeGratuityEndDate(e){ return employeeIsCurrentlyWorking(e) ? today() : (e.endDate || today()); }
 function getEditingEmployee(){ return state.employees.find(e => e.id === state.editingEmployeeId) || null; }
@@ -2212,6 +2212,7 @@ async function saveEmployee(ev){
   const existingId = $('employeeId').value;
   const emp = { id: existingId || id('emp'), type, name:$('empName').value.trim(), startDate:$('empStartDate').value || '', updatedAt:new Date().toISOString(), createdAt: existingId ? (getEditingEmployee()?.createdAt || new Date().toISOString()) : new Date().toISOString() };
   if(!emp.name) return toast('Employee name is required');
+  const existingEmployee = existingId ? getEditingEmployee() : null;
   emp.assignedCompany = $('empAssignedCompany') ? $('empAssignedCompany').value.trim() : '';
   emp.assignedVehicle = $('empAssignedVehicle') ? $('empAssignedVehicle').value.trim() : '';
   emp.currentWorking = $('empCurrentWorking') ? $('empCurrentWorking').checked : true;
@@ -2219,9 +2220,10 @@ async function saveEmployee(ev){
   emp.permitCategory = emp.hasActivePermit && $('empPermitCategory') ? $('empPermitCategory').value : '';
   emp.permitExpiryDate = emp.hasActivePermit && $('empPermitExpiryDate') ? $('empPermitExpiryDate').value : '';
   if(emp.hasActivePermit && (!emp.permitCategory || !emp.permitExpiryDate)) return toast('Permit category and expiry date are required when active permit is ticked');
+  const existingPermitChanged = !existingEmployee || !existingEmployee.hasActivePermit || String(existingEmployee.permitCategory||'') !== String(emp.permitCategory||'') || String(existingEmployee.permitExpiryDate||'') !== String(emp.permitExpiryDate||'');
+  emp.permitRecordedAt = emp.hasActivePermit ? (existingPermitChanged ? today() : (existingEmployee?.permitRecordedAt || existingEmployee?.updatedAt?.slice?.(0,10) || emp.startDate || today())) : '';
   emp.endDate = emp.currentWorking ? '' : (($('empEndDate') && $('empEndDate').value) || '');
   if(!emp.currentWorking && !emp.endDate) return toast('End date is required when employee is not currently working');
-  const existingEmployee = existingId ? getEditingEmployee() : null;
   if(type === 'SMG'){
     emp.visaStatus = $('empVisaStatus').value;
     emp.basicSalary = Number($('empBasicSalary').value || 0);
@@ -2244,7 +2246,7 @@ async function saveEmployee(ev){
   const oldEmp = ix >= 0 ? state.employees[ix] : null;
   const oldAssign = `${oldEmp?.assignedCompany||''}|${oldEmp?.assignedVehicle||''}`;
   const newAssign = `${emp.assignedCompany||''}|${emp.assignedVehicle||''}`;
-  emp.assignmentHistory = oldEmp?.assignmentHistory || [];
+  emp.assignmentHistory = Array.isArray(oldEmp?.assignmentHistory) ? oldEmp.assignmentHistory.map(h => ({...h})) : [];
   if(!oldEmp && (emp.assignedCompany || emp.assignedVehicle)){ emp.assignmentHistory.push({from:emp.startDate||today(), to:'Present', company:emp.assignedCompany||'—', vehicle:emp.assignedVehicle||'—', note:'Initial assignment'}); }
   if(oldEmp && oldAssign !== newAssign){
     const d=today();
@@ -2274,8 +2276,9 @@ function employeeHistoryHTML(){
   const q = String(state.employeeSearch || '').toLowerCase();
   const rows = (state.employees || []).filter(e => !q || [e.name,e.assignedCompany,e.assignedVehicle,e.type,e.visaStatus].join(' ').toLowerCase().includes(q));
   const body = rows.map(e=>{
-    const hist = (e.assignmentHistory && e.assignmentHistory.length ? e.assignmentHistory : (e.assignedCompany || e.assignedVehicle ? [{from:e.startDate||'—', to:'Present', company:e.assignedCompany||'—', vehicle:e.assignedVehicle||'—', note:'Current assignment'}] : []));
-    if(e.hasActivePermit) hist.push({from:e.updatedAt ? String(e.updatedAt).slice(0,10) : (e.startDate || today()), to:e.permitExpiryDate || '—', company:e.assignedCompany || '—', vehicle:e.assignedVehicle || '—', note:`Active permit: ${e.permitCategory || 'Permit'}`});
+    const baseHist = (e.assignmentHistory && e.assignmentHistory.length ? e.assignmentHistory : (e.assignedCompany || e.assignedVehicle ? [{from:e.startDate||'—', to:'Present', company:e.assignedCompany||'—', vehicle:e.assignedVehicle||'—', note:'Current assignment'}] : []));
+    const hist = baseHist.map(h => ({...h}));
+    if(e.hasActivePermit) hist.push({from:e.permitRecordedAt || e.startDate || today(), to:e.permitExpiryDate || '—', company:e.assignedCompany || '—', vehicle:e.assignedVehicle || '—', note:`Active permit: ${e.permitCategory || 'Permit'}`});
     const tickets=(state.employeeTickets||[]).filter(t=>String(t.employee||'').toLowerCase()===String(e.name||'').toLowerCase());
     return `<tr><td><b>${esc(e.name)}</b><div class="muted tiny">${esc(e.type||'SMG')}</div></td><td>${esc(e.assignedCompany||'—')}</td><td>${esc(e.assignedVehicle||'—')}</td><td>${employeeIsCurrentlyWorking(e)?'<span class="badge green">Working</span>':'<span class="badge muted-badge">Left</span>'}</td><td>${hist.length}</td><td>${tickets.length ? `<details><summary class="mini-btn">${tickets.length} ticket(s)</summary><div class="history-table-mini"><table><tr><th>Date</th><th>Category</th><th>Status</th><th>Approval</th><th>Notes</th></tr>${tickets.map(t=>`<tr><td>${esc(t.date||'—')}</td><td>${esc(t.category||'—')}</td><td>${esc(t.status||'Open')}</td><td>${esc(t.approvalStatus||'Pending Approval')}</td><td>${isLeaveTicket(t)?`${esc(t.leaveStartDate||'—')} → ${esc(t.leaveEndDate||'—')} (${leaveDurationText(t.leaveStartDate,t.leaveEndDate)})${t.returnToDutyDate?` Returned: ${esc(t.returnToDutyDate)}`:''}${ticketLeaveOverstay(t)?` OVERSTAY: ${ticketOverstayDays(t)} day${ticketOverstayDays(t)===1?'':'s'}`:''}`:esc(t.notes||'')}</td></tr>`).join('')}</table></div></details>` : '<span class="muted">—</span>'}</td><td><details><summary class="mini-btn">Open history</summary><div class="history-table-mini"><table><tr><th>From</th><th>To</th><th>Company / Client</th><th>Vehicle</th><th>Note</th></tr>${hist.map(h=>`<tr><td>${esc(h.from||'—')}</td><td>${esc(h.to||'Present')}</td><td>${esc(h.company||'—')}</td><td>${esc(h.vehicle||'—')}</td><td>${esc(h.note||'')}</td></tr>`).join('')}</table></div></details></td></tr>`;
   }).join('');
@@ -2284,8 +2287,9 @@ function employeeHistoryHTML(){
 function exportEmployeeHistoryCSV(){
   const rows=[['Employee','Type','From','To','Company / Client','Vehicle','Note']];
   (state.employees||[]).forEach(e=>{
-    const hist=(e.assignmentHistory&&e.assignmentHistory.length?e.assignmentHistory:[{from:e.startDate||'',to:'Present',company:e.assignedCompany||'',vehicle:e.assignedVehicle||'',note:'Current assignment'}]);
-    if(e.hasActivePermit) hist.push({from:e.updatedAt ? String(e.updatedAt).slice(0,10) : (e.startDate || today()), to:e.permitExpiryDate || '—', company:e.assignedCompany || '—', vehicle:e.assignedVehicle || '—', note:`Active permit: ${e.permitCategory || 'Permit'}`});
+    const baseHist=(e.assignmentHistory&&e.assignmentHistory.length?e.assignmentHistory:[{from:e.startDate||'',to:'Present',company:e.assignedCompany||'',vehicle:e.assignedVehicle||'',note:'Current assignment'}]);
+    const hist=baseHist.map(h=>({...h}));
+    if(e.hasActivePermit) hist.push({from:e.permitRecordedAt || e.startDate || today(), to:e.permitExpiryDate || '—', company:e.assignedCompany || '—', vehicle:e.assignedVehicle || '—', note:`Active permit: ${e.permitCategory || 'Permit'}`});
     hist.forEach(h=>rows.push([e.name||'',e.type||'SMG',h.from||'',h.to||'Present',h.company||'',h.vehicle||'',h.note||'']));
     (state.employeeTickets||[]).filter(t=>String(t.employee||'').toLowerCase()===String(e.name||'').toLowerCase()).forEach(t=>rows.push([e.name||'',e.type||'SMG',t.date||'',t.status==='Resolved'?(t.updatedAt?String(t.updatedAt).slice(0,10):t.date||''):'Open',e.assignedCompany||'',e.assignedVehicle||'',`Employee ticket: ${t.category||''} · ${t.approvalStatus||''} · ${t.notes||''}`]));
   });
