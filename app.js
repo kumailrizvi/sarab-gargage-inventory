@@ -138,6 +138,7 @@ const JOB_STATUSES = ['Not Started','Pending','Work Being Done','Done Completed'
 const REGISTERED_COMPANIES = ['MBR1','MBR2','Garage','AHU','Travel & Tourism'];
 const EMPLOYEE_TYPES = ['SMG','Outsourced'];
 const EMPLOYEE_VISA_STATUS = ['MBR1','MBR2','Garage','AHU','Travel & Tourism'];
+const UAE_PERMIT_CATEGORIES = ['Abu Dhabi Permit','Dubai Permit','Sharjah Permit','Ajman Permit','Umm Al Quwain Permit','Ras Al Khaimah Permit','Fujairah Permit'];
 function extractYearFromModel(model=''){
   const match = String(model || '').match(/\b(19\d{2}|20\d{2})\b/);
   return match ? match[1] : '';
@@ -539,9 +540,45 @@ function statusSummaryCard(){
   const c = statusCounts();
   return `<section class="card kpi status-kpi clickable-kpi" onclick="go('used')" role="button" tabindex="0"><div class="status-kpi-body"><h3>Job Status</h3><div class="status-mini-grid"><div><b>${c['Done Completed'] || 0}</b><span>Done</span></div><div><b>${c['Pending'] || 0}</b><span>Pending</span></div><div><b>${c['Not Started'] || 0}</b><span>Not Started</span></div><div><b>${c['Work Being Done'] || 0}</b><span>Working</span></div></div></div><div class="kpi-icon">${I('clipboard','icon-xl')}</div></section>`;
 }
+
+function daysUntilDate(dateStr){
+  if(!dateStr) return null;
+  const target = new Date(`${dateStr}T00:00:00`);
+  if(Number.isNaN(target.getTime())) return null;
+  const now = new Date(`${today()}T00:00:00`);
+  return Math.ceil((target - now) / 86400000);
+}
+function expiryNeedsAction(dateStr, daysBefore){
+  const d = daysUntilDate(dateStr);
+  return d !== null && d <= daysBefore;
+}
+function employeeAlertItems(){
+  const items=[];
+  (state.employees||[]).forEach(e=>{
+    if((e.type||'SMG') === 'SMG'){
+      if(expiryNeedsAction(e.passportExpiryDate, 30)) items.push({type:'Passport', owner:e.name||'Employee', date:e.passportExpiryDate});
+      if(expiryNeedsAction(e.drivingLicenseExpiryDate, 30)) items.push({type:'Driving License', owner:e.name||'Employee', date:e.drivingLicenseExpiryDate});
+    }
+    if(e.hasActivePermit && expiryNeedsAction(e.permitExpiryDate, 7)) items.push({type:e.permitCategory || 'Employee Permit', owner:e.name||'Employee', date:e.permitExpiryDate});
+  });
+  (state.vehicles||[]).forEach(v=>{
+    if(v.hasActivePermit && expiryNeedsAction(v.permitExpiryDate, 7)) items.push({type:v.permitCategory || 'Vehicle Permit', owner:v.plate || v.modelNumber || 'Vehicle', date:v.permitExpiryDate});
+  });
+  return items;
+}
+function ticketDetailsCard(){
+  const open=(state.tickets||[]).filter(t=>t.status !== 'Resolved').length;
+  const escalated=(state.tickets||[]).filter(t=>t.escalated || (t.status !== 'Resolved' && ticketDaysOpen(t) > Number(t.slaDays || 7))).length;
+  const pending=(state.tickets||[]).filter(t=>t.status === 'Pending' || t.status === 'Open' || t.status === 'In Progress').length;
+  return `<section class="card kpi status-kpi clickable-kpi" onclick="go('tickets')" role="button" tabindex="0"><div class="status-kpi-body"><h3>Ticketing Details</h3><div class="status-mini-grid"><div><b>${open}</b><span>Open</span></div><div><b>${pending}</b><span>Pending</span></div><div><b>${escalated}</b><span>Escalated</span></div><div><b>${(state.tickets||[]).length}</b><span>Total</span></div></div></div><div class="kpi-icon">${I('file','icon-xl')}</div></section>`;
+}
+function employeeAlertsCard(){
+  const alerts=employeeAlertItems();
+  return `<section class="card kpi clickable-kpi" onclick="go('employees')" role="button" tabindex="0"><div><h3>Employee Alerts</h3><div class="num ${alerts.length?'orange':''}">${alerts.length}</div><p>${alerts.length ? 'Expiry/action needed' : 'No expiry alerts'}</p></div><div class="kpi-icon ${alerts.length?'warn':''}">${I('warning','icon-xl')}</div></section>`;
+}
 function dashboardHTML(s){
   const recentJobs=state.jobs.slice(0,4);
-  return `<div class="kpis">${kpi('Total Parts',s.totalUnits,'All units in inventory','box',false,"goInventory('All')")}${kpi('Low Stock',s.lowCount,'Parts need restocking','warning',s.lowCount>0,"goInventory('Low')")}${kpi('Jobs Today',s.todayJobs,'Jobs logged today','clipboard',false,"goJobs()")}${kpi('Parts Used Today',s.partsUsedToday,'Total parts used','wrench',false,"goJobs()")}${statusSummaryCard()}</div>
+  return `<div class="kpis">${ticketDetailsCard()}${kpi('Jobs Today',s.todayJobs,'Jobs logged today','clipboard',false,"goJobs()")}${employeeAlertsCard()}${statusSummaryCard()}</div>
   <section class="panel quick"><div class="section-title"><h3>Quick Actions</h3></div><div class="quick-grid"><button class="btn primary large-btn" onclick="openPartDialog()">${I('plus')} Add Part</button><button class="btn primary large-btn" onclick="go('job')">${I('clipboard')} Raise Job Card</button><button class="btn primary large-btn" onclick="go('tickets')">${I('file')} Ticketing</button><button class="btn primary large-btn" onclick="openRestockDialog()">${I('cart')} Restock</button><button class="btn primary large-btn" onclick="go('export')">${I('file')} Export CSV</button></div></section>
   ${plateHistoryPanelHTML('Quickly search a plate number from the dashboard and see all work done for that vehicle.')}
   <div class="dashboard-stack"><section class="panel"><div class="section-title"><h3>Inventory Overview</h3><div class="section-actions"><button class="mini-btn" onclick="exportDashboardInventory()">CSV</button><button class="mini-btn" onclick="go('inventory')">View All Inventory</button></div></div>${inventoryTable(state.parts.slice(0,5), true)}</section><section class="panel recent-jobs-panel"><div class="section-title"><h3>Recent Jobs</h3><div class="section-actions"><button class="mini-btn" onclick="exportDashboardJobs()">CSV</button><button class="mini-btn" onclick="go('used')">View All Jobs</button></div></div>${recentJobs.length?`<div class="recent-job-list-clean">${recentJobs.map(dashboardJobRow).join('')}</div>`:'<div class="empty">No jobs logged yet.</div>'}</section></div>`;
@@ -1438,7 +1475,7 @@ function fleetHTML(){
       <label>Fuel chip<select id="fleetFuelChip"><option value="Yes">Has company fuel chip</option><option value="No">No company fuel chip</option></select></label>
       <div class="plate-fields"><label>Plate code<input id="fleetPlateCode" required placeholder="R" maxlength="8"></label><label>Plate number<input id="fleetPlateNumber" required placeholder="14534"></label></div>
       <label>Customer<input id="fleetCustomer" placeholder="Customer / client name"></label>
-      <label>Assigned driver<input id="fleetAssignedDriver" list="fleetDriverOptions" placeholder="Without driver / employee name"><datalist id="fleetDriverOptions">${fleetDriverOptionsHTML()}</datalist></label>
+      <label>Assigned driver<input id="fleetAssignedDriver" list="fleetDriverOptions" placeholder="Without driver / employee name"><datalist id="fleetDriverOptions">${fleetDriverOptionsHTML()}</datalist></label><label class="checkbox-line permit-toggle-line"><input id="fleetHasActivePermit" type="checkbox" onchange="toggleFleetPermitFields()"/> Active permit</label><div id="fleetPermitFields" class="grid two permit-fields wide hidden"><label>Permit category<select id="fleetPermitCategory">${permitOptionsHTML()}</select></label><label>Permit expiry date<input id="fleetPermitExpiryDate" type="date"></label></div>
       <label>Status<select id="fleetStatus"><option>In Use</option><option>Spare</option><option>Back-up</option><option>Off-hire</option></select></label>
       <label>Vehicle type<select id="fleetOwnership"><option>SMG Vehicle</option><option>Outsource</option></select></label>
       <div id="fleetVendorWrap" class="wide hidden outsource-fields"><label>Vendor name of outsourced vehicle<input id="fleetVendorName" placeholder="Vendor / supplier name"></label><div class="grid two outsource-date-grid"><label>Start date<input id="fleetOutsourceStartDate" type="date"></label><label>End date<input id="fleetOutsourceEndDate" type="date"></label></div></div>
@@ -1450,7 +1487,7 @@ function fleetHTML(){
     <section class="panel fleet-list-card"><div class="section-title"><div><h3>Fleet List</h3><p class="muted small-note">Search updates instantly while typing.</p></div><button class="mini-btn" onclick="exportFleet()">Export Fleet CSV</button></div><input id="fleetSearch" placeholder="Search by plate, model, customer, status..." value="${esc(state.fleetFilter || '')}" autocomplete="off" class="fleet-search"><div id="fleetResults">${vehicles.length ? fleetTable(vehicles) : '<div class="empty">No fleet vehicles found.</div>'}</div></section></div>`;
 }
 function fleetTable(vehicles){
-  return `<div class="fleet-cards">${vehicles.map(v=>{ const year = v.year || extractYearFromModel(v.modelNumber); const model = modelWithoutYear(v.modelNumber); return `<article class="fleet-card"><div class="fleet-card-main"><div><span class="fleet-plate">${esc(v.plate)}</span><h3>${esc(model)}${year ? ` <span class="fleet-year">${esc(year)}</span>` : ''}</h3><p class="muted">${esc(v.customer || 'No customer added')}</p></div><span class="pill ${v.status === 'In Use' ? 'green' : v.status === 'Back-up' ? 'orange' : v.status === 'Off-hire' ? 'red' : ''}">${esc(v.status)}</span></div><div class="fleet-meta fleet-meta-expanded"><div><small>Registered Co.</small><b>${v.ownership === 'Outsource' ? '—' : esc(v.registeredCompany || 'Garage')}</b></div><div><small>Fuel Chip</small><b>${esc(v.fuelChip === 'Yes' ? 'Yes' : 'No')}</b></div><div><small>Assigned Driver</small><b>${esc(v.assignedDriver || 'Without driver')}</b></div><div><small>Type</small><b>${esc(v.ownership)}</b></div><div><small>Vendor</small><b>${v.ownership === 'Outsource' ? esc(v.vendorName || '—') : '—'}</b></div><div><small>Outsource Dates</small><b>${v.ownership === 'Outsource' ? `${esc(v.outsourceStartDate || '—')} → ${esc(v.outsourceEndDate || '—')}` : '—'}</b></div><div><small>Rent Rate</small><b>${v.ownership === 'Outsource' && v.status !== 'Off-hire' ? money(v.rentRate) : '—'}</b></div><div><small>Client Rate</small><b>${v.status === 'In Use' ? money(v.clientRate) : '—'}</b></div></div>${v.notes ? `<p class="fleet-notes">${esc(v.notes)}</p>` : ''}<div class="fleet-actions"><button class="mini-btn" onclick="editFleetVehicle('${v.id}')">Edit</button><button class="mini-btn danger" onclick="deleteFleetVehicle('${v.id}')">Delete</button></div></article>`; }).join('')}</div>`;
+  return `<div class="fleet-cards">${vehicles.map(v=>{ const year = v.year || extractYearFromModel(v.modelNumber); const model = modelWithoutYear(v.modelNumber); return `<article class="fleet-card"><div class="fleet-card-main"><div><span class="fleet-plate">${esc(v.plate)}</span><h3>${esc(model)}${year ? ` <span class="fleet-year">${esc(year)}</span>` : ''}</h3><p class="muted">${esc(v.customer || 'No customer added')}</p></div><span class="pill ${v.status === 'In Use' ? 'green' : v.status === 'Back-up' ? 'orange' : v.status === 'Off-hire' ? 'red' : ''}">${esc(v.status)}</span></div><div class="fleet-meta fleet-meta-expanded"><div><small>Registered Co.</small><b>${v.ownership === 'Outsource' ? '—' : esc(v.registeredCompany || 'Garage')}</b></div><div><small>Fuel Chip</small><b>${esc(v.fuelChip === 'Yes' ? 'Yes' : 'No')}</b></div><div><small>Assigned Driver</small><b>${esc(v.assignedDriver || 'Without driver')}</b></div><div><small>Permit</small><b>${v.hasActivePermit ? `${esc(v.permitCategory || 'Permit')} · ${esc(v.permitExpiryDate || '—')}` : '—'}</b></div><div><small>Type</small><b>${esc(v.ownership)}</b></div><div><small>Vendor</small><b>${v.ownership === 'Outsource' ? esc(v.vendorName || '—') : '—'}</b></div><div><small>Outsource Dates</small><b>${v.ownership === 'Outsource' ? `${esc(v.outsourceStartDate || '—')} → ${esc(v.outsourceEndDate || '—')}` : '—'}</b></div><div><small>Rent Rate</small><b>${v.ownership === 'Outsource' && v.status !== 'Off-hire' ? money(v.rentRate) : '—'}</b></div><div><small>Client Rate</small><b>${v.status === 'In Use' ? money(v.clientRate) : '—'}</b></div></div>${v.notes ? `<p class="fleet-notes">${esc(v.notes)}</p>` : ''}<div class="fleet-actions"><button class="mini-btn" onclick="editFleetVehicle('${v.id}')">Edit</button><button class="mini-btn danger" onclick="deleteFleetVehicle('${v.id}')">Delete</button></div></article>`; }).join('')}</div>`;
 }
 
 async function syncClientFromFleetVehicle(vehicle){
@@ -1477,6 +1514,9 @@ async function saveFleetVehicle(e){
     registeredCompany: $('fleetOwnership').value === 'Outsource' ? '' : $('fleetRegisteredCompany').value,
     fuelChip: $('fleetFuelChip').value,
     assignedDriver: ($('fleetAssignedDriver')?.value || 'Without driver').trim() || 'Without driver',
+    hasActivePermit: $('fleetHasActivePermit') ? $('fleetHasActivePermit').checked : false,
+    permitCategory: $('fleetHasActivePermit')?.checked && $('fleetPermitCategory') ? $('fleetPermitCategory').value : '',
+    permitExpiryDate: $('fleetHasActivePermit')?.checked && $('fleetPermitExpiryDate') ? $('fleetPermitExpiryDate').value : '',
     vendorName: $('fleetOwnership').value === 'Outsource' ? $('fleetVendorName').value.trim() : '',
     outsourceStartDate: $('fleetOwnership').value === 'Outsource' ? $('fleetOutsourceStartDate').value : '',
     outsourceEndDate: $('fleetOwnership').value === 'Outsource' ? $('fleetOutsourceEndDate').value : '',
@@ -1492,6 +1532,7 @@ async function saveFleetVehicle(e){
   };
   if(!vehicle.modelNumber || !vehicle.plate) return toast('Model and plate code/plate number are required');
   const duplicate = fleetDuplicate(vehicle);
+  if(vehicle.hasActivePermit && (!vehicle.permitCategory || !vehicle.permitExpiryDate)) return toast('Permit category and expiry date are required when active permit is ticked');
   if(duplicate) return toast(`Duplicate fleet vehicle blocked: ${duplicate.plate} already exists`);
   const idx = state.vehicles.findIndex(v => v.id === vehicle.id);
   const previousVehicle = idx >= 0 ? state.vehicles[idx] : null;
@@ -1531,6 +1572,10 @@ function editFleetVehicle(vehicleId){
   $('fleetRegisteredCompany').value = v.ownership === 'Outsource' ? '' : (v.registeredCompany || 'Garage');
   $('fleetFuelChip').value = v.fuelChip || 'No';
   if($('fleetAssignedDriver')) $('fleetAssignedDriver').value = v.assignedDriver || 'Without driver';
+  if($('fleetHasActivePermit')) $('fleetHasActivePermit').checked = Boolean(v.hasActivePermit);
+  if($('fleetPermitCategory')) $('fleetPermitCategory').value = v.permitCategory || '';
+  if($('fleetPermitExpiryDate')) $('fleetPermitExpiryDate').value = v.permitExpiryDate || '';
+  toggleFleetPermitFields();
   const plateParts = splitPlate(v.plate || '');
   $('fleetPlateCode').value = v.plateCode || plateParts.code || '';
   $('fleetPlateNumber').value = v.plateNumber || plateParts.license || '';
@@ -1548,11 +1593,13 @@ function editFleetVehicle(vehicleId){
 }
 function clearFleetForm(){
   if(state.view !== 'fleet') { go('fleet'); return; }
-  ['fleetId','fleetModel','fleetYear','fleetPlateCode','fleetPlateNumber','fleetCustomer','fleetAssignedDriver','fleetVendorName','fleetOutsourceStartDate','fleetOutsourceEndDate','fleetNotes'].forEach(id => { if($(id)) $(id).value=''; });
+  ['fleetId','fleetModel','fleetYear','fleetPlateCode','fleetPlateNumber','fleetCustomer','fleetAssignedDriver','fleetVendorName','fleetOutsourceStartDate','fleetOutsourceEndDate','fleetPermitCategory','fleetPermitExpiryDate','fleetNotes'].forEach(id => { if($(id)) $(id).value=''; });
   if($('fleetStatus')) $('fleetStatus').value='In Use';
   if($('fleetRegisteredCompany')) $('fleetRegisteredCompany').value='Garage';
   if($('fleetAssignedDriver')) $('fleetAssignedDriver').value='Without driver';
   if($('fleetFuelChip')) $('fleetFuelChip').value='No';
+  if($('fleetHasActivePermit')) $('fleetHasActivePermit').checked=false;
+  toggleFleetPermitFields();
   if($('fleetOwnership')) $('fleetOwnership').value='SMG Vehicle';
   toggleFleetVendorField();
   if($('fleetRentRate')) $('fleetRentRate').value=0;
@@ -1610,6 +1657,9 @@ function importFleetCSV(){
           registeredCompany: ownership === 'Outsource' ? '' : firstValue(obj,['Registered Company','Company'], existing?.registeredCompany || 'Garage'),
           fuelChip:firstValue(obj,['Fuel Chip','Company Fuel Chip'], existing?.fuelChip || 'No'),
           assignedDriver:firstValue(obj,['Assigned Driver','Driver','Assigned Employee'], existing?.assignedDriver || 'Without driver'),
+          hasActivePermit:['yes','true','1','active'].includes(String(firstValue(obj,['Active Permit','Has Active Permit'], existing?.hasActivePermit ? 'Yes' : '')).trim().toLowerCase()),
+          permitCategory:firstValue(obj,['Permit Category','Permit Type'], existing?.permitCategory || ''),
+          permitExpiryDate:firstValue(obj,['Permit Expiry Date','Permit Expiry'], existing?.permitExpiryDate || ''),
           plate,
           plateCode:firstValue(obj,['Plate Code'], existing?.plateCode || parts.code),
           plateNumber:firstValue(obj,['Plate Number','License Number'], existing?.plateNumber || parts.license),
@@ -1641,13 +1691,13 @@ function importFleetCSV(){
 
 function exportFleet(){
   downloadCSV('sarab-fleet.csv', [
-    ['Vehicle Model','Year','Registered Company','Fuel Chip','Plate Code','Plate Number','Number Plate','Customer','Assigned Driver','Status','Vehicle Type','Vendor Name','Outsource Start Date','Outsource End Date','Outsource Rent Rate AED','Client Rate AED','Total AED','Notes'],
+    ['Vehicle Model','Year','Registered Company','Fuel Chip','Plate Code','Plate Number','Number Plate','Customer','Assigned Driver','Active Permit','Permit Category','Permit Expiry Date','Status','Vehicle Type','Vendor Name','Outsource Start Date','Outsource End Date','Outsource Rent Rate AED','Client Rate AED','Total AED','Notes'],
     ...state.vehicles.map(v=>{
       const parts=splitPlate(v.plate);
       const rent=Number(v.ownership === 'Outsource' && v.status !== 'Off-hire' ? v.rentRate || 0 : 0);
       const client=Number(v.status === 'In Use' ? v.clientRate || 0 : 0);
       const total=client-rent;
-      return [modelWithoutYear(v.modelNumber),v.year || extractYearFromModel(v.modelNumber),v.ownership === 'Outsource' ? '' : (v.registeredCompany || 'Garage'),v.fuelChip || 'No',v.plateCode || parts.code,v.plateNumber || parts.license,v.plate,v.customer,v.assignedDriver || 'Without driver',v.status,v.ownership,v.ownership === 'Outsource' ? (v.vendorName || '') : '',v.ownership === 'Outsource' ? (v.outsourceStartDate || '') : '',v.ownership === 'Outsource' ? (v.outsourceEndDate || '') : '',rent,client,total,v.notes];
+      return [modelWithoutYear(v.modelNumber),v.year || extractYearFromModel(v.modelNumber),v.ownership === 'Outsource' ? '' : (v.registeredCompany || 'Garage'),v.fuelChip || 'No',v.plateCode || parts.code,v.plateNumber || parts.license,v.plate,v.customer,v.assignedDriver || 'Without driver',v.hasActivePermit?'Yes':'No',v.permitCategory||'',v.permitExpiryDate||'',v.status,v.ownership,v.ownership === 'Outsource' ? (v.vendorName || '') : '',v.ownership === 'Outsource' ? (v.outsourceStartDate || '') : '',v.ownership === 'Outsource' ? (v.outsourceEndDate || '') : '',rent,client,total,v.notes];
     })
   ]);
 }
@@ -1928,7 +1978,7 @@ function calcUAEGratuity(startDate, basicSalary, endDate=today()){
   const cap = basic * 24;
   return Math.min(gratuityDays * daily, cap);
 }
-function employeeFormDefaults(){ return { id:'', type: state.employeeType || 'SMG', name:'', startDate:'', currentWorking:true, endDate:'', visaStatus:'Garage', basicSalary:0, netSalary:0, passportCollected:false, passportRequested:false, hasId:false, hasIdRequested:false, drivingLicense:false, drivingLicenseRequested:false, undertaking:false, undertakingRequested:false, labourPermit:false, labourPermitRequested:false, assignedCompany:'', assignedVehicle:'' }; }
+function employeeFormDefaults(){ return { id:'', type: state.employeeType || 'SMG', name:'', startDate:'', currentWorking:true, endDate:'', visaStatus:'Garage', basicSalary:0, netSalary:0, passportCollected:false, passportRequested:false, hasId:false, hasIdRequested:false, drivingLicense:false, drivingLicenseRequested:false, undertaking:false, undertakingRequested:false, labourPermit:false, labourPermitRequested:false, assignedCompany:'', assignedVehicle:'', passportExpiryDate:'', drivingLicenseExpiryDate:'', hasActivePermit:false, permitCategory:'', permitExpiryDate:'' }; }
 function employeeIsCurrentlyWorking(e){ return e.currentWorking !== false; }
 function employeeGratuityEndDate(e){ return employeeIsCurrentlyWorking(e) ? today() : (e.endDate || today()); }
 function getEditingEmployee(){ return state.employees.find(e => e.id === state.editingEmployeeId) || null; }
@@ -1962,6 +2012,8 @@ function employeeCompanyOptions(selected=''){
   return `<option value="">Choose client / company</option>${names.map(n=>`<option value="${esc(n)}" ${n===sel?'selected':''}>${esc(n)}</option>`).join('')}`;
 }
 function employeeCompanySelect(e){ return `<label>Assigned company<select id="empAssignedCompany">${employeeCompanyOptions(e.assignedCompany||'')}</select></label>`; }
+function permitOptionsHTML(selected=''){ return `<option value="">Choose permit</option>${UAE_PERMIT_CATEGORIES.map(x=>`<option value="${esc(x)}" ${x===selected?'selected':''}>${esc(x)}</option>`).join('')}`; }
+function employeePermitFields(e){ return `<label class="checkbox-line permit-toggle-line"><input id="empHasActivePermit" type="checkbox" ${e.hasActivePermit?'checked':''} onchange="toggleEmployeePermitFields()"/> Active permit</label><div id="employeePermitFields" class="grid two permit-fields ${e.hasActivePermit?'':'hidden'}"><label>Permit category<select id="empPermitCategory">${permitOptionsHTML(e.permitCategory||'')}</select></label><label>Permit expiry date<input id="empPermitExpiryDate" type="date" value="${esc(e.permitExpiryDate||'')}"></label></div>`; }
 function employeeNameDatalist(){ return `<datalist id="employeeNameOptions">${(state.employees||[]).map(e=>`<option value="${esc(e.name||'')}">${esc(e.name||'')} · ${esc(e.type||'SMG')} · ${esc(e.assignedCompany||'')}</option>`).join('')}</datalist>`; }
 function employeeFormHTML(e){
   const type = e.type || state.employeeType || 'SMG';
@@ -1970,11 +2022,11 @@ function employeeFormHTML(e){
     <div class="grid two"><label>Name<input id="empName" required value="${esc(e.name)}" placeholder="Employee name" /></label><label>Start date<input id="empStartDate" type="date" value="${esc(e.startDate)}" /></label>${employeeCompanySelect(e)}<label>Assigned vehicle<input id="empAssignedVehicle" list="employeeVehicleOptions" value="${esc(e.assignedVehicle||'')}" placeholder="Plate / vehicle" /></label></div>${employeeVehicleDatalist()}
     <label class="checkbox-line employee-current-line"><input id="empCurrentWorking" type="checkbox" ${employeeIsCurrentlyWorking(e)?'checked':''} onchange="toggleEmployeeEndDate()"/> Currently working</label>
     <div id="employeeEndDateWrap" class="employee-end-date-wrap" style="${employeeIsCurrentlyWorking(e)?'display:none':''}"><label>End date<input id="empEndDate" type="date" value="${esc(e.endDate||'')}" /></label></div>
-    <div class="check-grid"><label><input id="empHasId" type="checkbox" ${e.hasId?'checked':''}/> ID</label><label><input id="empDrivingLicense" type="checkbox" ${e.drivingLicense?'checked':''}/> Driving License</label><label><input id="empUndertaking" type="checkbox" ${e.undertaking?'checked':''}/> Undertaking</label><label><input id="empLabourPermit" type="checkbox" ${e.labourPermit?'checked':''}/> Labour part-time permit</label></div>
+    <div class="check-grid"><label><input id="empHasId" type="checkbox" ${e.hasId?'checked':''}/> ID</label><label><input id="empDrivingLicense" type="checkbox" ${e.drivingLicense?'checked':''}/> Driving License</label><label><input id="empUndertaking" type="checkbox" ${e.undertaking?'checked':''}/> Undertaking</label><label><input id="empLabourPermit" type="checkbox" ${e.labourPermit?'checked':''}/> Labour part-time permit</label></div>${employeePermitFields(e)}
     <div class="form-actions"><button type="button" class="btn light" onclick="state.editingEmployeeId='';render()">Clear</button><button class="btn primary" type="submit">Save Employee</button></div></form>`;
   }
   return `<form id="employeeForm" onsubmit="saveEmployee(event)"><input id="employeeId" type="hidden" value="${esc(e.id)}" /><input id="employeeType" type="hidden" value="SMG" />
-  <div class="grid two"><label>Name<input id="empName" required value="${esc(e.name)}" placeholder="Employee name" /></label><label>Start date<input id="empStartDate" type="date" value="${esc(e.startDate)}" /></label>${employeeCompanySelect(e)}<label>Assigned vehicle<input id="empAssignedVehicle" list="employeeVehicleOptions" value="${esc(e.assignedVehicle||'')}" placeholder="Plate / vehicle" /></label><label>Visa status<select id="empVisaStatus">${EMPLOYEE_VISA_STATUS.map(v=>`<option ${v===(e.visaStatus||'Garage')?'selected':''}>${esc(v)}</option>`).join('')}</select></label><label>Basic salary (AED)<input id="empBasicSalary" type="number" min="0" step="0.01" value="${Number(e.basicSalary||0)}" /></label><label>Net salary (AED)<input id="empNetSalary" type="number" min="0" step="0.01" value="${Number(e.netSalary||0)}" /></label><label class="checkbox-line"><input id="empPassportCollected" type="checkbox" ${e.passportCollected?'checked':''}/> Passport collected</label></div>${employeeVehicleDatalist()}
+  <div class="grid two"><label>Name<input id="empName" required value="${esc(e.name)}" placeholder="Employee name" /></label><label>Start date<input id="empStartDate" type="date" value="${esc(e.startDate)}" /></label>${employeeCompanySelect(e)}<label>Assigned vehicle<input id="empAssignedVehicle" list="employeeVehicleOptions" value="${esc(e.assignedVehicle||'')}" placeholder="Plate / vehicle" /></label><label>Visa status<select id="empVisaStatus">${EMPLOYEE_VISA_STATUS.map(v=>`<option ${v===(e.visaStatus||'Garage')?'selected':''}>${esc(v)}</option>`).join('')}</select></label><label>Basic salary (AED)<input id="empBasicSalary" type="number" min="0" step="0.01" value="${Number(e.basicSalary||0)}" /></label><label>Net salary (AED)<input id="empNetSalary" type="number" min="0" step="0.01" value="${Number(e.netSalary||0)}" /></label><label>Passport expiry date<input id="empPassportExpiryDate" type="date" value="${esc(e.passportExpiryDate||'')}" /></label><label>Driver's license expiry<input id="empDrivingLicenseExpiryDate" type="date" value="${esc(e.drivingLicenseExpiryDate||'')}" /></label><label class="checkbox-line"><input id="empPassportCollected" type="checkbox" ${e.passportCollected?'checked':''}/> Passport collected</label></div>${employeePermitFields(e)}${employeeVehicleDatalist()}
   <label class="checkbox-line employee-current-line"><input id="empCurrentWorking" type="checkbox" ${employeeIsCurrentlyWorking(e)?'checked':''} onchange="toggleEmployeeEndDate()"/> Currently working</label>
   <div id="employeeEndDateWrap" class="employee-end-date-wrap" style="${employeeIsCurrentlyWorking(e)?'display:none':''}"><label>End date<input id="empEndDate" type="date" value="${esc(e.endDate||'')}" /></label></div>
   <div class="employee-gratuity-preview employee-gratuity-stack"><div><span>Total tenure</span><b>${employeeTenureText(e.startDate,employeeGratuityEndDate(e))}</b></div><div><span>Estimated gratuity</span><b>${money(calcUAEGratuity(e.startDate,e.basicSalary,employeeGratuityEndDate(e)))}</b></div></div>
@@ -2005,21 +2057,33 @@ function employeeOutsourcedDocsHTML(e){
     ['Permit','labourPermit','labourPermitRequested']
   ].map(([label,field,requested])=>`<div class="doc-mini-row"><span>${label}</span>${employeeDocStatusCell(e,field,requested,label)}</div>`).join('');
 }
+
+function actionNeededBadge(text){ return `<span class="pill orange action-needed-pill">${esc(text || 'Action needed')}</span>`; }
+function employeeExpiryAlertsHTML(e){
+  const alerts=[];
+  if((e.type||'SMG')==='SMG'){
+    if(expiryNeedsAction(e.passportExpiryDate,30)) alerts.push(actionNeededBadge(`Passport ${e.passportExpiryDate || ''}`));
+    if(expiryNeedsAction(e.drivingLicenseExpiryDate,30)) alerts.push(actionNeededBadge(`License ${e.drivingLicenseExpiryDate || ''}`));
+  }
+  if(e.hasActivePermit && expiryNeedsAction(e.permitExpiryDate,7)) alerts.push(actionNeededBadge(`${e.permitCategory || 'Permit'} ${e.permitExpiryDate || ''}`));
+  return alerts.join('') || '<span class="muted">—</span>';
+}
+function employeePermitDisplay(e){ return e.hasActivePermit ? `${esc(e.permitCategory || 'Permit')}<div class="muted tiny">Exp: ${esc(e.permitExpiryDate || '—')}</div>` : '<span class="muted">—</span>'; }
 function employeeTableHTML(rows,type){
   if(!rows.length) return `<div class="empty">No ${esc(type)} employees yet.</div>`;
   if(type === 'All'){
     const body = rows.map(e => {
       const isSMG = (e.type || 'SMG') === 'SMG';
-      return `<tr><td><b>${esc(e.name)}</b><div class="muted tiny">${esc(e.type || 'SMG')}</div></td><td>${employeeIsCurrentlyWorking(e)?'<span class="badge green">Working</span>':'<span class="badge muted-badge">Left</span>'}</td><td>${esc(e.startDate||'—')}</td><td>${employeeIsCurrentlyWorking(e)?'—':esc(e.endDate||'—')}</td><td>${employeeTenureText(e.startDate,employeeGratuityEndDate(e))}</td><td>${esc(e.assignedCompany||'—')}</td><td>${esc(e.assignedVehicle||'—')}</td><td>${isSMG ? esc(e.visaStatus||'—') : 'Outsourced'}</td><td>${isSMG ? money(e.basicSalary) : '—'}</td><td>${isSMG ? money(e.netSalary) : '—'}</td><td>${isSMG ? `<b class="green-text">${money(calcUAEGratuity(e.startDate,e.basicSalary,employeeGratuityEndDate(e)))}</b>` : '—'}</td><td>${isSMG ? `<div class="doc-mini-row"><span>Passport</span>${employeeDocStatusCell(e,'passportCollected','passportRequested','Passport')}</div>` : employeeOutsourcedDocsHTML(e)}</td><td><button class="mini-btn" onclick="editEmployee('${esc(e.id)}')">Edit</button><button class="mini-btn danger" onclick="removeEmployee('${esc(e.id)}')">Remove</button></td></tr>`;
+      return `<tr><td><b>${esc(e.name)}</b><div class="muted tiny">${esc(e.type || 'SMG')}</div></td><td>${employeeIsCurrentlyWorking(e)?'<span class="badge green">Working</span>':'<span class="badge muted-badge">Left</span>'}</td><td>${esc(e.startDate||'—')}</td><td>${employeeIsCurrentlyWorking(e)?'—':esc(e.endDate||'—')}</td><td>${employeeTenureText(e.startDate,employeeGratuityEndDate(e))}</td><td>${esc(e.assignedCompany||'—')}</td><td>${esc(e.assignedVehicle||'—')}</td><td>${isSMG ? esc(e.visaStatus||'—') : 'Outsourced'}</td><td>${isSMG ? money(e.basicSalary) : '—'}</td><td>${isSMG ? money(e.netSalary) : '—'}</td><td>${isSMG ? `<b class="green-text">${money(calcUAEGratuity(e.startDate,e.basicSalary,employeeGratuityEndDate(e)))}</b>` : '—'}</td><td>${employeePermitDisplay(e)}</td><td>${employeeExpiryAlertsHTML(e)}</td><td>${isSMG ? `<div class="doc-mini-row"><span>Passport</span>${employeeDocStatusCell(e,'passportCollected','passportRequested','Passport')}</div>` : employeeOutsourcedDocsHTML(e)}</td><td><button class="mini-btn" onclick="editEmployee('${esc(e.id)}')">Edit</button><button class="mini-btn danger" onclick="removeEmployee('${esc(e.id)}')">Remove</button></td></tr>`;
     }).join('');
-    return `<div class="table-wrap employee-table-wrap"><table><tr><th>Name</th><th>Status</th><th>Start date</th><th>End date</th><th>Total tenure</th><th>Assigned Company</th><th>Assigned Vehicle</th><th>Visa / Type</th><th>Basic</th><th>Net</th><th>Gratuity</th><th>Documents</th><th>Action</th></tr><tbody>${body}</tbody></table></div>`;
+    return `<div class="table-wrap employee-table-wrap"><table><tr><th>Name</th><th>Status</th><th>Start date</th><th>End date</th><th>Total tenure</th><th>Assigned Company</th><th>Assigned Vehicle</th><th>Visa / Type</th><th>Basic</th><th>Net</th><th>Gratuity</th><th>Permit</th><th>Expiry Alerts</th><th>Documents</th><th>Action</th></tr><tbody>${body}</tbody></table></div>`;
   }
   const head = type === 'SMG'
-    ? `<tr><th>Name</th><th>Status</th><th>Start date</th><th>End date</th><th>Total tenure</th><th>Assigned Company</th><th>Assigned Vehicle</th><th>Visa status</th><th>Basic</th><th>Net</th><th>Gratuity</th><th>Passport</th><th>Action</th></tr>`
-    : `<tr><th>Name</th><th>Status</th><th>Start date</th><th>End date</th><th>Total tenure</th><th>Assigned Company</th><th>Assigned Vehicle</th><th>ID</th><th>Driving License</th><th>Undertaking</th><th>Labour Permit</th><th>Action</th></tr>`;
+    ? `<tr><th>Name</th><th>Status</th><th>Start date</th><th>End date</th><th>Total tenure</th><th>Assigned Company</th><th>Assigned Vehicle</th><th>Visa status</th><th>Basic</th><th>Net</th><th>Gratuity</th><th>Passport Expiry</th><th>Driver License Expiry</th><th>Permit</th><th>Expiry Alerts</th><th>Passport</th><th>Action</th></tr>`
+    : `<tr><th>Name</th><th>Status</th><th>Start date</th><th>End date</th><th>Total tenure</th><th>Assigned Company</th><th>Assigned Vehicle</th><th>ID</th><th>Driving License</th><th>Undertaking</th><th>Labour Permit</th><th>Active Permit</th><th>Expiry Alerts</th><th>Action</th></tr>`;
   const body = rows.map(e => type === 'SMG'
-    ? `<tr><td><b>${esc(e.name)}</b></td><td>${employeeIsCurrentlyWorking(e)?'<span class="badge green">Working</span>':'<span class="badge muted-badge">Left</span>'}</td><td>${esc(e.startDate||'—')}</td><td>${employeeIsCurrentlyWorking(e)?'—':esc(e.endDate||'—')}</td><td>${employeeTenureText(e.startDate,employeeGratuityEndDate(e))}</td><td>${esc(e.assignedCompany||'—')}</td><td>${esc(e.assignedVehicle||'—')}</td><td>${esc(e.visaStatus||'—')}</td><td>${money(e.basicSalary)}</td><td>${money(e.netSalary)}</td><td><b class="green-text">${money(calcUAEGratuity(e.startDate,e.basicSalary,employeeGratuityEndDate(e)))}</b></td><td>${employeeDocStatusCell(e,'passportCollected','passportRequested','Passport')}</td><td><button class="mini-btn" onclick="editEmployee('${esc(e.id)}')">Edit</button><button class="mini-btn danger" onclick="removeEmployee('${esc(e.id)}')">Remove</button></td></tr>`
-    : `<tr><td><b>${esc(e.name)}</b></td><td>${employeeIsCurrentlyWorking(e)?'<span class="badge green">Working</span>':'<span class="badge muted-badge">Left</span>'}</td><td>${esc(e.startDate||'—')}</td><td>${employeeIsCurrentlyWorking(e)?'—':esc(e.endDate||'—')}</td><td>${employeeTenureText(e.startDate,employeeGratuityEndDate(e))}</td><td>${esc(e.assignedCompany||'—')}</td><td>${esc(e.assignedVehicle||'—')}</td><td>${employeeDocStatusCell(e,'hasId','hasIdRequested','ID')}</td><td>${employeeDocStatusCell(e,'drivingLicense','drivingLicenseRequested','Driving License')}</td><td>${employeeDocStatusCell(e,'undertaking','undertakingRequested','Undertaking')}</td><td>${employeeDocStatusCell(e,'labourPermit','labourPermitRequested','Labour Permit')}</td><td><button class="mini-btn" onclick="editEmployee('${esc(e.id)}')">Edit</button><button class="mini-btn danger" onclick="removeEmployee('${esc(e.id)}')">Remove</button></td></tr>`).join('');
+    ? `<tr><td><b>${esc(e.name)}</b></td><td>${employeeIsCurrentlyWorking(e)?'<span class="badge green">Working</span>':'<span class="badge muted-badge">Left</span>'}</td><td>${esc(e.startDate||'—')}</td><td>${employeeIsCurrentlyWorking(e)?'—':esc(e.endDate||'—')}</td><td>${employeeTenureText(e.startDate,employeeGratuityEndDate(e))}</td><td>${esc(e.assignedCompany||'—')}</td><td>${esc(e.assignedVehicle||'—')}</td><td>${esc(e.visaStatus||'—')}</td><td>${money(e.basicSalary)}</td><td>${money(e.netSalary)}</td><td><b class="green-text">${money(calcUAEGratuity(e.startDate,e.basicSalary,employeeGratuityEndDate(e)))}</b></td><td>${esc(e.passportExpiryDate||'—')}</td><td>${esc(e.drivingLicenseExpiryDate||'—')}</td><td>${employeePermitDisplay(e)}</td><td>${employeeExpiryAlertsHTML(e)}</td><td>${employeeDocStatusCell(e,'passportCollected','passportRequested','Passport')}</td><td><button class="mini-btn" onclick="editEmployee('${esc(e.id)}')">Edit</button><button class="mini-btn danger" onclick="removeEmployee('${esc(e.id)}')">Remove</button></td></tr>`
+    : `<tr><td><b>${esc(e.name)}</b></td><td>${employeeIsCurrentlyWorking(e)?'<span class="badge green">Working</span>':'<span class="badge muted-badge">Left</span>'}</td><td>${esc(e.startDate||'—')}</td><td>${employeeIsCurrentlyWorking(e)?'—':esc(e.endDate||'—')}</td><td>${employeeTenureText(e.startDate,employeeGratuityEndDate(e))}</td><td>${esc(e.assignedCompany||'—')}</td><td>${esc(e.assignedVehicle||'—')}</td><td>${employeeDocStatusCell(e,'hasId','hasIdRequested','ID')}</td><td>${employeeDocStatusCell(e,'drivingLicense','drivingLicenseRequested','Driving License')}</td><td>${employeeDocStatusCell(e,'undertaking','undertakingRequested','Undertaking')}</td><td>${employeeDocStatusCell(e,'labourPermit','labourPermitRequested','Labour Permit')}</td><td>${employeePermitDisplay(e)}</td><td>${employeeExpiryAlertsHTML(e)}</td><td><button class="mini-btn" onclick="editEmployee('${esc(e.id)}')">Edit</button><button class="mini-btn danger" onclick="removeEmployee('${esc(e.id)}')">Remove</button></td></tr>`).join('');
   return `<div class="table-wrap employee-table-wrap"><table>${head}<tbody>${body}</tbody></table></div>`;
 }
 async function saveEmployee(ev){
@@ -2031,6 +2095,10 @@ async function saveEmployee(ev){
   emp.assignedCompany = $('empAssignedCompany') ? $('empAssignedCompany').value.trim() : '';
   emp.assignedVehicle = $('empAssignedVehicle') ? $('empAssignedVehicle').value.trim() : '';
   emp.currentWorking = $('empCurrentWorking') ? $('empCurrentWorking').checked : true;
+  emp.hasActivePermit = $('empHasActivePermit') ? $('empHasActivePermit').checked : false;
+  emp.permitCategory = emp.hasActivePermit && $('empPermitCategory') ? $('empPermitCategory').value : '';
+  emp.permitExpiryDate = emp.hasActivePermit && $('empPermitExpiryDate') ? $('empPermitExpiryDate').value : '';
+  if(emp.hasActivePermit && (!emp.permitCategory || !emp.permitExpiryDate)) return toast('Permit category and expiry date are required when active permit is ticked');
   emp.endDate = emp.currentWorking ? '' : (($('empEndDate') && $('empEndDate').value) || '');
   if(!emp.currentWorking && !emp.endDate) return toast('End date is required when employee is not currently working');
   const existingEmployee = existingId ? getEditingEmployee() : null;
@@ -2040,6 +2108,8 @@ async function saveEmployee(ev){
     emp.netSalary = Number($('empNetSalary').value || 0);
     emp.passportCollected = $('empPassportCollected').checked;
     emp.passportRequested = emp.passportCollected ? false : Boolean(existingEmployee?.passportRequested);
+    emp.passportExpiryDate = $('empPassportExpiryDate') ? $('empPassportExpiryDate').value : '';
+    emp.drivingLicenseExpiryDate = $('empDrivingLicenseExpiryDate') ? $('empDrivingLicenseExpiryDate').value : '';
   } else {
     emp.hasId = $('empHasId').checked;
     emp.drivingLicense = $('empDrivingLicense').checked;
@@ -2072,12 +2142,13 @@ async function saveEmployee(ev){
 function editEmployee(empId){ const e = state.employees.find(x => x.id === empId); if(!e) return; state.employeeType = e.type || 'SMG'; state.editingEmployeeId = empId; render(); }
 async function removeEmployee(empId){ const e = state.employees.find(x => x.id === empId); if(!e) return; if(!confirm(`Remove ${e.name}?`)) return; state.employees = state.employees.filter(x => x.id !== empId); if(USE_SUPABASE) await deleteRemoteRow('employees', empId); await saveEmployees(); await logAction('Removed employee', 'Employees', e.name, e.type || '', state.user?.name); toast('Employee removed'); render(); }
 function exportEmployees(){
-  const rows = [['Type','Name','Currently Working','Start Date','End Date','Total Tenure','Assigned Company','Assigned Vehicle','Visa Status','Basic Salary AED','Net Salary AED','Estimated Gratuity AED','Passport Collected','Passport Requested','ID','ID Requested','Driving License','Driving License Requested','Undertaking','Undertaking Requested','Labour Part Time Permit','Labour Permit Requested']];
-  state.employees.forEach(e => rows.push([e.type||'SMG', e.name||'', employeeIsCurrentlyWorking(e)?'Yes':'No', e.startDate||'', employeeIsCurrentlyWorking(e)?'':(e.endDate||''), employeeTenureText(e.startDate,employeeGratuityEndDate(e)), e.assignedCompany||'', e.assignedVehicle||'', e.visaStatus||'', e.basicSalary||0, e.netSalary||0, calcUAEGratuity(e.startDate,e.basicSalary,employeeGratuityEndDate(e)).toFixed(2), e.passportCollected?'Yes':'No', e.passportRequested?'Yes':'No', e.hasId?'Yes':'No', e.hasIdRequested?'Yes':'No', e.drivingLicense?'Yes':'No', e.drivingLicenseRequested?'Yes':'No', e.undertaking?'Yes':'No', e.undertakingRequested?'Yes':'No', e.labourPermit?'Yes':'No', e.labourPermitRequested?'Yes':'No']));
+  const rows = [['Type','Name','Currently Working','Start Date','End Date','Total Tenure','Assigned Company','Assigned Vehicle','Visa Status','Basic Salary AED','Net Salary AED','Estimated Gratuity AED','Passport Expiry Date','Driving License Expiry Date','Active Permit','Permit Category','Permit Expiry Date','Passport Collected','Passport Requested','ID','ID Requested','Driving License','Driving License Requested','Undertaking','Undertaking Requested','Labour Part Time Permit','Labour Permit Requested']];
+  state.employees.forEach(e => rows.push([e.type||'SMG', e.name||'', employeeIsCurrentlyWorking(e)?'Yes':'No', e.startDate||'', employeeIsCurrentlyWorking(e)?'':(e.endDate||''), employeeTenureText(e.startDate,employeeGratuityEndDate(e)), e.assignedCompany||'', e.assignedVehicle||'', e.visaStatus||'', e.basicSalary||0, e.netSalary||0, calcUAEGratuity(e.startDate,e.basicSalary,employeeGratuityEndDate(e)).toFixed(2), e.passportExpiryDate||'', e.drivingLicenseExpiryDate||'', e.hasActivePermit?'Yes':'No', e.permitCategory||'', e.permitExpiryDate||'', e.passportCollected?'Yes':'No', e.passportRequested?'Yes':'No', e.hasId?'Yes':'No', e.hasIdRequested?'Yes':'No', e.drivingLicense?'Yes':'No', e.drivingLicenseRequested?'Yes':'No', e.undertaking?'Yes':'No', e.undertakingRequested?'Yes':'No', e.labourPermit?'Yes':'No', e.labourPermitRequested?'Yes':'No']));
   downloadCSV('sarab-employees.csv', rows);
 }
 
 function toggleEmployeeEndDate(){ const wrap = $('employeeEndDateWrap'); const current = $('empCurrentWorking'); if(wrap && current) wrap.style.display = current.checked ? 'none' : 'block'; }
+function toggleEmployeePermitFields(){ const wrap=$('employeePermitFields'); const active=$('empHasActivePermit'); if(wrap && active) wrap.classList.toggle('hidden', !active.checked); }
 
 function employeeHistoryHTML(){
   const q = String(state.employeeSearch || '').toLowerCase();
@@ -2235,6 +2306,7 @@ function exportSalikCSV(){ const rows=[['Plate','Vehicle','Client','Status','SAL
 
 function settingsHTML(){ return `<div class="page-head"><div><h1>Settings</h1><p class="muted">Settings are currently disabled for garage staff.</p></div></div><section class="card settings-card settings-disabled" aria-disabled="true"><div class="disabled-badge">Disabled</div><h2>Settings locked</h2><p class="muted">This section is greyed out to avoid accidental changes. Only the app owner should update system settings from the code or Supabase dashboard.</p><div class="settings-placeholder"><p><b>Current user</b></p><p>${esc(state.user?.name||'Sarab Al Madina Team')}<br>${esc(state.user?.email||'')}</p><p>Storage mode: ${USE_SUPABASE ? 'Supabase shared database' : 'localStorage local demo'}.</p></div></section>`; }
 
+function toggleFleetPermitFields(){ const wrap=$('fleetPermitFields'); const active=$('fleetHasActivePermit'); if(wrap && active) wrap.classList.toggle('hidden', !active.checked); }
 function toggleFleetVendorField(){
   const wrap = $('fleetVendorWrap');
   if(!wrap || !$('fleetOwnership')) return;
@@ -2302,7 +2374,7 @@ function bindPageEvents(){
   if($('ticketStatusFilter')) $('ticketStatusFilter').onchange=e=>{state.ticketStatus=e.target.value; renderTicketListOnly();};
   if($('ticketPriorityFilter')) $('ticketPriorityFilter').onchange=e=>{state.ticketPriority=e.target.value; renderTicketListOnly();};
   if($('ticketForm')){ $('ticketForm').onsubmit=saveTicket; if($('ticketFleetSearch')) { $('ticketFleetSearch').oninput=e=>fillTicketFromFleet(e.target.value); $('ticketFleetSearch').onchange=e=>fillTicketFromFleet(e.target.value); } }
-  if($('fleetForm')){ $('fleetForm').onsubmit=saveFleetVehicle; if($('fleetSearch')) $('fleetSearch').oninput=e=>{state.fleetFilter=e.target.value; renderFleetResults();}; if($('fleetOwnership')) $('fleetOwnership').onchange=toggleFleetVendorField; if($('fleetStatus')) $('fleetStatus').onchange=toggleFleetVendorField; if($('fleetModel')) $('fleetModel').onblur=()=>{ const y=extractYearFromModel($('fleetModel').value); if(y && !$('fleetYear').value){ $('fleetYear').value=y; $('fleetModel').value=modelWithoutYear($('fleetModel').value); } }; toggleFleetVendorField(); }
+  if($('fleetForm')){ $('fleetForm').onsubmit=saveFleetVehicle; if($('fleetSearch')) $('fleetSearch').oninput=e=>{state.fleetFilter=e.target.value; renderFleetResults();}; if($('fleetOwnership')) $('fleetOwnership').onchange=toggleFleetVendorField; if($('fleetHasActivePermit')) $('fleetHasActivePermit').onchange=toggleFleetPermitFields; if($('fleetStatus')) $('fleetStatus').onchange=toggleFleetVendorField; if($('fleetModel')) $('fleetModel').onblur=()=>{ const y=extractYearFromModel($('fleetModel').value); if(y && !$('fleetYear').value){ $('fleetYear').value=y; $('fleetModel').value=modelWithoutYear($('fleetModel').value); } }; toggleFleetVendorField(); }
   if($('jobForm')){ $('addLineBtn').onclick=()=>addPartLine(); $('addCustomBtn').onclick=()=>addCustomCharge(); if($('newJobModeBtn')) $('newJobModeBtn').onclick=startNewJobCard; if($('jobEditSelect')) $('jobEditSelect').onchange=e=>{ if(e.target.value) loadJobCardForEdit(e.target.value); }; if($('jobDate')) $('jobDate').onchange=()=>{ if(!$('jobEditId').value) $('jobCardPreview').textContent=nextJobCardId($('jobDate').value || today()); }; $('jobLabour').oninput=updateJobSummary; $('jobLabourHours').oninput=updateJobSummary; if($('jobFleetSelect')) $('jobFleetSelect').onchange=e=>{ if(e.target.value) fillJobFromFleet(e.target.value); }; if($('jobDoneBySelect')) $('jobDoneBySelect').onchange=e=>{ if(e.target.value) addStaffName(e.target.value); }; if($('jobPlateCode')) $('jobPlateCode').oninput=updateFleetPlateSuggestions; if($('jobPlateNumber')) $('jobPlateNumber').oninput=updateFleetPlateSuggestions; addPartLine(); addCustomCharge('', 0); updateFleetPlateSuggestions(); updateJobSummary(); $('jobForm').onsubmit=saveJob; }
 }
 function addPartLine(selected='', qty=1){
