@@ -1857,3 +1857,13 @@ input:disabled{
 @media(max-width:900px){
   .expiry-toolbar{ grid-template-columns:1fr; }
 }
+
+
+/* v75 fleet registration expiry + job filters */
+.fleet-alert-row{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 2px;min-height:4px;}
+.fleet-meta-expanded{grid-template-columns:repeat(3,minmax(0,1fr));}
+.job-overview-filters{display:grid;grid-template-columns:minmax(260px,1.8fr) minmax(160px,.8fr) minmax(150px,.8fr) minmax(150px,.7fr) auto;gap:10px;margin:0 0 16px;align-items:center;}
+.job-overview-filters input,.job-overview-filters select{min-height:44px;}
+.vh-detail-row small,.history-table-mini small{display:block;color:var(--muted);font-size:12px;margin-top:2px;}
+@media(max-width:1000px){.job-overview-filters{grid-template-columns:1fr 1fr}.fleet-meta-expanded{grid-template-columns:repeat(2,minmax(0,1fr));}}
+@media(max-width:700px){.job-overview-filters,.fleet-meta-expanded{grid-template-columns:1fr;}}

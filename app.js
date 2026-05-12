@@ -569,6 +569,7 @@ function actionNeededItems(){
   });
   (state.vehicles||[]).forEach(v=>{
     if(v.hasActivePermit) add('Fleet',`${v.permitCategory || 'Vehicle permit'} expiry`,v.plate || v.modelNumber || 'Vehicle',v.permitExpiryDate,7,`${v.modelNumber || ''} ${v.customer ? '• '+v.customer : ''}`.trim(),'fleet');
+    if((v.ownership || 'SMG Vehicle') !== 'Outsource') add('Fleet','Vehicle registration expiry',v.plate || v.modelNumber || 'Vehicle',v.registrationExpiryDate,30,`${v.modelNumber || ''} ${v.customer ? '• '+v.customer : ''}`.trim(),'fleet');
   });
   (state.clients||[]).forEach(c=>{
     add('Clients','Contract expiry',c.name || 'Client',c.contractEnd,30,'Client contract expires within 30 days','clients');
@@ -972,13 +973,24 @@ function activityHTML(){
 
 function usedHTML(){
   const plateQuery = String(state.vehicleHistoryQuery || '').trim().toUpperCase();
-  const matchingJobs = (plateQuery
+  const q = String(state.jobOverviewSearch || '').trim().toLowerCase();
+  const statusFilter = state.jobOverviewStatus || 'All';
+  const staffFilter = state.jobOverviewStaff || 'All';
+  const dateFilter = state.jobOverviewDate || '';
+  let matchingJobs = (plateQuery
     ? state.jobs.filter(j => String(j.plate || '').toUpperCase().includes(plateQuery))
     : state.jobs).slice();
+  matchingJobs = matchingJobs.filter(j=>{
+    const text=[ensureJobCardId(j),j.plate,j.car,j.description,j.doneBy,compactPartsList(j)].join(' ').toLowerCase();
+    return (!q || text.includes(q)) && (statusFilter==='All' || jobStatus(j)===statusFilter) && (staffFilter==='All' || String(j.doneBy||'—')===staffFilter) && (!dateFilter || j.date===dateFilter);
+  });
   const usage = usageRowsForJobs(matchingJobs);
+  const staffOptions = ['All', ...new Set((state.jobs||[]).map(j=>j.doneBy||'—').filter(Boolean))];
   return `<div class="page-head"><div><h1>Job Card Overview</h1><p class="muted">Search by number plate and review job cards and part usage in a cleaner layout.</p></div><div class="head-actions"><button class="btn light" onclick="exportUsage()">${I('download','icon-sm')} Export Parts Used</button><button class="btn primary" onclick="go('job')">Raise Job Card</button></div></div>
   ${plateHistoryPanelHTML()}
-  <section class="panel spaced-panel"><div class="section-title"><h3>${plateQuery ? `Jobs Matching ${esc(plateQuery)}` : 'All Jobs'}</h3><small class="muted">${matchingJobs.length} job card${matchingJobs.length===1?'':'s'}</small></div>${matchingJobs.length?`<div class="table-wrap clean-table"><table class="jobs-clean-table"><thead><tr><th>Job Card</th><th>Vehicle</th><th>Job / Staff</th><th>Status</th><th>Parts</th><th>Actions</th></tr></thead><tbody>${matchingJobs.map(j=>`<tr><td><b>${esc(ensureJobCardId(j))}</b><br><small class="muted">${esc(j.date)}</small></td><td><b>${esc(j.plate || '—')}</b><br><small class="muted">${esc(j.car || 'No car')}</small></td><td><b>${esc(j.description || 'Job card')}</b><br><small class="muted">Done by: ${esc(j.doneBy || '—')}</small></td><td><div class="status-stack">${statusPill(jobStatus(j))}${statusSelect(j.id, jobStatus(j))}</div></td><td><small class="muted table-wrap-text">${compactPartsList(j)}</small></td><td><div class="action-wrap"><button class="mini-btn" onclick="viewPlateHistory('${esc(j.plate)}')">Plate History</button><button class="mini-btn" onclick="loadJobCardForEdit('${j.id}')">Edit</button><button class="mini-btn" onclick="viewJob('${j.id}')">Open</button><button class="mini-btn danger" onclick="deleteJob('${j.id}')">Delete / Return Stock</button></div></td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">No jobs found.</div>'}</section>
+  <section class="panel spaced-panel"><div class="section-title"><h3>${plateQuery ? `Jobs Matching ${esc(plateQuery)}` : 'All Jobs'}</h3><small class="muted">${matchingJobs.length} job card${matchingJobs.length===1?'':'s'}</small></div>
+  <div class="job-overview-filters"><input id="jobOverviewSearch" placeholder="Search job card, plate, staff, parts..." value="${esc(state.jobOverviewSearch||'')}" autocomplete="off"><select id="jobOverviewStatus"><option>All</option>${JOB_STATUSES.map(x=>`<option ${statusFilter===x?'selected':''}>${esc(x)}</option>`).join('')}</select><select id="jobOverviewStaff">${staffOptions.map(x=>`<option ${staffFilter===x?'selected':''}>${esc(x)}</option>`).join('')}</select><input id="jobOverviewDate" type="date" value="${esc(dateFilter)}"><button class="mini-btn" onclick="state.jobOverviewSearch='';state.jobOverviewStatus='All';state.jobOverviewStaff='All';state.jobOverviewDate='';render();">Reset</button></div>
+  ${matchingJobs.length?`<div class="table-wrap clean-table"><table class="jobs-clean-table"><thead><tr><th>Job Card</th><th>Vehicle</th><th>Job / Staff</th><th>Status</th><th>Parts</th><th>Actions</th></tr></thead><tbody>${matchingJobs.map(j=>`<tr><td><b>${esc(ensureJobCardId(j))}</b><br><small class="muted">${esc(j.date)}</small></td><td><b>${esc(j.plate || '—')}</b><br><small class="muted">${esc(j.car || 'No car')}</small></td><td><b>${esc(j.description || 'Job card')}</b><br><small class="muted">Done by: ${esc(j.doneBy || '—')}</small></td><td><div class="status-stack">${statusPill(jobStatus(j))}${statusSelect(j.id, jobStatus(j))}</div></td><td><small class="muted table-wrap-text">${compactPartsList(j)}</small></td><td><div class="action-wrap"><button class="mini-btn" onclick="viewPlateHistory('${esc(j.plate)}')">Plate History</button><button class="mini-btn" onclick="loadJobCardForEdit('${j.id}')">Edit</button><button class="mini-btn" onclick="viewJob('${j.id}')">Open</button><button class="mini-btn danger" onclick="deleteJob('${j.id}')">Delete / Return Stock</button></div></td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">No jobs found.</div>'}</section>
   <section class="panel spaced-panel"><div class="section-title"><h3>${plateQuery ? `Part Usage for ${esc(plateQuery)}` : 'Part Usage Log'}</h3><small class="muted">${usage.length} line item${usage.length===1?'':'s'}</small></div>${usage.length?`<div class="table-wrap clean-table"><table class="usage-clean-table"><thead><tr><th>Job Card</th><th>Vehicle / Job</th><th>Part</th><th>Qty</th><th>Item Price</th><th>Charges</th><th>Status</th><th>Done By</th></tr></thead><tbody>${usage.map(u=>`<tr><td><b>${esc(u.jobCardId)}</b><br><small class="muted">${esc(u.date)}</small></td><td><b>${esc(u.plate)}</b><br><small class="muted">${esc(u.car)} · ${esc(u.job)}</small></td><td><b>${esc(u.name)}</b>${u.sku?`<br><small class="muted">${esc(u.sku)}</small>`:''}</td><td>${u.qty}</td><td>${money(u.price)}</td><td><div class="charge-stack"><span>Custom: ${money(u.customTotal)}</span><span>Labor: ${money(u.labour)}</span><b>Total: ${money(u.total)}</b></div></td><td><div class="status-stack">${statusPill(u.status)}${u.jobId ? statusSelect(u.jobId, u.status) : ''}</div></td><td>${esc(u.doneBy || '—')}</td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">No parts used yet.</div>'}</section>`;
 }
 
@@ -1493,7 +1505,7 @@ function vehicleHistoryHTML(){
 }
 function vehicleHistoryRow(v){
   const open = state.vehicleHistoryOpen === v.id;
-  const timeline=vehicleAssignmentTimeline(v);
+  const timeline=[...vehicleAssignmentTimeline(v), ...fleetPermitHistoryRows(v)];
   const currentClient = fleetClientName(v) || 'Unassigned';
   const current = [...timeline].reverse().find(r=>clientKey(r.client)===clientKey(currentClient)) || timeline[timeline.length-1] || {from:'Not recorded', to:'Present', client:currentClient};
   const historyRows = timeline.slice().reverse().map((r,idx)=>`<tr class="vh-detail-row"><td></td><td colspan="2"><b>${esc(r.client)}</b><small>${idx===0?'Current / latest period':'Past period'}${r.changedBy ? ` · Changed by ${esc(r.changedBy)}` : ''}${r.note ? ` · ${esc(r.note)}` : ''}</small></td><td><b>From</b><small>${esc(r.from)}</small></td><td><b>To</b><small>${esc(r.to || 'Present')}</small></td><td colspan="2"></td></tr>`).join('');
@@ -1506,7 +1518,7 @@ function toggleVehicleHistory(vehicleId){
 function exportVehicleHistoryCSV(){
   const rows=[['Plate','Vehicle','Year','Client','From Date','To Date','Notes','Changed By']];
   vehicleHistoryRows().forEach(v=>{
-    vehicleAssignmentTimeline(v).forEach(r=>rows.push([v.plate||'', modelWithoutYear(v.modelNumber)||v.modelNumber||'', v.year||'', r.client, r.from, r.to || 'Present', r.note||'', r.changedBy||'']));
+    [...vehicleAssignmentTimeline(v), ...fleetPermitHistoryRows(v)].forEach(r=>rows.push([v.plate||'', modelWithoutYear(v.modelNumber)||v.modelNumber||'', v.year||'', r.client, r.from, r.to || 'Present', r.note||'', r.changedBy||'']));
   });
   downloadCSV('sarab-vehicle-client-history.csv', rows);
 }
@@ -1536,6 +1548,7 @@ function fleetHTML(){
       <label>Year<input id="fleetYear" type="number" min="1980" max="2100" step="1" placeholder="2022"></label>
       <label>Registered company<select id="fleetRegisteredCompany"><option value="">Not applicable / outsourced</option>${REGISTERED_COMPANIES.map(x=>`<option>${x}</option>`).join('')}</select><small id="fleetRegisteredCompanyNote" class="muted tiny hidden">Outsourced vehicles do not need a registered company.</small></label>
       <label>Fuel chip<select id="fleetFuelChip"><option value="Yes">Has company fuel chip</option><option value="No">No company fuel chip</option></select></label>
+      <label id="fleetRegistrationExpiryWrap">Vehicle registration expiry<input id="fleetRegistrationExpiryDate" type="date"><small class="muted tiny">SMG vehicles only. Alert appears within 1 month.</small></label>
       <div class="plate-fields"><label>Plate code<input id="fleetPlateCode" required placeholder="R" maxlength="8"></label><label>Plate number<input id="fleetPlateNumber" required placeholder="14534"></label></div>
       <label>Customer<input id="fleetCustomer" placeholder="Customer / client name"></label>
       <label>Assigned driver<input id="fleetAssignedDriver" list="fleetDriverOptions" placeholder="Without driver / employee name"><datalist id="fleetDriverOptions">${fleetDriverOptionsHTML()}</datalist></label><label class="checkbox-line permit-toggle-line"><input id="fleetHasActivePermit" type="checkbox" onchange="toggleFleetPermitFields()"/> Active permit</label><div id="fleetPermitFields" class="grid two permit-fields wide hidden"><label>Permit category<select id="fleetPermitCategory">${permitOptionsHTML()}</select></label><label>Permit expiry date<input id="fleetPermitExpiryDate" type="date"></label></div>
@@ -1549,8 +1562,29 @@ function fleetHTML(){
     </form></section>
     <section class="panel fleet-list-card"><div class="section-title"><div><h3>Fleet List</h3><p class="muted small-note">Search updates instantly while typing.</p></div><button class="mini-btn" onclick="exportFleet()">Export Fleet CSV</button></div><input id="fleetSearch" placeholder="Search by plate, model, customer, status..." value="${esc(state.fleetFilter || '')}" autocomplete="off" class="fleet-search"><div id="fleetResults">${vehicles.length ? fleetTable(vehicles) : '<div class="empty">No fleet vehicles found.</div>'}</div></section></div>`;
 }
+
+function fleetRegistrationAlertHTML(v){
+  if((v.ownership || 'SMG Vehicle') === 'Outsource') return '<span class="muted">—</span>';
+  if(!v.registrationExpiryDate) return '<span class="muted">No date</span>';
+  return expiryNeedsAction(v.registrationExpiryDate,30) ? actionNeededBadge(`Registration ${v.registrationExpiryDate}`) : `<span class="pill green">Valid till ${esc(v.registrationExpiryDate)}</span>`;
+}
+function fleetPermitHistoryRows(v){
+  const rows=[];
+  if((v.ownership || 'SMG Vehicle') !== 'Outsource' && v.registrationExpiryDate){
+    rows.push({client:'Vehicle registration', from:v.updatedAt ? String(v.updatedAt).slice(0,10) : today(), to:v.registrationExpiryDate, note: expiryNeedsAction(v.registrationExpiryDate,30) ? 'Registration expiry action needed' : 'Registration expiry recorded', changedBy:'Fleet'});
+  }
+  if(v.hasActivePermit){
+    rows.push({client:`Active permit: ${v.permitCategory || 'Permit'}`, from:v.updatedAt ? String(v.updatedAt).slice(0,10) : today(), to:v.permitExpiryDate || '—', note: expiryNeedsAction(v.permitExpiryDate,7) ? 'Permit expiry action needed' : 'Permit active/raised', changedBy:'Fleet'});
+  }
+  return rows;
+}
 function fleetTable(vehicles){
-  return `<div class="fleet-cards">${vehicles.map(v=>{ const year = v.year || extractYearFromModel(v.modelNumber); const model = modelWithoutYear(v.modelNumber); return `<article class="fleet-card"><div class="fleet-card-main"><div><span class="fleet-plate">${esc(v.plate)}</span><h3>${esc(model)}${year ? ` <span class="fleet-year">${esc(year)}</span>` : ''}</h3><p class="muted">${esc(v.customer || 'No customer added')}</p></div><span class="pill ${v.status === 'In Use' ? 'green' : v.status === 'Back-up' ? 'orange' : v.status === 'Off-hire' ? 'red' : ''}">${esc(v.status)}</span></div><div class="fleet-meta fleet-meta-expanded"><div><small>Registered Co.</small><b>${v.ownership === 'Outsource' ? '—' : esc(v.registeredCompany || 'Garage')}</b></div><div><small>Fuel Chip</small><b>${esc(v.fuelChip === 'Yes' ? 'Yes' : 'No')}</b></div><div><small>Assigned Driver</small><b>${esc(v.assignedDriver || 'Without driver')}</b></div><div><small>Permit</small><b>${v.hasActivePermit ? `${esc(v.permitCategory || 'Permit')} · ${esc(v.permitExpiryDate || '—')}` : '—'}</b></div><div><small>Type</small><b>${esc(v.ownership)}</b></div><div><small>Vendor</small><b>${v.ownership === 'Outsource' ? esc(v.vendorName || '—') : '—'}</b></div><div><small>Outsource Dates</small><b>${v.ownership === 'Outsource' ? `${esc(v.outsourceStartDate || '—')} → ${esc(v.outsourceEndDate || '—')}` : '—'}</b></div><div><small>Rent Rate</small><b>${v.ownership === 'Outsource' && v.status !== 'Off-hire' ? money(v.rentRate) : '—'}</b></div><div><small>Client Rate</small><b>${v.status === 'In Use' ? money(v.clientRate) : '—'}</b></div></div>${v.notes ? `<p class="fleet-notes">${esc(v.notes)}</p>` : ''}<div class="fleet-actions"><button class="mini-btn" onclick="editFleetVehicle('${v.id}')">Edit</button><button class="mini-btn danger" onclick="deleteFleetVehicle('${v.id}')">Delete</button></div></article>`; }).join('')}</div>`;
+  return `<div class="fleet-cards">${vehicles.map(v=>{
+    const year = v.year || extractYearFromModel(v.modelNumber);
+    const model = modelWithoutYear(v.modelNumber);
+    const regAlert = fleetRegistrationAlertHTML(v);
+    return `<article class="fleet-card"><div class="fleet-card-main"><div><span class="fleet-plate">${esc(v.plate)}</span><h3>${esc(model)}${year ? ` <span class="fleet-year">${esc(year)}</span>` : ''}</h3><p class="muted">${esc(v.customer || 'No customer added')}</p></div><span class="pill ${v.status === 'In Use' ? 'green' : v.status === 'Back-up' ? 'orange' : v.status === 'Off-hire' ? 'red' : ''}">${esc(v.status)}</span></div><div class="fleet-alert-row">${regAlert}${v.hasActivePermit && expiryNeedsAction(v.permitExpiryDate,7) ? actionNeededBadge(`${v.permitCategory || 'Permit'} ${v.permitExpiryDate || ''}`) : ''}</div><div class="fleet-meta fleet-meta-expanded"><div><small>Registered Co.</small><b>${v.ownership === 'Outsource' ? '—' : esc(v.registeredCompany || 'Garage')}</b></div><div><small>Registration Expiry</small><b>${v.ownership === 'Outsource' ? '—' : esc(v.registrationExpiryDate || '—')}</b></div><div><small>Fuel Chip</small><b>${esc(v.fuelChip === 'Yes' ? 'Yes' : 'No')}</b></div><div><small>Assigned Driver</small><b>${esc(v.assignedDriver || 'Without driver')}</b></div><div><small>Permit</small><b>${v.hasActivePermit ? `${esc(v.permitCategory || 'Permit')} · ${esc(v.permitExpiryDate || '—')}` : '—'}</b></div><div><small>Type</small><b>${esc(v.ownership)}</b></div><div><small>Vendor</small><b>${v.ownership === 'Outsource' ? esc(v.vendorName || '—') : '—'}</b></div><div><small>Outsource Dates</small><b>${v.ownership === 'Outsource' ? `${esc(v.outsourceStartDate || '—')} → ${esc(v.outsourceEndDate || '—')}` : '—'}</b></div><div><small>Rent Rate</small><b>${v.ownership === 'Outsource' && v.status !== 'Off-hire' ? money(v.rentRate) : '—'}</b></div><div><small>Client Rate</small><b>${v.status === 'In Use' ? money(v.clientRate) : '—'}</b></div></div>${v.notes ? `<p class="fleet-notes">${esc(v.notes)}</p>` : ''}<div class="fleet-actions"><button class="mini-btn" onclick="editFleetVehicle('${v.id}')">Edit</button><button class="mini-btn danger" onclick="deleteFleetVehicle('${v.id}')">Delete</button></div></article>`;
+  }).join('')}</div>`;
 }
 
 async function syncClientFromFleetVehicle(vehicle){
@@ -1575,6 +1609,7 @@ async function saveFleetVehicle(e){
     plateNumber: normalizePlatePiece($('fleetPlateNumber').value),
     year: autoYear,
     registeredCompany: $('fleetOwnership').value === 'Outsource' ? '' : $('fleetRegisteredCompany').value,
+    registrationExpiryDate: $('fleetOwnership').value === 'Outsource' ? '' : ($('fleetRegistrationExpiryDate')?.value || ''),
     fuelChip: $('fleetFuelChip').value,
     assignedDriver: ($('fleetAssignedDriver')?.value || 'Without driver').trim() || 'Without driver',
     hasActivePermit: $('fleetHasActivePermit') ? $('fleetHasActivePermit').checked : false,
@@ -1634,6 +1669,7 @@ function editFleetVehicle(vehicleId){
   $('fleetYear').value = v.year || extractYearFromModel(v.modelNumber || '');
   $('fleetRegisteredCompany').value = v.ownership === 'Outsource' ? '' : (v.registeredCompany || 'Garage');
   $('fleetFuelChip').value = v.fuelChip || 'No';
+  if($('fleetRegistrationExpiryDate')) $('fleetRegistrationExpiryDate').value = v.registrationExpiryDate || '';
   if($('fleetAssignedDriver')) $('fleetAssignedDriver').value = v.assignedDriver || 'Without driver';
   if($('fleetHasActivePermit')) $('fleetHasActivePermit').checked = Boolean(v.hasActivePermit);
   if($('fleetPermitCategory')) $('fleetPermitCategory').value = v.permitCategory || '';
@@ -1656,7 +1692,7 @@ function editFleetVehicle(vehicleId){
 }
 function clearFleetForm(){
   if(state.view !== 'fleet') { go('fleet'); return; }
-  ['fleetId','fleetModel','fleetYear','fleetPlateCode','fleetPlateNumber','fleetCustomer','fleetAssignedDriver','fleetVendorName','fleetOutsourceStartDate','fleetOutsourceEndDate','fleetPermitCategory','fleetPermitExpiryDate','fleetNotes'].forEach(id => { if($(id)) $(id).value=''; });
+  ['fleetId','fleetModel','fleetYear','fleetPlateCode','fleetPlateNumber','fleetCustomer','fleetAssignedDriver','fleetVendorName','fleetOutsourceStartDate','fleetOutsourceEndDate','fleetPermitCategory','fleetPermitExpiryDate','fleetRegistrationExpiryDate','fleetNotes'].forEach(id => { if($(id)) $(id).value=''; });
   if($('fleetStatus')) $('fleetStatus').value='In Use';
   if($('fleetRegisteredCompany')) $('fleetRegisteredCompany').value='Garage';
   if($('fleetAssignedDriver')) $('fleetAssignedDriver').value='Without driver';
@@ -1723,6 +1759,7 @@ function importFleetCSV(){
           hasActivePermit:['yes','true','1','active'].includes(String(firstValue(obj,['Active Permit','Has Active Permit'], existing?.hasActivePermit ? 'Yes' : '')).trim().toLowerCase()),
           permitCategory:firstValue(obj,['Permit Category','Permit Type'], existing?.permitCategory || ''),
           permitExpiryDate:firstValue(obj,['Permit Expiry Date','Permit Expiry'], existing?.permitExpiryDate || ''),
+          registrationExpiryDate:firstValue(obj,['Vehicle Registration Expiry','Registration Expiry','Vehicle Registration Expiry Date'], existing?.registrationExpiryDate || ''),
           plate,
           plateCode:firstValue(obj,['Plate Code'], existing?.plateCode || parts.code),
           plateNumber:firstValue(obj,['Plate Number','License Number'], existing?.plateNumber || parts.license),
@@ -1754,13 +1791,13 @@ function importFleetCSV(){
 
 function exportFleet(){
   downloadCSV('sarab-fleet.csv', [
-    ['Vehicle Model','Year','Registered Company','Fuel Chip','Plate Code','Plate Number','Number Plate','Customer','Assigned Driver','Active Permit','Permit Category','Permit Expiry Date','Status','Vehicle Type','Vendor Name','Outsource Start Date','Outsource End Date','Outsource Rent Rate AED','Client Rate AED','Total AED','Notes'],
+    ['Vehicle Model','Year','Registered Company','Vehicle Registration Expiry','Fuel Chip','Plate Code','Plate Number','Number Plate','Customer','Assigned Driver','Active Permit','Permit Category','Permit Expiry Date','Status','Vehicle Type','Vendor Name','Outsource Start Date','Outsource End Date','Outsource Rent Rate AED','Client Rate AED','Total AED','Notes'],
     ...state.vehicles.map(v=>{
       const parts=splitPlate(v.plate);
       const rent=Number(v.ownership === 'Outsource' && v.status !== 'Off-hire' ? v.rentRate || 0 : 0);
       const client=Number(v.status === 'In Use' ? v.clientRate || 0 : 0);
       const total=client-rent;
-      return [modelWithoutYear(v.modelNumber),v.year || extractYearFromModel(v.modelNumber),v.ownership === 'Outsource' ? '' : (v.registeredCompany || 'Garage'),v.fuelChip || 'No',v.plateCode || parts.code,v.plateNumber || parts.license,v.plate,v.customer,v.assignedDriver || 'Without driver',v.hasActivePermit?'Yes':'No',v.permitCategory||'',v.permitExpiryDate||'',v.status,v.ownership,v.ownership === 'Outsource' ? (v.vendorName || '') : '',v.ownership === 'Outsource' ? (v.outsourceStartDate || '') : '',v.ownership === 'Outsource' ? (v.outsourceEndDate || '') : '',rent,client,total,v.notes];
+      return [modelWithoutYear(v.modelNumber),v.year || extractYearFromModel(v.modelNumber),v.ownership === 'Outsource' ? '' : (v.registeredCompany || 'Garage'),v.ownership === 'Outsource' ? '' : (v.registrationExpiryDate || ''),v.fuelChip || 'No',v.plateCode || parts.code,v.plateNumber || parts.license,v.plate,v.customer,v.assignedDriver || 'Without driver',v.hasActivePermit?'Yes':'No',v.permitCategory||'',v.permitExpiryDate||'',v.status,v.ownership,v.ownership === 'Outsource' ? (v.vendorName || '') : '',v.ownership === 'Outsource' ? (v.outsourceStartDate || '') : '',v.ownership === 'Outsource' ? (v.outsourceEndDate || '') : '',rent,client,total,v.notes];
     })
   ]);
 }
@@ -2218,6 +2255,9 @@ function employeeHistoryHTML(){
   const rows = (state.employees || []).filter(e => !q || [e.name,e.assignedCompany,e.assignedVehicle,e.type,e.visaStatus].join(' ').toLowerCase().includes(q));
   const body = rows.map(e=>{
     const hist = (e.assignmentHistory && e.assignmentHistory.length ? e.assignmentHistory : (e.assignedCompany || e.assignedVehicle ? [{from:e.startDate||'—', to:'Present', company:e.assignedCompany||'—', vehicle:e.assignedVehicle||'—', note:'Current assignment'}] : []));
+    if(e.hasActivePermit) hist.push({from:e.updatedAt ? String(e.updatedAt).slice(0,10) : (e.startDate || today()), to:e.permitExpiryDate || '—', company:e.assignedCompany || '—', vehicle:e.assignedVehicle || '—', note:`Active permit: ${e.permitCategory || 'Permit'}${expiryNeedsAction(e.permitExpiryDate,7) ? ' · action needed' : ''}`});
+    if((e.type||'SMG')==='SMG' && e.passportExpiryDate) hist.push({from:e.startDate||'—', to:e.passportExpiryDate, company:e.assignedCompany||'—', vehicle:e.assignedVehicle||'—', note:`Passport expiry${expiryNeedsAction(e.passportExpiryDate,30) ? ' · action needed' : ''}`});
+    if((e.type||'SMG')==='SMG' && e.drivingLicenseExpiryDate) hist.push({from:e.startDate||'—', to:e.drivingLicenseExpiryDate, company:e.assignedCompany||'—', vehicle:e.assignedVehicle||'—', note:`Driver license expiry${expiryNeedsAction(e.drivingLicenseExpiryDate,30) ? ' · action needed' : ''}`});
     const tickets=(state.employeeTickets||[]).filter(t=>String(t.employee||'').toLowerCase()===String(e.name||'').toLowerCase());
     return `<tr><td><b>${esc(e.name)}</b><div class="muted tiny">${esc(e.type||'SMG')}</div></td><td>${esc(e.assignedCompany||'—')}</td><td>${esc(e.assignedVehicle||'—')}</td><td>${employeeIsCurrentlyWorking(e)?'<span class="badge green">Working</span>':'<span class="badge muted-badge">Left</span>'}</td><td>${hist.length}</td><td>${tickets.length ? `<details><summary class="mini-btn">${tickets.length} ticket(s)</summary><div class="history-table-mini"><table><tr><th>Date</th><th>Category</th><th>Status</th><th>Approval</th><th>Notes</th></tr>${tickets.map(t=>`<tr><td>${esc(t.date||'—')}</td><td>${esc(t.category||'—')}</td><td>${esc(t.status||'Open')}</td><td>${esc(t.approvalStatus||'Pending Approval')}</td><td>${isLeaveTicket(t)?`${esc(t.leaveStartDate||'—')} → ${esc(t.leaveEndDate||'—')} (${leaveDurationText(t.leaveStartDate,t.leaveEndDate)})${t.returnToDutyDate?` Returned: ${esc(t.returnToDutyDate)}`:''}${ticketLeaveOverstay(t)?` OVERSTAY: ${ticketOverstayDays(t)} day${ticketOverstayDays(t)===1?'':'s'}`:''}`:esc(t.notes||'')}</td></tr>`).join('')}</table></div></details>` : '<span class="muted">—</span>'}</td><td><details><summary class="mini-btn">Open history</summary><div class="history-table-mini"><table><tr><th>From</th><th>To</th><th>Company / Client</th><th>Vehicle</th><th>Note</th></tr>${hist.map(h=>`<tr><td>${esc(h.from||'—')}</td><td>${esc(h.to||'Present')}</td><td>${esc(h.company||'—')}</td><td>${esc(h.vehicle||'—')}</td><td>${esc(h.note||'')}</td></tr>`).join('')}</table></div></details></td></tr>`;
   }).join('');
@@ -2396,6 +2436,11 @@ function toggleFleetVendorField(){
     if(isOutsource) $('fleetRegisteredCompany').value = '';
     else if(!$('fleetRegisteredCompany').value) $('fleetRegisteredCompany').value = 'Garage';
   }
+  if($('fleetRegistrationExpiryWrap')){
+    $('fleetRegistrationExpiryWrap').classList.toggle('hidden', isOutsource);
+    $('fleetRegistrationExpiryWrap').classList.toggle('field-disabled', isOutsource);
+    if(isOutsource && $('fleetRegistrationExpiryDate')) $('fleetRegistrationExpiryDate').value='';
+  }
 }
 function renderAndRefocus(inputId, cursorOverride=null){
   const el=$(inputId);
@@ -2429,6 +2474,10 @@ function bindPageEvents(){
   if($('replacementVehicleSearch')) $('replacementVehicleSearch').oninput=e=>{state.replacementVehicleSearch=e.target.value; renderAndRefocus('replacementVehicleSearch', e.target.selectionStart);};
   if($('replacementMonth')) $('replacementMonth').onchange=e=>{state.replacementMonth=e.target.value; render();};
   if($('vehicleHistorySearch')) $('vehicleHistorySearch').oninput=e=>{state.vehicleHistorySearch=e.target.value; renderVehicleHistoryResults();};
+  if($('jobOverviewSearch')) $('jobOverviewSearch').oninput=e=>{state.jobOverviewSearch=e.target.value; renderAndRefocus('jobOverviewSearch', e.target.selectionStart);};
+  if($('jobOverviewStatus')) $('jobOverviewStatus').onchange=e=>{state.jobOverviewStatus=e.target.value; render();};
+  if($('jobOverviewStaff')) $('jobOverviewStaff').onchange=e=>{state.jobOverviewStaff=e.target.value; render();};
+  if($('jobOverviewDate')) $('jobOverviewDate').onchange=e=>{state.jobOverviewDate=e.target.value; render();};
   document.querySelectorAll('.rep-cell').forEach(cell=>{ cell.oninput=()=>stageReplacementCellInput(cell); cell.onchange=()=>pickReplacementFromFleet(cell); });
 
   if($('clientForm')) $('clientForm').onsubmit=saveClient;
