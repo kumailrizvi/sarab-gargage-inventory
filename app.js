@@ -1505,7 +1505,7 @@ function vehicleHistoryHTML(){
 }
 function vehicleHistoryRow(v){
   const open = state.vehicleHistoryOpen === v.id;
-  const timeline=[...vehicleAssignmentTimeline(v), ...fleetPermitHistoryRows(v)];
+  const timeline=[...vehicleAssignmentTimeline(v), ...fleetPermitHistoryRows(v), ...vehicleTicketHistoryRows(v)];
   const currentClient = fleetClientName(v) || 'Unassigned';
   const current = [...timeline].reverse().find(r=>clientKey(r.client)===clientKey(currentClient)) || timeline[timeline.length-1] || {from:'Not recorded', to:'Present', client:currentClient};
   const historyRows = timeline.slice().reverse().map((r,idx)=>`<tr class="vh-detail-row"><td></td><td colspan="2"><b>${esc(r.client)}</b><small>${idx===0?'Current / latest period':'Past period'}${r.changedBy ? ` · Changed by ${esc(r.changedBy)}` : ''}${r.note ? ` · ${esc(r.note)}` : ''}</small></td><td><b>From</b><small>${esc(r.from)}</small></td><td><b>To</b><small>${esc(r.to || 'Present')}</small></td><td colspan="2"></td></tr>`).join('');
@@ -1518,7 +1518,7 @@ function toggleVehicleHistory(vehicleId){
 function exportVehicleHistoryCSV(){
   const rows=[['Plate','Vehicle','Year','Client','From Date','To Date','Notes','Changed By']];
   vehicleHistoryRows().forEach(v=>{
-    [...vehicleAssignmentTimeline(v), ...fleetPermitHistoryRows(v)].forEach(r=>rows.push([v.plate||'', modelWithoutYear(v.modelNumber)||v.modelNumber||'', v.year||'', r.client, r.from, r.to || 'Present', r.note||'', r.changedBy||'']));
+    [...vehicleAssignmentTimeline(v), ...fleetPermitHistoryRows(v), ...vehicleTicketHistoryRows(v)].forEach(r=>rows.push([v.plate||'', modelWithoutYear(v.modelNumber)||v.modelNumber||'', v.year||'', r.client, r.from, r.to || 'Present', r.note||'', r.changedBy||'']));
   });
   downloadCSV('sarab-vehicle-client-history.csv', rows);
 }
@@ -1568,15 +1568,35 @@ function fleetRegistrationAlertHTML(v){
   if(!v.registrationExpiryDate) return '<span class="muted">No date</span>';
   return expiryNeedsAction(v.registrationExpiryDate,30) ? actionNeededBadge(`Registration ${v.registrationExpiryDate}`) : `<span class="pill green">Valid till ${esc(v.registrationExpiryDate)}</span>`;
 }
+function compactPlateKey(value){
+  return String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+function vehicleRelatedTickets(v){
+  const vehiclePlate = compactPlateKey(v.plate || combinePlate(v.plateCode, v.plateNumber));
+  const vehicleModel = String(modelWithoutYear(v.modelNumber) || v.modelNumber || '').toLowerCase();
+  return (state.tickets || []).filter(t=>{
+    const ticketPlate = compactPlateKey(t.plate || t.plateNumber || '');
+    const ticketVehicle = String(t.vehicle || '').toLowerCase();
+    const plateMatch = vehiclePlate && ticketPlate && (ticketPlate.includes(vehiclePlate) || vehiclePlate.includes(ticketPlate));
+    const modelMatch = vehicleModel && ticketVehicle && (ticketVehicle.includes(vehicleModel) || vehicleModel.includes(ticketVehicle));
+    return plateMatch || (plateMatch && modelMatch);
+  });
+}
 function fleetPermitHistoryRows(v){
   const rows=[];
-  if((v.ownership || 'SMG Vehicle') !== 'Outsource' && v.registrationExpiryDate){
-    rows.push({client:'Vehicle registration', from:v.updatedAt ? String(v.updatedAt).slice(0,10) : today(), to:v.registrationExpiryDate, note: expiryNeedsAction(v.registrationExpiryDate,30) ? 'Registration expiry action needed' : 'Registration expiry recorded', changedBy:'Fleet'});
-  }
   if(v.hasActivePermit){
-    rows.push({client:`Active permit: ${v.permitCategory || 'Permit'}`, from:v.updatedAt ? String(v.updatedAt).slice(0,10) : today(), to:v.permitExpiryDate || '—', note: expiryNeedsAction(v.permitExpiryDate,7) ? 'Permit expiry action needed' : 'Permit active/raised', changedBy:'Fleet'});
+    rows.push({client:fleetClientName(v) || 'Unassigned', from:v.updatedAt ? String(v.updatedAt).slice(0,10) : today(), to:v.permitExpiryDate || '—', note:`Active permit: ${v.permitCategory || 'Permit'}`, changedBy:'Fleet'});
   }
   return rows;
+}
+function vehicleTicketHistoryRows(v){
+  return vehicleRelatedTickets(v).map(t=>({
+    client:t.client || fleetClientName(v) || 'Unassigned',
+    from:t.date || (t.createdAt ? String(t.createdAt).slice(0,10) : '—'),
+    to:t.status === 'Resolved' ? (t.updatedAt ? String(t.updatedAt).slice(0,10) : (t.date || '—')) : 'Open',
+    note:`Ticket ${t.ticketNo || t.id || ''}: ${t.category || 'Request'} · ${t.status || 'Open'}${t.description ? ' · '+t.description : ''}`.trim(),
+    changedBy:t.assignedTo || t.requestedBy || 'Ticketing'
+  }));
 }
 function fleetTable(vehicles){
   return `<div class="fleet-cards">${vehicles.map(v=>{
@@ -2255,9 +2275,7 @@ function employeeHistoryHTML(){
   const rows = (state.employees || []).filter(e => !q || [e.name,e.assignedCompany,e.assignedVehicle,e.type,e.visaStatus].join(' ').toLowerCase().includes(q));
   const body = rows.map(e=>{
     const hist = (e.assignmentHistory && e.assignmentHistory.length ? e.assignmentHistory : (e.assignedCompany || e.assignedVehicle ? [{from:e.startDate||'—', to:'Present', company:e.assignedCompany||'—', vehicle:e.assignedVehicle||'—', note:'Current assignment'}] : []));
-    if(e.hasActivePermit) hist.push({from:e.updatedAt ? String(e.updatedAt).slice(0,10) : (e.startDate || today()), to:e.permitExpiryDate || '—', company:e.assignedCompany || '—', vehicle:e.assignedVehicle || '—', note:`Active permit: ${e.permitCategory || 'Permit'}${expiryNeedsAction(e.permitExpiryDate,7) ? ' · action needed' : ''}`});
-    if((e.type||'SMG')==='SMG' && e.passportExpiryDate) hist.push({from:e.startDate||'—', to:e.passportExpiryDate, company:e.assignedCompany||'—', vehicle:e.assignedVehicle||'—', note:`Passport expiry${expiryNeedsAction(e.passportExpiryDate,30) ? ' · action needed' : ''}`});
-    if((e.type||'SMG')==='SMG' && e.drivingLicenseExpiryDate) hist.push({from:e.startDate||'—', to:e.drivingLicenseExpiryDate, company:e.assignedCompany||'—', vehicle:e.assignedVehicle||'—', note:`Driver license expiry${expiryNeedsAction(e.drivingLicenseExpiryDate,30) ? ' · action needed' : ''}`});
+    if(e.hasActivePermit) hist.push({from:e.updatedAt ? String(e.updatedAt).slice(0,10) : (e.startDate || today()), to:e.permitExpiryDate || '—', company:e.assignedCompany || '—', vehicle:e.assignedVehicle || '—', note:`Active permit: ${e.permitCategory || 'Permit'}`});
     const tickets=(state.employeeTickets||[]).filter(t=>String(t.employee||'').toLowerCase()===String(e.name||'').toLowerCase());
     return `<tr><td><b>${esc(e.name)}</b><div class="muted tiny">${esc(e.type||'SMG')}</div></td><td>${esc(e.assignedCompany||'—')}</td><td>${esc(e.assignedVehicle||'—')}</td><td>${employeeIsCurrentlyWorking(e)?'<span class="badge green">Working</span>':'<span class="badge muted-badge">Left</span>'}</td><td>${hist.length}</td><td>${tickets.length ? `<details><summary class="mini-btn">${tickets.length} ticket(s)</summary><div class="history-table-mini"><table><tr><th>Date</th><th>Category</th><th>Status</th><th>Approval</th><th>Notes</th></tr>${tickets.map(t=>`<tr><td>${esc(t.date||'—')}</td><td>${esc(t.category||'—')}</td><td>${esc(t.status||'Open')}</td><td>${esc(t.approvalStatus||'Pending Approval')}</td><td>${isLeaveTicket(t)?`${esc(t.leaveStartDate||'—')} → ${esc(t.leaveEndDate||'—')} (${leaveDurationText(t.leaveStartDate,t.leaveEndDate)})${t.returnToDutyDate?` Returned: ${esc(t.returnToDutyDate)}`:''}${ticketLeaveOverstay(t)?` OVERSTAY: ${ticketOverstayDays(t)} day${ticketOverstayDays(t)===1?'':'s'}`:''}`:esc(t.notes||'')}</td></tr>`).join('')}</table></div></details>` : '<span class="muted">—</span>'}</td><td><details><summary class="mini-btn">Open history</summary><div class="history-table-mini"><table><tr><th>From</th><th>To</th><th>Company / Client</th><th>Vehicle</th><th>Note</th></tr>${hist.map(h=>`<tr><td>${esc(h.from||'—')}</td><td>${esc(h.to||'Present')}</td><td>${esc(h.company||'—')}</td><td>${esc(h.vehicle||'—')}</td><td>${esc(h.note||'')}</td></tr>`).join('')}</table></div></details></td></tr>`;
   }).join('');
@@ -2265,7 +2283,12 @@ function employeeHistoryHTML(){
 }
 function exportEmployeeHistoryCSV(){
   const rows=[['Employee','Type','From','To','Company / Client','Vehicle','Note']];
-  (state.employees||[]).forEach(e=>{ const hist=(e.assignmentHistory&&e.assignmentHistory.length?e.assignmentHistory:[{from:e.startDate||'',to:'Present',company:e.assignedCompany||'',vehicle:e.assignedVehicle||'',note:'Current assignment'}]); hist.forEach(h=>rows.push([e.name||'',e.type||'SMG',h.from||'',h.to||'Present',h.company||'',h.vehicle||'',h.note||''])); });
+  (state.employees||[]).forEach(e=>{
+    const hist=(e.assignmentHistory&&e.assignmentHistory.length?e.assignmentHistory:[{from:e.startDate||'',to:'Present',company:e.assignedCompany||'',vehicle:e.assignedVehicle||'',note:'Current assignment'}]);
+    if(e.hasActivePermit) hist.push({from:e.updatedAt ? String(e.updatedAt).slice(0,10) : (e.startDate || today()), to:e.permitExpiryDate || '—', company:e.assignedCompany || '—', vehicle:e.assignedVehicle || '—', note:`Active permit: ${e.permitCategory || 'Permit'}`});
+    hist.forEach(h=>rows.push([e.name||'',e.type||'SMG',h.from||'',h.to||'Present',h.company||'',h.vehicle||'',h.note||'']));
+    (state.employeeTickets||[]).filter(t=>String(t.employee||'').toLowerCase()===String(e.name||'').toLowerCase()).forEach(t=>rows.push([e.name||'',e.type||'SMG',t.date||'',t.status==='Resolved'?(t.updatedAt?String(t.updatedAt).slice(0,10):t.date||''):'Open',e.assignedCompany||'',e.assignedVehicle||'',`Employee ticket: ${t.category||''} · ${t.approvalStatus||''} · ${t.notes||''}`]));
+  });
   downloadCSV('sarab-employee-history.csv', rows);
 }
 const EMPLOYEE_TICKET_CATEGORIES=['Fine inquiries','Advance request','Leave request','Accidents','Complaints against driver'];
