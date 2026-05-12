@@ -1892,7 +1892,7 @@ function calcUAEGratuity(startDate, basicSalary, endDate=today()){
   const cap = basic * 24;
   return Math.min(gratuityDays * daily, cap);
 }
-function employeeFormDefaults(){ return { id:'', type: state.employeeType || 'SMG', name:'', startDate:'', currentWorking:true, endDate:'', visaStatus:'Garage', basicSalary:0, netSalary:0, passportCollected:false, hasId:false, drivingLicense:false, undertaking:false, labourPermit:false }; }
+function employeeFormDefaults(){ return { id:'', type: state.employeeType || 'SMG', name:'', startDate:'', currentWorking:true, endDate:'', visaStatus:'Garage', basicSalary:0, netSalary:0, passportCollected:false, passportRequested:false, hasId:false, hasIdRequested:false, drivingLicense:false, drivingLicenseRequested:false, undertaking:false, undertakingRequested:false, labourPermit:false, labourPermitRequested:false }; }
 function employeeIsCurrentlyWorking(e){ return e.currentWorking !== false; }
 function employeeGratuityEndDate(e){ return employeeIsCurrentlyWorking(e) ? today() : (e.endDate || today()); }
 function getEditingEmployee(){ return state.employees.find(e => e.id === state.editingEmployeeId) || null; }
@@ -1935,12 +1935,37 @@ function employeeFormHTML(e){
   <div class="employee-gratuity-preview employee-gratuity-stack"><div><span>Total tenure</span><b>${employeeTenureText(e.startDate,employeeGratuityEndDate(e))}</b></div><div><span>Estimated gratuity</span><b>${money(calcUAEGratuity(e.startDate,e.basicSalary,employeeGratuityEndDate(e)))}</b></div></div>
   <div class="form-actions"><button type="button" class="btn light" onclick="state.editingEmployeeId='';render()">Clear</button><button class="btn primary" type="submit">Save Employee</button></div></form>`;
 }
+
+function employeeDocStatusCell(emp, field, requestedField, label){
+  const hasDoc = Boolean(emp[field]);
+  if(hasDoc) return `<span class="doc-status doc-ok">✓</span>`;
+  const requested = Boolean(emp[requestedField]);
+  return `<button type="button" class="doc-request-flag ${requested?'requested':''}" onclick="toggleEmployeeDocRequested('${esc(emp.id)}','${esc(requestedField)}')">${requested?'Requested ✓':'Need to request?'}</button>`;
+}
+async function toggleEmployeeDocRequested(empId, requestedField){
+  const emp = state.employees.find(e => e.id === empId);
+  if(!emp) return;
+  emp[requestedField] = !Boolean(emp[requestedField]);
+  emp.updatedAt = new Date().toISOString();
+  await saveEmployees();
+  await logAction(emp[requestedField] ? 'Marked employee document requested' : 'Marked employee document not requested', 'Employees', emp.name || '', requestedField, state.user?.name);
+  toast(emp[requestedField] ? 'Marked as requested' : 'Marked as not requested');
+  render();
+}
+function employeeOutsourcedDocsHTML(e){
+  return [
+    ['ID','hasId','hasIdRequested'],
+    ['Driving','drivingLicense','drivingLicenseRequested'],
+    ['Undertaking','undertaking','undertakingRequested'],
+    ['Permit','labourPermit','labourPermitRequested']
+  ].map(([label,field,requested])=>`<div class="doc-mini-row"><span>${label}</span>${employeeDocStatusCell(e,field,requested,label)}</div>`).join('');
+}
 function employeeTableHTML(rows,type){
   if(!rows.length) return `<div class="empty">No ${esc(type)} employees yet.</div>`;
   if(type === 'All'){
     const body = rows.map(e => {
       const isSMG = (e.type || 'SMG') === 'SMG';
-      return `<tr><td><b>${esc(e.name)}</b><div class="muted tiny">${esc(e.type || 'SMG')}</div></td><td>${employeeIsCurrentlyWorking(e)?'<span class="badge green">Working</span>':'<span class="badge muted-badge">Left</span>'}</td><td>${esc(e.startDate||'—')}</td><td>${employeeIsCurrentlyWorking(e)?'—':esc(e.endDate||'—')}</td><td>${employeeTenureText(e.startDate,employeeGratuityEndDate(e))}</td><td>${isSMG ? esc(e.visaStatus||'—') : 'Outsourced'}</td><td>${isSMG ? money(e.basicSalary) : '—'}</td><td>${isSMG ? money(e.netSalary) : '—'}</td><td>${isSMG ? `<b class="green-text">${money(calcUAEGratuity(e.startDate,e.basicSalary,employeeGratuityEndDate(e)))}</b>` : '—'}</td><td>${isSMG ? (e.passportCollected?'Passport ✓':'Passport —') : ['ID','Driving','Undertaking','Permit'].map((label,idx)=>{ const val=[e.hasId,e.drivingLicense,e.undertaking,e.labourPermit][idx]; return `${label}: ${val?'✓':'—'}`; }).join('<br>')}</td><td><button class="mini-btn" onclick="editEmployee('${esc(e.id)}')">Edit</button><button class="mini-btn danger" onclick="removeEmployee('${esc(e.id)}')">Remove</button></td></tr>`;
+      return `<tr><td><b>${esc(e.name)}</b><div class="muted tiny">${esc(e.type || 'SMG')}</div></td><td>${employeeIsCurrentlyWorking(e)?'<span class="badge green">Working</span>':'<span class="badge muted-badge">Left</span>'}</td><td>${esc(e.startDate||'—')}</td><td>${employeeIsCurrentlyWorking(e)?'—':esc(e.endDate||'—')}</td><td>${employeeTenureText(e.startDate,employeeGratuityEndDate(e))}</td><td>${isSMG ? esc(e.visaStatus||'—') : 'Outsourced'}</td><td>${isSMG ? money(e.basicSalary) : '—'}</td><td>${isSMG ? money(e.netSalary) : '—'}</td><td>${isSMG ? `<b class="green-text">${money(calcUAEGratuity(e.startDate,e.basicSalary,employeeGratuityEndDate(e)))}</b>` : '—'}</td><td>${isSMG ? `<div class="doc-mini-row"><span>Passport</span>${employeeDocStatusCell(e,'passportCollected','passportRequested','Passport')}</div>` : employeeOutsourcedDocsHTML(e)}</td><td><button class="mini-btn" onclick="editEmployee('${esc(e.id)}')">Edit</button><button class="mini-btn danger" onclick="removeEmployee('${esc(e.id)}')">Remove</button></td></tr>`;
     }).join('');
     return `<div class="table-wrap employee-table-wrap"><table><tr><th>Name</th><th>Status</th><th>Start date</th><th>End date</th><th>Total tenure</th><th>Visa / Type</th><th>Basic</th><th>Net</th><th>Gratuity</th><th>Documents</th><th>Action</th></tr><tbody>${body}</tbody></table></div>`;
   }
@@ -1948,8 +1973,8 @@ function employeeTableHTML(rows,type){
     ? `<tr><th>Name</th><th>Status</th><th>Start date</th><th>End date</th><th>Total tenure</th><th>Visa status</th><th>Basic</th><th>Net</th><th>Gratuity</th><th>Passport</th><th>Action</th></tr>`
     : `<tr><th>Name</th><th>Status</th><th>Start date</th><th>End date</th><th>Total tenure</th><th>ID</th><th>Driving License</th><th>Undertaking</th><th>Labour Permit</th><th>Action</th></tr>`;
   const body = rows.map(e => type === 'SMG'
-    ? `<tr><td><b>${esc(e.name)}</b></td><td>${employeeIsCurrentlyWorking(e)?'<span class="badge green">Working</span>':'<span class="badge muted-badge">Left</span>'}</td><td>${esc(e.startDate||'—')}</td><td>${employeeIsCurrentlyWorking(e)?'—':esc(e.endDate||'—')}</td><td>${employeeTenureText(e.startDate,employeeGratuityEndDate(e))}</td><td>${esc(e.visaStatus||'—')}</td><td>${money(e.basicSalary)}</td><td>${money(e.netSalary)}</td><td><b class="green-text">${money(calcUAEGratuity(e.startDate,e.basicSalary,employeeGratuityEndDate(e)))}</b></td><td>${e.passportCollected?'Yes':'No'}</td><td><button class="mini-btn" onclick="editEmployee('${esc(e.id)}')">Edit</button><button class="mini-btn danger" onclick="removeEmployee('${esc(e.id)}')">Remove</button></td></tr>`
-    : `<tr><td><b>${esc(e.name)}</b></td><td>${employeeIsCurrentlyWorking(e)?'<span class="badge green">Working</span>':'<span class="badge muted-badge">Left</span>'}</td><td>${esc(e.startDate||'—')}</td><td>${employeeIsCurrentlyWorking(e)?'—':esc(e.endDate||'—')}</td><td>${employeeTenureText(e.startDate,employeeGratuityEndDate(e))}</td><td>${e.hasId?'✓':'—'}</td><td>${e.drivingLicense?'✓':'—'}</td><td>${e.undertaking?'✓':'—'}</td><td>${e.labourPermit?'✓':'—'}</td><td><button class="mini-btn" onclick="editEmployee('${esc(e.id)}')">Edit</button><button class="mini-btn danger" onclick="removeEmployee('${esc(e.id)}')">Remove</button></td></tr>`).join('');
+    ? `<tr><td><b>${esc(e.name)}</b></td><td>${employeeIsCurrentlyWorking(e)?'<span class="badge green">Working</span>':'<span class="badge muted-badge">Left</span>'}</td><td>${esc(e.startDate||'—')}</td><td>${employeeIsCurrentlyWorking(e)?'—':esc(e.endDate||'—')}</td><td>${employeeTenureText(e.startDate,employeeGratuityEndDate(e))}</td><td>${esc(e.visaStatus||'—')}</td><td>${money(e.basicSalary)}</td><td>${money(e.netSalary)}</td><td><b class="green-text">${money(calcUAEGratuity(e.startDate,e.basicSalary,employeeGratuityEndDate(e)))}</b></td><td>${employeeDocStatusCell(e,'passportCollected','passportRequested','Passport')}</td><td><button class="mini-btn" onclick="editEmployee('${esc(e.id)}')">Edit</button><button class="mini-btn danger" onclick="removeEmployee('${esc(e.id)}')">Remove</button></td></tr>`
+    : `<tr><td><b>${esc(e.name)}</b></td><td>${employeeIsCurrentlyWorking(e)?'<span class="badge green">Working</span>':'<span class="badge muted-badge">Left</span>'}</td><td>${esc(e.startDate||'—')}</td><td>${employeeIsCurrentlyWorking(e)?'—':esc(e.endDate||'—')}</td><td>${employeeTenureText(e.startDate,employeeGratuityEndDate(e))}</td><td>${employeeDocStatusCell(e,'hasId','hasIdRequested','ID')}</td><td>${employeeDocStatusCell(e,'drivingLicense','drivingLicenseRequested','Driving License')}</td><td>${employeeDocStatusCell(e,'undertaking','undertakingRequested','Undertaking')}</td><td>${employeeDocStatusCell(e,'labourPermit','labourPermitRequested','Labour Permit')}</td><td><button class="mini-btn" onclick="editEmployee('${esc(e.id)}')">Edit</button><button class="mini-btn danger" onclick="removeEmployee('${esc(e.id)}')">Remove</button></td></tr>`).join('');
   return `<div class="table-wrap employee-table-wrap"><table>${head}<tbody>${body}</tbody></table></div>`;
 }
 async function saveEmployee(ev){
@@ -1961,16 +1986,22 @@ async function saveEmployee(ev){
   emp.currentWorking = $('empCurrentWorking') ? $('empCurrentWorking').checked : true;
   emp.endDate = emp.currentWorking ? '' : (($('empEndDate') && $('empEndDate').value) || '');
   if(!emp.currentWorking && !emp.endDate) return toast('End date is required when employee is not currently working');
+  const existingEmployee = existingId ? getEditingEmployee() : null;
   if(type === 'SMG'){
     emp.visaStatus = $('empVisaStatus').value;
     emp.basicSalary = Number($('empBasicSalary').value || 0);
     emp.netSalary = Number($('empNetSalary').value || 0);
     emp.passportCollected = $('empPassportCollected').checked;
+    emp.passportRequested = emp.passportCollected ? false : Boolean(existingEmployee?.passportRequested);
   } else {
     emp.hasId = $('empHasId').checked;
     emp.drivingLicense = $('empDrivingLicense').checked;
     emp.undertaking = $('empUndertaking').checked;
     emp.labourPermit = $('empLabourPermit').checked;
+    emp.hasIdRequested = emp.hasId ? false : Boolean(existingEmployee?.hasIdRequested);
+    emp.drivingLicenseRequested = emp.drivingLicense ? false : Boolean(existingEmployee?.drivingLicenseRequested);
+    emp.undertakingRequested = emp.undertaking ? false : Boolean(existingEmployee?.undertakingRequested);
+    emp.labourPermitRequested = emp.labourPermit ? false : Boolean(existingEmployee?.labourPermitRequested);
   }
   const ix = state.employees.findIndex(x => x.id === emp.id);
   if(ix >= 0) state.employees[ix] = {...state.employees[ix], ...emp}; else state.employees.unshift(emp);
@@ -1983,8 +2014,8 @@ async function saveEmployee(ev){
 function editEmployee(empId){ const e = state.employees.find(x => x.id === empId); if(!e) return; state.employeeType = e.type || 'SMG'; state.editingEmployeeId = empId; render(); }
 async function removeEmployee(empId){ const e = state.employees.find(x => x.id === empId); if(!e) return; if(!confirm(`Remove ${e.name}?`)) return; state.employees = state.employees.filter(x => x.id !== empId); if(USE_SUPABASE) await deleteRemoteRow('employees', empId); await saveEmployees(); await logAction('Removed employee', 'Employees', e.name, e.type || '', state.user?.name); toast('Employee removed'); render(); }
 function exportEmployees(){
-  const rows = [['Type','Name','Currently Working','Start Date','End Date','Total Tenure','Visa Status','Basic Salary AED','Net Salary AED','Estimated Gratuity AED','Passport Collected','ID','Driving License','Undertaking','Labour Part Time Permit']];
-  state.employees.forEach(e => rows.push([e.type||'SMG', e.name||'', employeeIsCurrentlyWorking(e)?'Yes':'No', e.startDate||'', employeeIsCurrentlyWorking(e)?'':(e.endDate||''), employeeTenureText(e.startDate,employeeGratuityEndDate(e)), e.visaStatus||'', e.basicSalary||0, e.netSalary||0, calcUAEGratuity(e.startDate,e.basicSalary,employeeGratuityEndDate(e)).toFixed(2), e.passportCollected?'Yes':'No', e.hasId?'Yes':'No', e.drivingLicense?'Yes':'No', e.undertaking?'Yes':'No', e.labourPermit?'Yes':'No']));
+  const rows = [['Type','Name','Currently Working','Start Date','End Date','Total Tenure','Visa Status','Basic Salary AED','Net Salary AED','Estimated Gratuity AED','Passport Collected','Passport Requested','ID','ID Requested','Driving License','Driving License Requested','Undertaking','Undertaking Requested','Labour Part Time Permit','Labour Permit Requested']];
+  state.employees.forEach(e => rows.push([e.type||'SMG', e.name||'', employeeIsCurrentlyWorking(e)?'Yes':'No', e.startDate||'', employeeIsCurrentlyWorking(e)?'':(e.endDate||''), employeeTenureText(e.startDate,employeeGratuityEndDate(e)), e.visaStatus||'', e.basicSalary||0, e.netSalary||0, calcUAEGratuity(e.startDate,e.basicSalary,employeeGratuityEndDate(e)).toFixed(2), e.passportCollected?'Yes':'No', e.passportRequested?'Yes':'No', e.hasId?'Yes':'No', e.hasIdRequested?'Yes':'No', e.drivingLicense?'Yes':'No', e.drivingLicenseRequested?'Yes':'No', e.undertaking?'Yes':'No', e.undertakingRequested?'Yes':'No', e.labourPermit?'Yes':'No', e.labourPermitRequested?'Yes':'No']));
   downloadCSV('sarab-employees.csv', rows);
 }
 
@@ -2480,5 +2511,5 @@ function exportActivity(){
 
 async function resetDemo(){ if(!confirm('Reset all demo data?')) return; if(USE_SUPABASE){ await sb.from('parts').delete().neq('id','__never__'); await sb.from('jobs').delete().neq('id','__never__'); await sb.from('vehicles').delete().neq('id','__never__'); try { await sb.from('staff').delete().neq('id','__never__'); } catch(e) { console.warn(e); } try { await sb.from('logs').delete().neq('id','__never__'); } catch(e) { console.warn(e); } try { await sb.from('tickets').delete().neq('id','__never__'); } catch(e) { console.warn(e); } state.parts=seedParts.map(p=>({...p})); state.jobs=seedJobs.map(j=>({...j})); state.vehicles=seedVehicles.map(v=>({...v})); state.staff=seedStaff.map(x=>({...x})); state.logs=[]; state.tickets=seedTickets.map(t=>({...t})); state.clients=seedClients.map(c=>({...c})); await saveParts(); await saveJobs(); await saveVehicles(); await saveStaff(); await saveLogs(); await saveTickets(); await saveClients(); } else { set(KEYS.parts, seedParts); set(KEYS.jobs, seedJobs); set(KEYS.vehicles, seedVehicles); set(KEYS.staff, seedStaff); set(KEYS.logs, []); set(KEYS.tickets, seedTickets); set(KEYS.clients, seedClients); } state.filters={q:'',category:'All',stock:'All'}; state.vehicleHistoryQuery=''; state.selectedClient=''; state.clientFilter=''; state.activityQuery=''; state.activitySection='All'; state.ticketTab='dashboard'; state.ticketSearch=''; state.ticketStatus='All'; state.ticketPriority='All'; toast('Demo data reset'); render(); }
 
-window.addStaffFromPrompt=addStaffFromPrompt; window.selectClient=selectClient; window.editClient=editClient; window.deleteClient=deleteClient; window.clearClientForm=clearClientForm; window.exportClients=exportClients; window.importFleetCSV=importFleetCSV; window.escalateTicket=escalateTicket; window.deEscalateTicket=deEscalateTicket; window.exportActivity=exportActivity; window.switchTicketTab=switchTicketTab; window.saveTicket=saveTicket; window.deleteTicket=deleteTicket; window.updateTicketStatus=updateTicketStatus; window.viewTicket=viewTicket; window.closeTicketDialog=closeTicketDialog; window.exportTickets=exportTickets; window.fillTicketFromFleet=fillTicketFromFleet; window.startNewJobCard=startNewJobCard; window.loadJobCardForEdit=loadJobCardForEdit; window.goInventory=goInventory; window.goJobs=goJobs; window.exportDashboardInventory=exportDashboardInventory; window.exportDashboardJobs=exportDashboardJobs; window.viewPlateHistory=viewPlateHistory; window.clearPlateHistorySearch=clearPlateHistorySearch; window.exportPlateHistoryCSV=exportPlateHistoryCSV; window.startAddVehicle=startAddVehicle; window.toggleOrdered=toggleOrdered; window.go=go; window.openPartDialog=openPartDialog; window.closePartDialog=closePartDialog; window.openRestockDialog=openRestockDialog; window.closeRestockDialog=closeRestockDialog; window.viewPartUsage=viewPartUsage; window.viewJob=viewJob; window.closeJobDialog=closeJobDialog; window.deleteJob=deleteJob; window.deletePart=deletePart; window.exportInventory=exportInventory; window.importInventoryCSV=importInventoryCSV; window.exportJobs=exportJobs; window.exportUsage=exportUsage; window.exportMonthlyReport=exportMonthlyReport; window.exportFleet=exportFleet; window.clearVisibleReplacementCells=clearVisibleReplacementCells; window.replacementCellKeydown=replacementCellKeydown; window.editFleetVehicle=editFleetVehicle; window.deleteFleetVehicle=deleteFleetVehicle; window.clearFleetForm=clearFleetForm; window.resetDemo=resetDemo;
+window.addStaffFromPrompt=addStaffFromPrompt; window.selectClient=selectClient; window.editClient=editClient; window.deleteClient=deleteClient; window.clearClientForm=clearClientForm; window.exportClients=exportClients; window.importFleetCSV=importFleetCSV; window.escalateTicket=escalateTicket; window.deEscalateTicket=deEscalateTicket; window.exportActivity=exportActivity; window.switchTicketTab=switchTicketTab; window.saveTicket=saveTicket; window.deleteTicket=deleteTicket; window.updateTicketStatus=updateTicketStatus; window.viewTicket=viewTicket; window.closeTicketDialog=closeTicketDialog; window.exportTickets=exportTickets; window.fillTicketFromFleet=fillTicketFromFleet; window.startNewJobCard=startNewJobCard; window.loadJobCardForEdit=loadJobCardForEdit; window.goInventory=goInventory; window.goJobs=goJobs; window.exportDashboardInventory=exportDashboardInventory; window.exportDashboardJobs=exportDashboardJobs; window.viewPlateHistory=viewPlateHistory; window.clearPlateHistorySearch=clearPlateHistorySearch; window.exportPlateHistoryCSV=exportPlateHistoryCSV; window.startAddVehicle=startAddVehicle; window.toggleOrdered=toggleOrdered; window.go=go; window.openPartDialog=openPartDialog; window.closePartDialog=closePartDialog; window.openRestockDialog=openRestockDialog; window.closeRestockDialog=closeRestockDialog; window.viewPartUsage=viewPartUsage; window.viewJob=viewJob; window.closeJobDialog=closeJobDialog; window.deleteJob=deleteJob; window.deletePart=deletePart; window.exportInventory=exportInventory; window.importInventoryCSV=importInventoryCSV; window.exportJobs=exportJobs; window.exportUsage=exportUsage; window.exportMonthlyReport=exportMonthlyReport; window.exportFleet=exportFleet; window.toggleEmployeeDocRequested=toggleEmployeeDocRequested; window.clearVisibleReplacementCells=clearVisibleReplacementCells; window.replacementCellKeydown=replacementCellKeydown; window.editFleetVehicle=editFleetVehicle; window.deleteFleetVehicle=deleteFleetVehicle; window.clearFleetForm=clearFleetForm; window.resetDemo=resetDemo;
 init();

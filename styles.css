@@ -1508,3 +1508,72 @@ input:disabled{
 .summary-type-line span{
   white-space:nowrap !important;
 }
+
+/* v64: employee document request flags + centered replacement tick */
+.doc-status.doc-ok{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:26px;
+  height:26px;
+  border-radius:8px;
+  background:#e7f7ee;
+  color:#087541;
+  font-weight:900;
+  line-height:1;
+}
+.doc-request-flag{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-height:30px;
+  padding:6px 12px;
+  border:1px solid #fb923c;
+  border-radius:999px;
+  background:#fff7ed;
+  color:#b45309;
+  font-size:12px;
+  font-weight:850;
+  cursor:pointer;
+  white-space:nowrap;
+}
+.doc-request-flag.requested{
+  border-color:#16a34a;
+  background:#e7f7ee;
+  color:#087541;
+}
+.doc-mini-row{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  min-width:150px;
+  margin:3px 0;
+}
+.doc-mini-row span{
+  font-weight:800;
+  color:#4b5563;
+}
+.employee-table-wrap td{
+  vertical-align:middle!important;
+}
+.fixed-replacement-table .rep-cell.is-tick,
+.fixed-replacement-table .rep-cell.has-value.is-tick,
+.rep-cell.is-tick,
+.rep-cell.has-value.is-tick{
+  display:inline-flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+  text-align:center!important;
+  padding:0!important;
+  margin:0 auto!important;
+  line-height:1!important;
+  vertical-align:middle!important;
+  font-family:Arial, sans-serif!important;
+  font-size:16px!important;
+  font-weight:900!important;
+}
+.fixed-replacement-table .rep-cell-wrap{
+  text-align:center!important;
+  vertical-align:middle!important;
+}
