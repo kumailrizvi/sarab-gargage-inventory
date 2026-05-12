@@ -59,8 +59,11 @@
             <button class="subnav" data-view="salik">SALIK</button>
           </div>
           <button class="nav" data-view="tickets"><span data-icon="file"></span>Ticketing</button>
-          <button class="nav" data-view="job"><span data-icon="clipboard"></span>Job Card</button>
-          <button class="nav" data-view="used"><span data-icon="wrench"></span>Parts Used</button>
+          <button class="nav job-parent" data-view="job"><span data-icon="clipboard"></span>Job Card</button>
+          <div class="job-subnav fleet-subnav">
+            <button class="subnav" data-view="job">Raise Job Card</button>
+            <button class="subnav" data-view="used">Job Card Overview</button>
+          </div>
           <button class="nav employees-parent" data-view="employees"><span data-icon="user"></span>Employees</button>
           <div class="employee-subnav fleet-subnav">
             <button class="subnav" data-view="employees">All Employees</button>
