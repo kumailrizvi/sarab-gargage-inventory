@@ -1611,3 +1611,54 @@ input:disabled{
 @media(max-width:900px){.employee-ticket-layout{grid-template-columns:1fr}}
 .badge.orange{background:#fff0da;color:#bd5c0f;border:1px solid #ffd7a8}
 .mini-btn.warning{background:#fff7ed;border-color:#fdba74;color:#bd5c0f}
+
+/* v68: employee leave approvals + replacement tick final centering */
+.fixed-replacement-table .rep-cell.is-tick,
+.fixed-replacement-table .rep-cell.has-value.is-tick,
+.rep-cell.is-tick,
+.rep-cell.has-value.is-tick{
+  width:96px!important;
+  min-width:96px!important;
+  max-width:96px!important;
+  height:44px!important;
+  min-height:44px!important;
+  display:inline-flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+  text-align:center!important;
+  padding:0!important;
+  margin:0 auto!important;
+  line-height:1!important;
+  font-size:26px!important;
+  font-weight:900!important;
+  font-family:Arial, sans-serif!important;
+  border-radius:12px!important;
+  box-sizing:border-box!important;
+}
+.leave-fields{
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:12px;
+  align-items:end;
+  padding:12px;
+  border:1px solid #b9dfca;
+  border-radius:14px;
+  background:#f2fbf6;
+}
+.leave-note{
+  display:flex;
+  align-items:center;
+  min-height:44px;
+  padding:10px 12px;
+  border-radius:12px;
+  background:#fff;
+  color:var(--green-dark);
+  font-weight:800;
+}
+.danger-badge{
+  background:#fee2e2!important;
+  color:#991b1b!important;
+}
+.overstay-row td{
+  background:#fff7ed!important;
+}
+@media(max-width:900px){.leave-fields{grid-template-columns:1fr}}
