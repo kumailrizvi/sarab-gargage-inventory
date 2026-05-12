@@ -1609,3 +1609,5 @@ input:disabled{
 .fixed-replacement-table .rep-cell-wrap{display:table-cell!important;text-align:center!important;vertical-align:middle!important;}
 .fixed-replacement-table .rep-cell{font-family:Arial, sans-serif!important;}
 @media(max-width:900px){.employee-ticket-layout{grid-template-columns:1fr}}
+.badge.orange{background:#fff0da;color:#bd5c0f;border:1px solid #ffd7a8}
+.mini-btn.warning{background:#fff7ed;border-color:#fdba74;color:#bd5c0f}
