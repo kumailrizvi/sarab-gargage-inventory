@@ -1815,3 +1815,45 @@ input:disabled{
   text-align:center!important;
   vertical-align:middle!important;
 }
+
+/* v74 Expiry page */
+.expiry-toolbar{
+  display:grid;
+  grid-template-columns:minmax(260px,1fr) 220px;
+  gap:14px;
+  align-items:center;
+  margin-bottom:14px;
+}
+.expiry-module-chips{
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px;
+  margin:0 0 16px;
+}
+.expiry-module-chips span{
+  background:#eef8f2;
+  border:1px solid #b9e4ca;
+  color:#087443;
+  border-radius:999px;
+  padding:8px 12px;
+  font-weight:800;
+}
+.expiry-table td,.expiry-table th{ vertical-align:middle; }
+.badge.danger{
+  background:#ffe8e8;
+  color:#c62828;
+  border:1px solid #ffc7c7;
+}
+.badge.warn{
+  background:#fff2d8;
+  color:#c15d00;
+  border:1px solid #ffdba3;
+}
+.badge.soft{
+  background:#edf7f1;
+  color:#087443;
+  border:1px solid #c6ead4;
+}
+@media(max-width:900px){
+  .expiry-toolbar{ grid-template-columns:1fr; }
+}

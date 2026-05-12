@@ -534,7 +534,7 @@ function stats(){
   const salesValue = state.parts.reduce((a,p)=>a+(Number(p.qty||0)*Number(p.price||0)),0);
   return { totalUnits, lowCount: low.length, todayJobs: todayJobs.length, partsUsedToday, costValue, salesValue };
 }
-function render(){ if(!USE_SUPABASE) loadData(); const s=stats(); const page=$('page'); const views={dashboard:dashboardHTML, clients:clientsHTML, inventory:inventoryHTML, employees:employeesHTML, employeeHistory:employeeHistoryHTML, employeeTickets:employeeTicketsHTML, fleet:fleetHTML, fleetSummary:fleetSummaryHTML, replacements:replacementsHTML, vehicleHistory:vehicleHistoryHTML, salik:salikHTML, tickets:ticketsHTML, job:jobHTML, used:usedHTML, reports:reportsHTML, activity:activityHTML, export:exportHTML, settings:settingsHTML}; page.innerHTML=(views[state.view]||dashboardHTML)(s); bindPageEvents(); hydrateStaticIcons(); }
+function render(){ if(!USE_SUPABASE) loadData(); const s=stats(); const page=$('page'); const views={dashboard:dashboardHTML, clients:clientsHTML, inventory:inventoryHTML, employees:employeesHTML, employeeHistory:employeeHistoryHTML, employeeTickets:employeeTicketsHTML, fleet:fleetHTML, fleetSummary:fleetSummaryHTML, replacements:replacementsHTML, vehicleHistory:vehicleHistoryHTML, salik:salikHTML, tickets:ticketsHTML, job:jobHTML, used:usedHTML, expiry:expiryHTML, reports:reportsHTML, activity:activityHTML, export:exportHTML, settings:settingsHTML}; page.innerHTML=(views[state.view]||dashboardHTML)(s); bindPageEvents(); hydrateStaticIcons(); updateExpiryNavBadge(); }
 function kpi(title,num,sub,icon,warn=false,action=''){ const tone=warn?'orange':''; const moneyClass=String(num).includes('AED')?'money':''; const click=action ? ` onclick="${action}" role="button" tabindex="0"` : ''; return `<section class="card kpi ${action ? 'clickable-kpi' : ''}"${click}><div><h3>${title}</h3><div class="num ${tone} ${moneyClass}">${num}</div><p>${sub}</p></div><div class="kpi-icon ${warn?'warn':''}">${I(icon,'icon-xl')}</div></section>`; }
 function statusSummaryCard(){
   const c = statusCounts();
@@ -552,19 +552,51 @@ function expiryNeedsAction(dateStr, daysBefore){
   const d = daysUntilDate(dateStr);
   return d !== null && d <= daysBefore;
 }
-function employeeAlertItems(){
+function actionNeededItems(){
   const items=[];
+  const add=(module,type,owner,date,threshold,detail,goTo)=>{
+    const days = daysUntilDate(date);
+    if(days === null || days > threshold) return;
+    items.push({ module, type, owner: owner || '—', date, days, detail: detail || '', goTo: goTo || '' });
+  };
   (state.employees||[]).forEach(e=>{
+    const employeeName = e.name || 'Employee';
     if((e.type||'SMG') === 'SMG'){
-      if(expiryNeedsAction(e.passportExpiryDate, 30)) items.push({type:'Passport', owner:e.name||'Employee', date:e.passportExpiryDate});
-      if(expiryNeedsAction(e.drivingLicenseExpiryDate, 30)) items.push({type:'Driving License', owner:e.name||'Employee', date:e.drivingLicenseExpiryDate});
+      add('Employees','Passport expiry',employeeName,e.passportExpiryDate,30,'SMG employee passport expires within 30 days','employees');
+      add('Employees','Driver license expiry',employeeName,e.drivingLicenseExpiryDate,30,'SMG employee driving license expires within 30 days','employees');
     }
-    if(e.hasActivePermit && expiryNeedsAction(e.permitExpiryDate, 7)) items.push({type:e.permitCategory || 'Employee Permit', owner:e.name||'Employee', date:e.permitExpiryDate});
+    if(e.hasActivePermit) add('Employees',`${e.permitCategory || 'Employee permit'} expiry`,employeeName,e.permitExpiryDate,7,'Employee active permit expires within 7 days','employees');
   });
   (state.vehicles||[]).forEach(v=>{
-    if(v.hasActivePermit && expiryNeedsAction(v.permitExpiryDate, 7)) items.push({type:v.permitCategory || 'Vehicle Permit', owner:v.plate || v.modelNumber || 'Vehicle', date:v.permitExpiryDate});
+    if(v.hasActivePermit) add('Fleet',`${v.permitCategory || 'Vehicle permit'} expiry`,v.plate || v.modelNumber || 'Vehicle',v.permitExpiryDate,7,`${v.modelNumber || ''} ${v.customer ? '• '+v.customer : ''}`.trim(),'fleet');
   });
-  return items;
+  (state.clients||[]).forEach(c=>{
+    add('Clients','Contract expiry',c.name || 'Client',c.contractEnd,30,'Client contract expires within 30 days','clients');
+  });
+  (state.employeeTickets||[]).forEach(t=>{
+    if(ticketLeaveOverstay(t)){
+      items.push({ module:'Employees', type:'Leave overstay', owner:t.employee || 'Employee', date:t.leaveEndDate || '', days: Number(ticketOverstayDays(t) || 0), detail:`Return to duty not completed / late by ${ticketOverstayDays(t)} day${ticketOverstayDays(t)===1?'':'s'}`, goTo:'employeeTickets' });
+    }
+  });
+  (state.tickets||[]).forEach(t=>{
+    const daysOpen = ticketDaysOpen(t);
+    const sla = Number(t.slaDays || 7);
+    if(t.status !== 'Resolved' && daysOpen > sla){
+      items.push({ module:'Ticketing', type:'SLA overdue', owner:t.ticketNo || t.plate || 'Ticket', date:t.date || '', days: daysOpen - sla, detail:`${t.category || 'Ticket'} overdue by ${daysOpen - sla} day${daysOpen - sla === 1 ? '' : 's'}`, goTo:'tickets' });
+    }
+  });
+  return items.sort((a,b)=>{
+    const ad = a.date ? new Date(a.date).getTime() : 0;
+    const bd = b.date ? new Date(b.date).getTime() : 0;
+    if(a.days < 0 && b.days >= 0) return -1;
+    if(b.days < 0 && a.days >= 0) return 1;
+    return ad - bd;
+  });
+}
+function employeeAlertItems(){ return actionNeededItems().filter(x=>x.module==='Employees' || x.module==='Fleet'); }
+function updateExpiryNavBadge(){
+  const el=$('expiryNavText');
+  if(el){ const count=actionNeededItems().length; el.textContent = count ? `Expiry (${count})` : 'Expiry'; }
 }
 function ticketDetailsCard(){
   const open=(state.tickets||[]).filter(t=>t.status !== 'Resolved').length;
@@ -574,7 +606,7 @@ function ticketDetailsCard(){
 }
 function employeeAlertsCard(){
   const alerts=employeeAlertItems();
-  return `<section class="card kpi clickable-kpi" onclick="go('employees')" role="button" tabindex="0"><div><h3>Employee Alerts</h3><div class="num ${alerts.length?'orange':''}">${alerts.length}</div><p>${alerts.length ? 'Expiry/action needed' : 'No expiry alerts'}</p></div><div class="kpi-icon ${alerts.length?'warn':''}">${I('warning','icon-xl')}</div></section>`;
+  return `<section class="card kpi clickable-kpi" onclick="go('expiry')" role="button" tabindex="0"><div><h3>Employee Alerts</h3><div class="num ${alerts.length?'orange':''}">${alerts.length}</div><p>${alerts.length ? 'Expiry/action needed' : 'No expiry alerts'}</p></div><div class="kpi-icon ${alerts.length?'warn':''}">${I('warning','icon-xl')}</div></section>`;
 }
 function dashboardHTML(s){
   const recentJobs=state.jobs.slice(0,4);
@@ -948,6 +980,37 @@ function usedHTML(){
   ${plateHistoryPanelHTML()}
   <section class="panel spaced-panel"><div class="section-title"><h3>${plateQuery ? `Jobs Matching ${esc(plateQuery)}` : 'All Jobs'}</h3><small class="muted">${matchingJobs.length} job card${matchingJobs.length===1?'':'s'}</small></div>${matchingJobs.length?`<div class="table-wrap clean-table"><table class="jobs-clean-table"><thead><tr><th>Job Card</th><th>Vehicle</th><th>Job / Staff</th><th>Status</th><th>Parts</th><th>Actions</th></tr></thead><tbody>${matchingJobs.map(j=>`<tr><td><b>${esc(ensureJobCardId(j))}</b><br><small class="muted">${esc(j.date)}</small></td><td><b>${esc(j.plate || '—')}</b><br><small class="muted">${esc(j.car || 'No car')}</small></td><td><b>${esc(j.description || 'Job card')}</b><br><small class="muted">Done by: ${esc(j.doneBy || '—')}</small></td><td><div class="status-stack">${statusPill(jobStatus(j))}${statusSelect(j.id, jobStatus(j))}</div></td><td><small class="muted table-wrap-text">${compactPartsList(j)}</small></td><td><div class="action-wrap"><button class="mini-btn" onclick="viewPlateHistory('${esc(j.plate)}')">Plate History</button><button class="mini-btn" onclick="loadJobCardForEdit('${j.id}')">Edit</button><button class="mini-btn" onclick="viewJob('${j.id}')">Open</button><button class="mini-btn danger" onclick="deleteJob('${j.id}')">Delete / Return Stock</button></div></td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">No jobs found.</div>'}</section>
   <section class="panel spaced-panel"><div class="section-title"><h3>${plateQuery ? `Part Usage for ${esc(plateQuery)}` : 'Part Usage Log'}</h3><small class="muted">${usage.length} line item${usage.length===1?'':'s'}</small></div>${usage.length?`<div class="table-wrap clean-table"><table class="usage-clean-table"><thead><tr><th>Job Card</th><th>Vehicle / Job</th><th>Part</th><th>Qty</th><th>Item Price</th><th>Charges</th><th>Status</th><th>Done By</th></tr></thead><tbody>${usage.map(u=>`<tr><td><b>${esc(u.jobCardId)}</b><br><small class="muted">${esc(u.date)}</small></td><td><b>${esc(u.plate)}</b><br><small class="muted">${esc(u.car)} · ${esc(u.job)}</small></td><td><b>${esc(u.name)}</b>${u.sku?`<br><small class="muted">${esc(u.sku)}</small>`:''}</td><td>${u.qty}</td><td>${money(u.price)}</td><td><div class="charge-stack"><span>Custom: ${money(u.customTotal)}</span><span>Labor: ${money(u.labour)}</span><b>Total: ${money(u.total)}</b></div></td><td><div class="status-stack">${statusPill(u.status)}${u.jobId ? statusSelect(u.jobId, u.status) : ''}</div></td><td>${esc(u.doneBy || '—')}</td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">No parts used yet.</div>'}</section>`;
+}
+
+
+function expiryStatusBadge(days){
+  if(days < 0) return `<span class="badge danger">Expired ${Math.abs(days)}d ago</span>`;
+  if(days === 0) return `<span class="badge danger">Due today</span>`;
+  if(days <= 7) return `<span class="badge warn">${days}d left</span>`;
+  return `<span class="badge soft">${days}d left</span>`;
+}
+function expiryHTML(){
+  const items = actionNeededItems();
+  const q = String(state.expirySearch || '').toLowerCase().trim();
+  const module = state.expiryModule || 'All';
+  const filtered = items.filter(x=>{
+    const text=[x.module,x.type,x.owner,x.date,x.detail].join(' ').toLowerCase();
+    return (!q || text.includes(q)) && (module==='All' || x.module===module);
+  });
+  const counts = items.reduce((a,x)=>{ a[x.module]=(a[x.module]||0)+1; return a; },{});
+  const expired = items.filter(x=>x.days<0).length;
+  const due7 = items.filter(x=>x.days>=0 && x.days<=7).length;
+  const due30 = items.filter(x=>x.days>7 && x.days<=30).length;
+  return `<div class="page-head"><div><h1>Expiry & Action Needed</h1><p class="muted">All upcoming expiries and action-needed items across employees, fleet, clients, tickets, and permits.</p></div><div class="head-actions"><button class="btn light" onclick="exportExpiryCSV()">${I('download','icon-sm')} Export CSV</button></div></div>
+  <div class="kpis report-kpis expiry-kpis"><section class="card compact-kpi"><b class="${items.length?'orange':''}">${items.length}</b><span>Total action needed</span></section><section class="card compact-kpi"><b class="${expired?'orange':''}">${expired}</b><span>Expired / overdue</span></section><section class="card compact-kpi"><b>${due7}</b><span>Due within 7 days</span></section><section class="card compact-kpi"><b>${due30}</b><span>Due within 30 days</span></section></div>
+  <section class="panel"><div class="expiry-toolbar"><input id="expirySearch" class="search-input" placeholder="Search owner, plate, employee, client, expiry type..." value="${esc(state.expirySearch||'')}"><select id="expiryModule"><option ${module==='All'?'selected':''}>All</option><option ${module==='Employees'?'selected':''}>Employees</option><option ${module==='Fleet'?'selected':''}>Fleet</option><option ${module==='Clients'?'selected':''}>Clients</option><option ${module==='Ticketing'?'selected':''}>Ticketing</option></select></div>
+  <div class="expiry-module-chips"><span>Employees: <b>${counts.Employees||0}</b></span><span>Fleet: <b>${counts.Fleet||0}</b></span><span>Clients: <b>${counts.Clients||0}</b></span><span>Ticketing: <b>${counts.Ticketing||0}</b></span></div>
+  <div class="table-wrap"><table class="expiry-table"><thead><tr><th>Section</th><th>Action needed</th><th>Owner / Vehicle / Employee</th><th>Expiry / due date</th><th>Status</th><th>Details</th><th>Open</th></tr></thead><tbody>${filtered.map(x=>`<tr><td><b>${esc(x.module)}</b></td><td>${esc(x.type)}</td><td>${esc(x.owner)}</td><td>${esc(x.date || '—')}</td><td>${expiryStatusBadge(Number(x.days||0))}</td><td>${esc(x.detail||'—')}</td><td><button class="mini-btn" onclick="go('${esc(x.goTo||'dashboard')}')">Open</button></td></tr>`).join('') || '<tr><td colspan="7"><div class="empty">No expiry or action-needed items found.</div></td></tr>'}</tbody></table></div></section>`;
+}
+function exportExpiryCSV(){
+  const rows=[['Section','Action Needed','Owner / Vehicle / Employee','Expiry / Due Date','Days','Details']];
+  actionNeededItems().forEach(x=>rows.push([x.module,x.type,x.owner,x.date,x.days,x.detail]));
+  downloadCSV('sarab-expiry-action-needed.csv', rows);
 }
 
 function reportsHTML(s){
@@ -2356,6 +2419,8 @@ function bindPageEvents(){
   if($('stockFilter')) $('stockFilter').onchange=e=>{state.filters.stock=e.target.value; renderInventoryResults();};
   if($('reportMonth')) $('reportMonth').onchange=e=>{state.reportMonth=e.target.value; render();};
   if($('clientSearch')) $('clientSearch').oninput=e=>{state.clientFilter=e.target.value; render();};
+  if($('expirySearch')) $('expirySearch').oninput=e=>{state.expirySearch=e.target.value; renderAndRefocus('expirySearch', e.target.selectionStart);};
+  if($('expiryModule')) $('expiryModule').onchange=e=>{state.expiryModule=e.target.value; render();};
   if($('summarySearch')) $('summarySearch').oninput=e=>{state.summarySearch=e.target.value; renderAndRefocus('summarySearch', e.target.selectionStart);};
   if($('summaryClientFilter')) $('summaryClientFilter').onchange=e=>{state.summaryClient=e.target.value; render();};
   if($('summaryOwnershipFilter')) $('summaryOwnershipFilter').onchange=e=>{state.summaryOwnership=e.target.value; render();};
