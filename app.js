@@ -125,7 +125,7 @@ const seedTickets = [
   ...importedComplaintTickets
 ];
 
-const state = { user:null, view:'dashboard', parts:[], jobs:[], vehicles:[], clients:[], employees:[], staff:[], logs:[], tickets:[], filters:{ q:'', category:'All', stock:'All' }, vehicleHistoryQuery:'', fleetFilter:'', clientFilter:'', selectedClient:'', summarySearch:'', activityQuery:'', activitySection:'All', ticketTab:'dashboard', ticketSearch:'', ticketStatus:'All', ticketPriority:'All', fleetSubView:'list', replacementMonth:today().slice(0,7), replacementClient:'', replacementVehicleSearch:'', replacementUndoStack:[], replacementDirty:false, replacementUnlockedMonths:[], vehicleHistorySearch:'', replacements:[], employeeType:'All', employeeSearch:'', editingEmployeeId:'', employeeTicketSearch:'', editingEmployeeTicketId:'', salikSearch:'' };
+const state = { user:null, view:'dashboard', parts:[], jobs:[], vehicles:[], clients:[], employees:[], staff:[], logs:[], tickets:[], filters:{ q:'', category:'All', stock:'All' }, inventorySort:{key:'name',dir:'asc'}, vehicleHistoryQuery:'', fleetFilter:'', clientFilter:'', selectedClient:'', summarySearch:'', activityQuery:'', activitySection:'All', ticketTab:'dashboard', ticketSearch:'', ticketStatus:'All', ticketPriority:'All', fleetSubView:'list', replacementMonth:today().slice(0,7), replacementClient:'', replacementVehicleSearch:'', replacementUndoStack:[], replacementDirty:false, replacementUnlockedMonths:[], vehicleHistorySearch:'', replacements:[], employeeType:'All', employeeSearch:'', editingEmployeeId:'', employeeTicketSearch:'', editingEmployeeTicketId:'', salikSearch:'' };
 function duplicateKey(value){ return String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, ''); }
 function plateDuplicateKey(value){ return String(value || '').trim().toUpperCase().replace(/[^A-Z0-9]+/g, ''); }
 function inventoryDuplicate(part){
@@ -629,9 +629,51 @@ function filteredInventoryParts(){
     return matches && cat && stock;
   });
 }
+function sortedInventoryParts(parts){
+  const sort = state.inventorySort || {key:'name', dir:'asc'};
+  const dir = sort.dir === 'desc' ? -1 : 1;
+  const val = (p) => {
+    if(sort.key === 'stock') return Number(p.qty || 0);
+    if(sort.key === 'threshold') return Number(p.threshold || 0);
+    if(sort.key === 'costValue') return Number(p.qty || 0) * Number(p.cost || 0);
+    if(sort.key === 'lastUsed') return lastUsedPlain(p.id) || '';
+    if(sort.key === 'ordered') return p.ordered ? 1 : 0;
+    return String(p[sort.key] || '').toLowerCase();
+  };
+  return [...parts].sort((a,b)=>{
+    const av=val(a), bv=val(b);
+    if(typeof av === 'number' && typeof bv === 'number') return (av-bv)*dir;
+    return String(av).localeCompare(String(bv), undefined, {numeric:true, sensitivity:'base'})*dir;
+  });
+}
+function setInventorySort(key){
+  const current = state.inventorySort || {};
+  state.inventorySort = { key, dir: current.key === key && current.dir === 'asc' ? 'desc' : 'asc' };
+  renderInventoryResults();
+}
+function sortIcon(key){
+  const sort = state.inventorySort || {};
+  if(sort.key !== key) return '';
+  return sort.dir === 'asc' ? ' ▲' : ' ▼';
+}
+function nextSerialNumber(){
+  const serials = (state.parts || []).map(p=>String(p.sku || '').trim()).filter(Boolean);
+  let best = null;
+  serials.forEach(sn=>{
+    const m = sn.match(/^(.*?)(\d+)(\D*)$/);
+    if(!m) return;
+    const n = Number(m[2]);
+    if(!best || n > best.n) best = {prefix:m[1], num:m[2], suffix:m[3], n};
+  });
+  if(best){
+    const next = String(best.n + 1).padStart(best.num.length, '0');
+    return `${best.prefix}${next}${best.suffix}`;
+  }
+  return serials.length ? String(serials.length + 1) : '1';
+}
 function renderInventoryResults(){
   const target=$('inventoryResults');
-  if(target) target.innerHTML = inventoryTable(filteredInventoryParts(), false);
+  if(target) target.innerHTML = inventoryTable(sortedInventoryParts(filteredInventoryParts()), false);
 }
 
 function normName(name){ return String(name || '').trim().replace(/\s+/g,' '); }
@@ -798,13 +840,13 @@ function exportClients(){
 
 function inventoryHTML(){
   const cats=['All',...new Set(state.parts.map(p=>p.category))];
-  const filtered=filteredInventoryParts();
+  const filtered=sortedInventoryParts(filteredInventoryParts());
   return `<div class="page-head"><div><h1>Inventory</h1><p class="muted">Add, search, edit, delete, import and restock garage parts.</p></div><div class="head-actions"><button class="btn light" onclick="importInventoryCSV()">${I('download','icon-sm')} Import CSV</button><button class="btn primary" onclick="openPartDialog()">${I('plus','icon-sm')} Add Part</button></div></div>
-  <section class="panel"><div class="filters"><input id="searchInput" placeholder="Search by part, SKU, supplier, car..." value="${esc(state.filters.q)}" autocomplete="off"><select id="categoryFilter">${cats.map(c=>`<option ${c===state.filters.category?'selected':''}>${c}</option>`).join('')}</select><select id="stockFilter">${['All','Low','In Stock','Finished'].map(x=>`<option ${x===state.filters.stock?'selected':''}>${x}</option>`).join('')}</select><button class="btn light" onclick="exportInventory()">${I('download','icon-sm')} CSV</button></div><div id="inventoryResults">${inventoryTable(filtered, false)}</div></section>`;
+  <section class="panel"><div class="filters"><input id="searchInput" placeholder="Search by part, serial number, supplier, car..." value="${esc(state.filters.q)}" autocomplete="off"><select id="categoryFilter">${cats.map(c=>`<option ${c===state.filters.category?'selected':''}>${c}</option>`).join('')}</select><select id="stockFilter">${['All','Low','In Stock','Finished'].map(x=>`<option ${x===state.filters.stock?'selected':''}>${x}</option>`).join('')}</select><button class="btn light" onclick="exportInventory()">${I('download','icon-sm')} CSV</button></div><div id="inventoryResults">${inventoryTable(filtered, false)}</div></section>`;
 }
 function inventoryTable(parts, compact=false){
   if(!parts.length) return '<div class="empty">No parts found.</div>';
-  return `<div class="table-wrap"><table><thead><tr><th>Part Name</th><th>SKU</th><th>Stock</th><th>Ordered?</th><th>Low Alert</th><th>Cost Value</th><th>Last Used</th><th>History</th></tr></thead><tbody>${parts.map(p=>{
+  return `<div class="table-wrap"><table><thead><tr><th class="sortable" onclick="setInventorySort('name')">Part Name${sortIcon('name')}</th><th class="sortable" onclick="setInventorySort('sku')">Serial Number${sortIcon('sku')}</th><th class="sortable" onclick="setInventorySort('stock')">Stock${sortIcon('stock')}</th><th class="sortable" onclick="setInventorySort('ordered')">Ordered?${sortIcon('ordered')}</th><th class="sortable" onclick="setInventorySort('threshold')">Low Alert${sortIcon('threshold')}</th><th class="sortable" onclick="setInventorySort('costValue')">Cost Value${sortIcon('costValue')}</th><th class="sortable" onclick="setInventorySort('lastUsed')">Last Used${sortIcon('lastUsed')}</th><th>History</th></tr></thead><tbody>${parts.map(p=>{
     const used=lastUsed(p.id);
     const qty=Number(p.qty||0);
     const finished=qty===0;
@@ -2518,30 +2560,40 @@ function bindPageEvents(){
   if($('fleetForm')){ $('fleetForm').onsubmit=saveFleetVehicle; if($('fleetSearch')) $('fleetSearch').oninput=e=>{state.fleetFilter=e.target.value; renderFleetResults();}; if($('fleetOwnership')) $('fleetOwnership').onchange=toggleFleetVendorField; if($('fleetHasActivePermit')) $('fleetHasActivePermit').onchange=toggleFleetPermitFields; if($('fleetStatus')) $('fleetStatus').onchange=toggleFleetVendorField; if($('fleetModel')) $('fleetModel').onblur=()=>{ const y=extractYearFromModel($('fleetModel').value); if(y && !$('fleetYear').value){ $('fleetYear').value=y; $('fleetModel').value=modelWithoutYear($('fleetModel').value); } }; toggleFleetVendorField(); }
   if($('jobForm')){ $('addLineBtn').onclick=()=>addPartLine(); $('addCustomBtn').onclick=()=>addCustomCharge(); if($('newJobModeBtn')) $('newJobModeBtn').onclick=startNewJobCard; if($('jobEditSelect')) $('jobEditSelect').onchange=e=>{ if(e.target.value) loadJobCardForEdit(e.target.value); }; if($('jobDate')) $('jobDate').onchange=()=>{ if(!$('jobEditId').value) $('jobCardPreview').textContent=nextJobCardId($('jobDate').value || today()); }; $('jobLabour').oninput=updateJobSummary; $('jobLabourHours').oninput=updateJobSummary; if($('jobFleetSelect')) $('jobFleetSelect').onchange=e=>{ if(e.target.value) fillJobFromFleet(e.target.value); }; if($('jobDoneBySelect')) $('jobDoneBySelect').onchange=e=>{ if(e.target.value) addStaffName(e.target.value); }; if($('jobPlateCode')) $('jobPlateCode').oninput=updateFleetPlateSuggestions; if($('jobPlateNumber')) $('jobPlateNumber').oninput=updateFleetPlateSuggestions; addPartLine(); addCustomCharge('', 0); updateFleetPlateSuggestions(); updateJobSummary(); $('jobForm').onsubmit=saveJob; }
 }
-function addPartLine(selected='', qty=1){
+function addPartLine(selected='', qty=1, manualName='', manualPrice=0){
   const wrap=$('partLines');
   if(!wrap) return;
-  const selectedPart = state.parts.find(p=>p.id===selected) || state.parts[0];
+  const isManual = selected === '__manual__' || (!selected && manualName);
+  const selectedPart = state.parts.find(p=>p.id===selected);
   const div=document.createElement('div');
   div.className='part-line';
-  div.innerHTML=`<label>Part<select class="linePart">${state.parts.map(p=>`<option value="${p.id}" ${p.id===selected?'selected':''}>${esc(p.name)} — stock ${p.qty} — selling ${money(p.price)}</option>`).join('')}</select><small class="line-price-note">Selling price: ${money(selectedPart?.price || 0)} each</small></label><label>Qty<input class="lineQty" type="number" min="1" step="1" value="${qty}"></label><button type="button" class="btn danger">Remove</button>`;
+  div.innerHTML=`<label>Part<select class="linePart"><option value="">Choose part...</option><option value="__manual__" ${isManual?'selected':''}>Manual part / not in inventory</option>${state.parts.map(p=>`<option value="${p.id}" ${p.id===selected?'selected':''}>${esc(p.name)} — stock ${p.qty} — selling ${money(p.price)}</option>`).join('')}</select><small class="line-price-note">${selectedPart ? `Selling price: ${money(selectedPart.price)} each` : ''}</small></label><label>Qty<input class="lineQty" type="number" min="1" step="1" value="${qty || 1}"></label><button type="button" class="btn danger">Remove</button><div class="manual-part-fields ${isManual?'':'hidden'}"><label>Manual part name<input class="manualPartName" placeholder="Part name" value="${esc(manualName || '')}"></label><label>Selling price AED<input class="manualPartPrice" type="number" min="0" step="0.01" placeholder="0" value="${manualPrice || ''}"></label></div>`;
   const select = div.querySelector('.linePart');
   const qtyInput = div.querySelector('.lineQty');
   const note = div.querySelector('.line-price-note');
+  const manualBox = div.querySelector('.manual-part-fields');
   const refreshLine = () => {
+    const isManualNow = select.value === '__manual__';
+    manualBox.classList.toggle('hidden', !isManualNow);
     const part = state.parts.find(p=>p.id===select.value);
     const q = Number(qtyInput.value || 0);
-    note.textContent = part ? `Selling price: ${money(part.price)} each${q > 1 ? ` · Line total: ${money(Number(part.price || 0) * q)}` : ''}` : '';
+    if(isManualNow){
+      const manualPrice = Number(div.querySelector('.manualPartPrice')?.value || 0);
+      note.textContent = manualPrice ? `Manual selling price: ${money(manualPrice)} each${q > 1 ? ` · Line total: ${money(manualPrice * q)}` : ''}` : 'Manual part will not reduce inventory stock.';
+    } else {
+      note.textContent = part ? `Selling price: ${money(part.price)} each${q > 1 ? ` · Line total: ${money(Number(part.price || 0) * q)}` : ''}` : '';
+    }
     updateJobSummary();
   };
   div.querySelector('button').onclick=()=>{div.remove(); updateJobSummary();};
   select.onchange=refreshLine;
   qtyInput.oninput=refreshLine;
+  div.querySelectorAll('.manualPartName,.manualPartPrice').forEach(x=>x.oninput=refreshLine);
   wrap.appendChild(div);
   refreshLine();
 }
 function addCustomCharge(name='', amount=0){ const wrap=$('customCharges'); if(!wrap) return; const div=document.createElement('div'); div.className='custom-line'; div.innerHTML=`<label>Charge name<input class="customName" placeholder="Car wash" value="${esc(name)}"></label><label>Amount AED<input class="customAmount" type="number" min="0" step="0.01" placeholder="20" value="${amount || ''}"></label><button type="button" class="btn danger">Remove</button>`; div.querySelector('button').onclick=()=>{div.remove(); updateJobSummary();}; div.querySelectorAll('input').forEach(x=>x.oninput=updateJobSummary); wrap.appendChild(div); updateJobSummary(); }
-function getJobLines(){ return [...document.querySelectorAll('.part-line')].map(row=>{ const p=state.parts.find(x=>x.id===row.querySelector('.linePart').value); const qty=Number(row.querySelector('.lineQty').value || 0); return p?{partId:p.id,name:p.name,sku:p.sku,qty,price:Number(p.price)}:null; }).filter(x=>x&&x.qty>0); }
+function getJobLines(){ return [...document.querySelectorAll('.part-line')].map(row=>{ const selected=row.querySelector('.linePart').value; const qty=Number(row.querySelector('.lineQty').value || 0); if(selected==='__manual__'){ const name=row.querySelector('.manualPartName')?.value.trim(); const price=Number(row.querySelector('.manualPartPrice')?.value || 0); return name && qty>0 ? {partId:'manual_'+id('line'), name, sku:'Manual', qty, price, manual:true} : null; } const p=state.parts.find(x=>x.id===selected); return p?{partId:p.id,name:p.name,sku:p.sku,qty,price:Number(p.price)}:null; }).filter(x=>x&&x.qty>0); }
 function getCustomCharges(){ return [...document.querySelectorAll('.custom-line')].map(row=>({ name: row.querySelector('.customName').value.trim(), amount: Number(row.querySelector('.customAmount').value || 0) })).filter(x=>x.name && x.amount>0); }
 function updateJobSummary(){ const lines=getJobLines(); const customCharges=getCustomCharges(); const partsTotal=lines.reduce((a,l)=>a+(l.qty*l.price),0); const customTotal=customCharges.reduce((a,c)=>a+c.amount,0); const labour=Number($('jobLabour')?.value||0); const hours=Number($('jobLabourHours')?.value||0); if($('jobSummary')) $('jobSummary').innerHTML=`<span>Parts total: ${money(partsTotal)}</span><span>Labor hours: ${hours || 0}</span><span>Labor charge: ${money(labour)}</span><span>Custom charges: ${money(customTotal)}</span><span>Job total: ${money(partsTotal+labour+customTotal)}</span>`; }
 
@@ -2592,7 +2644,7 @@ function setJobFormFromJob(job){
   $('jobLabour').value = Number(job.labour || 0);
   $('jobLabourHours').value = Number(job.labourHours || 0);
   $('partLines').innerHTML = '';
-  (job.lines && job.lines.length ? job.lines : []).forEach(l => addPartLine(l.partId, l.qty));
+  (job.lines && job.lines.length ? job.lines : []).forEach(l => addPartLine(l.manual ? '__manual__' : l.partId, l.qty, l.manual ? l.name : '', l.manual ? l.price : 0));
   if(!job.lines || !job.lines.length) addPartLine();
   $('customCharges').innerHTML = '';
   (job.customCharges && job.customCharges.length ? job.customCharges : []).forEach(c => addCustomCharge(c.name, c.amount));
@@ -2625,6 +2677,7 @@ async function saveJob(e){
   const lines=getJobLines();
   const customCharges=getCustomCharges();
   for(const l of lines){
+    if(l.manual) continue;
     const p=state.parts.find(x=>x.id===l.partId);
     const available = Number(p?.qty || 0) + oldQtyForPart(oldJob, l.partId);
     if(!p || available < Number(l.qty)) return toast(`Not enough stock for ${l.name}`);
@@ -2632,7 +2685,7 @@ async function saveJob(e){
   if(oldJob){
     (oldJob.lines || []).forEach(l=>{ const p=state.parts.find(x=>x.id===l.partId); if(p) p.qty=Number(p.qty)+Number(l.qty||0); });
   }
-  lines.forEach(l=>{ const p=state.parts.find(x=>x.id===l.partId); p.qty=Number(p.qty)-Number(l.qty); if(Number(p.qty)===0 && typeof p.ordered !== 'boolean') p.ordered=false; });
+  lines.forEach(l=>{ if(l.manual) return; const p=state.parts.find(x=>x.id===l.partId); if(!p) return; p.qty=Number(p.qty)-Number(l.qty); if(Number(p.qty)===0 && typeof p.ordered !== 'boolean') p.ordered=false; });
   const labour=Number($('jobLabour').value||0);
   const labourHours=Number($('jobLabourHours').value||0);
   const partsTotal=lines.reduce((a,l)=>a+(l.qty*l.price),0);
@@ -2674,11 +2727,11 @@ async function saveJob(e){
 }
 
 async function deleteJob(jobId){ const job=state.jobs.find(j=>j.id===jobId); if(job && !requireJobOverride(job, 'delete it')) return; if(!confirm('Delete this job and return the parts back to inventory?')) return; if(job) job.lines.forEach(l=>{ const p=state.parts.find(x=>x.id===l.partId); if(p) p.qty=Number(p.qty)+Number(l.qty); }); state.jobs=state.jobs.filter(j=>j.id!==jobId); await saveJobs(); await saveParts(); await deleteRemoteRow('jobs', jobId); if(job) await logAction('Deleted job card', 'Job Card', ensureJobCardId(job), `${job.plate || ''} · returned stock`, job.doneBy || state.user?.name); toast('Job deleted and stock returned'); render(); }
-function viewJob(jobId){ const j=state.jobs.find(x=>x.id===jobId); if(!j) return; $('jobDialogTitle').textContent=`${ensureJobCardId(j)} · ${j.plate} · ${j.car}`; $('jobDialogBody').innerHTML=`<div class="part-detail"><p><b>Job Card ID:</b> ${esc(ensureJobCardId(j))}</p><p><b>Date:</b> ${esc(j.date)}</p><p><b>Customer:</b> ${esc(j.customer||'N/A')} ${j.phone?` · ${esc(j.phone)}`:''}</p><p><b>Job:</b> ${esc(j.description)}</p><p><b>Status:</b></p><div class="status-inline modal-status-edit">${statusPill(jobStatus(j))}${statusSelect(j.id, jobStatus(j))}</div><p><b>Done by:</b> ${esc(j.doneBy || '—')}</p><p><b>Parts used:</b></p>${j.lines.length?`<div class="table-wrap"><table><thead><tr><th>Part</th><th>SKU</th><th>Qty</th><th>Price</th></tr></thead><tbody>${j.lines.map(l=>`<tr><td>${esc(l.name)}</td><td>${esc(l.sku)}</td><td>${l.qty}</td><td>${money(l.price)}</td></tr>`).join('')}</tbody></table></div>`:'<p class="muted">No parts used.</p>'}${(j.customCharges||[]).length?`<p><b>Custom charges:</b></p><div class="table-wrap"><table><thead><tr><th>Description</th><th>Amount</th></tr></thead><tbody>${(j.customCharges||[]).map(c=>`<tr><td>${esc(c.name)}</td><td>${money(c.amount)}</td></tr>`).join('')}</tbody></table></div>`:''}<button type="button" class="mini-btn" onclick="loadJobCardForEdit('${j.id}'); closeJobDialog();">${isJobLocked(j) && !hasJobOverride(j.id) ? 'Unlock / Edit Job Card' : 'Edit Job Card'}</button><div class="summary-box"><span>Labor hours: ${Number(j.labourHours||0)}</span><span>Labor charge: ${money(j.labour)}</span><span>Custom charges: ${money((j.customCharges||[]).reduce((a,c)=>a+Number(c.amount||0),0))}</span><span>Total: ${money(j.total)}</span></div></div>`; $('jobDialog').showModal(); }
+function viewJob(jobId){ const j=state.jobs.find(x=>x.id===jobId); if(!j) return; $('jobDialogTitle').textContent=`${ensureJobCardId(j)} · ${j.plate} · ${j.car}`; $('jobDialogBody').innerHTML=`<div class="part-detail"><p><b>Job Card ID:</b> ${esc(ensureJobCardId(j))}</p><p><b>Date:</b> ${esc(j.date)}</p><p><b>Customer:</b> ${esc(j.customer||'N/A')} ${j.phone?` · ${esc(j.phone)}`:''}</p><p><b>Job:</b> ${esc(j.description)}</p><p><b>Status:</b></p><div class="status-inline modal-status-edit">${statusPill(jobStatus(j))}${statusSelect(j.id, jobStatus(j))}</div><p><b>Done by:</b> ${esc(j.doneBy || '—')}</p><p><b>Parts used:</b></p>${j.lines.length?`<div class="table-wrap"><table><thead><tr><th>Part</th><th>Serial Number</th><th>Qty</th><th>Price</th></tr></thead><tbody>${j.lines.map(l=>`<tr><td>${esc(l.name)}</td><td>${esc(l.sku)}</td><td>${l.qty}</td><td>${money(l.price)}</td></tr>`).join('')}</tbody></table></div>`:'<p class="muted">No parts used.</p>'}${(j.customCharges||[]).length?`<p><b>Custom charges:</b></p><div class="table-wrap"><table><thead><tr><th>Description</th><th>Amount</th></tr></thead><tbody>${(j.customCharges||[]).map(c=>`<tr><td>${esc(c.name)}</td><td>${money(c.amount)}</td></tr>`).join('')}</tbody></table></div>`:''}<button type="button" class="mini-btn" onclick="loadJobCardForEdit('${j.id}'); closeJobDialog();">${isJobLocked(j) && !hasJobOverride(j.id) ? 'Unlock / Edit Job Card' : 'Edit Job Card'}</button><div class="summary-box"><span>Labor hours: ${Number(j.labourHours||0)}</span><span>Labor charge: ${money(j.labour)}</span><span>Custom charges: ${money((j.customCharges||[]).reduce((a,c)=>a+Number(c.amount||0),0))}</span><span>Total: ${money(j.total)}</span></div></div>`; $('jobDialog').showModal(); }
 function closeJobDialog(){ $('jobDialog').close(); }
 function viewPartUsage(partId){ const p=state.parts.find(x=>x.id===partId); const jobs=state.jobs.filter(j=>j.lines.some(l=>l.partId===partId)); $('jobDialogTitle').textContent=`Where used: ${p?.name || 'Part'}`; $('jobDialogBody').innerHTML=jobs.length?`<div class="table-wrap"><table><thead><tr><th>Job ID</th><th>Date</th><th>Plate</th><th>Car</th><th>Job</th><th>Status</th><th>Qty</th></tr></thead><tbody>${jobs.map(j=>{const line=j.lines.find(l=>l.partId===partId); return `<tr><td>${esc(j.date)}</td><td>${esc(j.plate)}</td><td>${esc(j.car)}</td><td>${esc(j.description)}</td><td>${statusPill(jobStatus(j))}${statusSelect(j.id, jobStatus(j))}</td><td>${line.qty}</td></tr>`}).join('')}</tbody></table></div>`:'<div class="empty">This part has not been used in any job yet.</div>'; $('jobDialog').showModal(); }
 
-function openPartDialog(partId=''){ const p=state.parts.find(x=>x.id===partId); $('partDialogTitle').textContent=p?'Edit Part':'Add Part'; $('partId').value=p?.id||''; $('partName').value=p?.name||''; $('partSku').value=p?.sku||''; $('partCategory').value=p?.category||'Engine'; $('partLocation').value=p?.location||''; $('partQty').value=p?.qty??0; $('partThreshold').value=p?.threshold??5; $('partCost').value=p?.cost??0; $('partPrice').value=p?.price??0; $('partSupplier').value=p?.supplier||''; $('partFits').value=p?.fits||''; $('partDialog').showModal(); }
+function openPartDialog(partId=''){ const p=state.parts.find(x=>x.id===partId); $('partDialogTitle').textContent=p?'Edit Part':'Add Part'; $('partId').value=p?.id||''; $('partName').value=p?.name||''; $('partSku').value=p?.sku||nextSerialNumber(); $('partCategory').value=p?.category||'Engine'; $('partLocation').value=p?.location||''; $('partQty').value=p?.qty??0; $('partThreshold').value=p?.threshold??5; $('partCost').value=p?.cost??0; $('partPrice').value=p?.price??0; $('partSupplier').value=p?.supplier||''; $('partFits').value=p?.fits||''; $('partDialog').showModal(); }
 function closePartDialog(){ $('partDialog').close(); }
 async function savePartFromForm(e){
   e.preventDefault();
@@ -2798,7 +2851,7 @@ function csvEscape(v){ return `"${cleanCSVText(v).replace(/"/g,'""')}"`; }
 function downloadCSV(name, rows){ const csv='sep=,\r\n'+rows.map(r=>r.map(csvEscape).join(',')).join('\r\n'); const blob=new Blob(['\ufeff', csv],{type:'text/csv;charset=utf-8'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=name; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); }
 
 function exportDashboardInventory(){
-  const rows=[['Part Name','SKU','Category','Stock','Ordered?','Low Stock Alert','Location','Cost Value AED','Last Used']];
+  const rows=[['Part Name','Serial Number','Category','Stock','Ordered?','Low Stock Alert','Location','Cost Value AED','Last Used']];
   state.parts.slice(0,5).forEach(p=>rows.push([p.name,p.sku,p.category,p.qty,p.ordered?'Yes':'No',p.threshold,p.location,Number(p.qty||0)*Number(p.cost||0),lastUsedPlain(p.id)]));
   downloadCSV('sarab-dashboard-inventory-overview.csv', rows);
 }
@@ -2813,7 +2866,7 @@ function exportDashboardJobs(){
 }
 function lastUsedPlain(partId){ const j=state.jobs.find(job=>job.lines.some(l=>l.partId===partId)); return j ? j.date : 'Never'; }
 
-function exportInventory(){ downloadCSV('sarab-inventory.csv', [['Part Name','SKU','Category','Stock','Ordered?','Low Stock Alert','Location','Supplier','Fits','Buying Cost AED','Selling Price AED','Inventory Cost Value AED'], ...state.parts.map(p=>[p.name,p.sku,p.category,p.qty,p.ordered?'Yes':'No',p.threshold,p.location,p.supplier,p.fits,p.cost,p.price,Number(p.qty)*Number(p.cost)])]); }
+function exportInventory(){ downloadCSV('sarab-inventory.csv', [['Part Name','Serial Number','Category','Stock','Ordered?','Low Stock Alert','Location','Supplier','Fits','Buying Cost AED','Selling Price AED','Inventory Cost Value AED'], ...state.parts.map(p=>[p.name,p.sku,p.category,p.qty,p.ordered?'Yes':'No',p.threshold,p.location,p.supplier,p.fits,p.cost,p.price,Number(p.qty)*Number(p.cost)])]); }
 
 function parseCSV(text){
   const rows=[];
@@ -2863,7 +2916,7 @@ function importInventoryCSV(){
       rows.slice(1).forEach(cols=>{
         const obj={}; headers.forEach((h,i)=>obj[h]=cols[i] ?? '');
         const name=firstValue(obj,['Part Name','Name','Part']);
-        const sku=firstValue(obj,['SKU','Part SKU','Code']);
+        const sku=firstValue(obj,['Serial Number','SKU','Part SKU','Part Serial Number','Code']);
         if(!name || !sku){ skipped++; return; }
         const qty=toNumber(firstValue(obj,['Stock','Stock Quantity','Qty','Quantity']),0);
         const existing=state.parts.find(p=>duplicateKey(p.sku)===duplicateKey(sku) || duplicateKey(p.name)===duplicateKey(name));
@@ -2908,7 +2961,7 @@ function exportJobs(){
   downloadCSV('sarab-jobs.csv', rows);
 }
 function exportUsage(){
-  const rows=[['Job Card ID','Date','Status','Done By','Plate','Car','Job','Part','SKU','Qty','Item Price AED','Custom Charge','Custom Charge AED','Labor Charge AED','Total AED']];
+  const rows=[['Job Card ID','Date','Status','Done By','Plate','Car','Job','Part','Serial Number','Qty','Item Price AED','Custom Charge','Custom Charge AED','Labor Charge AED','Total AED']];
   state.jobs.forEach(j=>{
     const customNames=(j.customCharges||[]).map(c=>c.name).join('; ');
     const customTotal=(j.customCharges||[]).reduce((a,c)=>a+Number(c.amount||0),0);
@@ -2941,7 +2994,7 @@ function exportActivity(){
   downloadCSV('sarab-activity-log.csv', rows);
 }
 
-async function resetDemo(){ if(!confirm('Reset all demo data?')) return; if(USE_SUPABASE){ await sb.from('parts').delete().neq('id','__never__'); await sb.from('jobs').delete().neq('id','__never__'); await sb.from('vehicles').delete().neq('id','__never__'); try { await sb.from('staff').delete().neq('id','__never__'); } catch(e) { console.warn(e); } try { await sb.from('logs').delete().neq('id','__never__'); } catch(e) { console.warn(e); } try { await sb.from('tickets').delete().neq('id','__never__'); } catch(e) { console.warn(e); } state.parts=seedParts.map(p=>({...p})); state.jobs=seedJobs.map(j=>({...j})); state.vehicles=seedVehicles.map(v=>({...v})); state.staff=seedStaff.map(x=>({...x})); state.logs=[]; state.tickets=seedTickets.map(t=>({...t})); state.clients=seedClients.map(c=>({...c})); await saveParts(); await saveJobs(); await saveVehicles(); await saveStaff(); await saveLogs(); await saveTickets(); await saveClients(); } else { set(KEYS.parts, seedParts); set(KEYS.jobs, seedJobs); set(KEYS.vehicles, seedVehicles); set(KEYS.staff, seedStaff); set(KEYS.logs, []); set(KEYS.tickets, seedTickets); set(KEYS.clients, seedClients); } state.filters={q:'',category:'All',stock:'All'}; state.vehicleHistoryQuery=''; state.selectedClient=''; state.clientFilter=''; state.activityQuery=''; state.activitySection='All'; state.ticketTab='dashboard'; state.ticketSearch=''; state.ticketStatus='All'; state.ticketPriority='All'; toast('Demo data reset'); render(); }
+async function resetDemo(){ if(!confirm('Reset all demo data?')) return; if(USE_SUPABASE){ await sb.from('parts').delete().neq('id','__never__'); await sb.from('jobs').delete().neq('id','__never__'); await sb.from('vehicles').delete().neq('id','__never__'); try { await sb.from('staff').delete().neq('id','__never__'); } catch(e) { console.warn(e); } try { await sb.from('logs').delete().neq('id','__never__'); } catch(e) { console.warn(e); } try { await sb.from('tickets').delete().neq('id','__never__'); } catch(e) { console.warn(e); } state.parts=seedParts.map(p=>({...p})); state.jobs=seedJobs.map(j=>({...j})); state.vehicles=seedVehicles.map(v=>({...v})); state.staff=seedStaff.map(x=>({...x})); state.logs=[]; state.tickets=seedTickets.map(t=>({...t})); state.clients=seedClients.map(c=>({...c})); await saveParts(); await saveJobs(); await saveVehicles(); await saveStaff(); await saveLogs(); await saveTickets(); await saveClients(); } else { set(KEYS.parts, seedParts); set(KEYS.jobs, seedJobs); set(KEYS.vehicles, seedVehicles); set(KEYS.staff, seedStaff); set(KEYS.logs, []); set(KEYS.tickets, seedTickets); set(KEYS.clients, seedClients); } state.filters={q:'',category:'All',stock:'All'}; state.inventorySort={key:'name',dir:'asc'}; state.vehicleHistoryQuery=''; state.selectedClient=''; state.clientFilter=''; state.activityQuery=''; state.activitySection='All'; state.ticketTab='dashboard'; state.ticketSearch=''; state.ticketStatus='All'; state.ticketPriority='All'; toast('Demo data reset'); render(); }
 
-window.addStaffFromPrompt=addStaffFromPrompt; window.selectClient=selectClient; window.editClient=editClient; window.deleteClient=deleteClient; window.clearClientForm=clearClientForm; window.exportClients=exportClients; window.importFleetCSV=importFleetCSV; window.escalateTicket=escalateTicket; window.deEscalateTicket=deEscalateTicket; window.exportActivity=exportActivity; window.switchTicketTab=switchTicketTab; window.saveTicket=saveTicket; window.deleteTicket=deleteTicket; window.updateTicketStatus=updateTicketStatus; window.viewTicket=viewTicket; window.closeTicketDialog=closeTicketDialog; window.exportTickets=exportTickets; window.fillTicketFromFleet=fillTicketFromFleet; window.startNewJobCard=startNewJobCard; window.loadJobCardForEdit=loadJobCardForEdit; window.goInventory=goInventory; window.goJobs=goJobs; window.exportDashboardInventory=exportDashboardInventory; window.exportDashboardJobs=exportDashboardJobs; window.viewPlateHistory=viewPlateHistory; window.clearPlateHistorySearch=clearPlateHistorySearch; window.exportPlateHistoryCSV=exportPlateHistoryCSV; window.startAddVehicle=startAddVehicle; window.toggleOrdered=toggleOrdered; window.go=go; window.openPartDialog=openPartDialog; window.closePartDialog=closePartDialog; window.openRestockDialog=openRestockDialog; window.closeRestockDialog=closeRestockDialog; window.viewPartUsage=viewPartUsage; window.viewJob=viewJob; window.closeJobDialog=closeJobDialog; window.deleteJob=deleteJob; window.deletePart=deletePart; window.exportInventory=exportInventory; window.importInventoryCSV=importInventoryCSV; window.exportJobs=exportJobs; window.exportUsage=exportUsage; window.exportMonthlyReport=exportMonthlyReport; window.exportFleet=exportFleet; window.toggleEmployeeDocRequested=toggleEmployeeDocRequested; window.clearVisibleReplacementCells=clearVisibleReplacementCells; window.replacementCellKeydown=replacementCellKeydown; window.editFleetVehicle=editFleetVehicle; window.deleteFleetVehicle=deleteFleetVehicle; window.clearFleetForm=clearFleetForm; window.resetDemo=resetDemo;
+window.addStaffFromPrompt=addStaffFromPrompt; window.selectClient=selectClient; window.editClient=editClient; window.deleteClient=deleteClient; window.clearClientForm=clearClientForm; window.exportClients=exportClients; window.importFleetCSV=importFleetCSV; window.escalateTicket=escalateTicket; window.deEscalateTicket=deEscalateTicket; window.exportActivity=exportActivity; window.switchTicketTab=switchTicketTab; window.saveTicket=saveTicket; window.deleteTicket=deleteTicket; window.updateTicketStatus=updateTicketStatus; window.viewTicket=viewTicket; window.closeTicketDialog=closeTicketDialog; window.exportTickets=exportTickets; window.fillTicketFromFleet=fillTicketFromFleet; window.startNewJobCard=startNewJobCard; window.loadJobCardForEdit=loadJobCardForEdit; window.setInventorySort=setInventorySort; window.goInventory=goInventory; window.goJobs=goJobs; window.exportDashboardInventory=exportDashboardInventory; window.exportDashboardJobs=exportDashboardJobs; window.viewPlateHistory=viewPlateHistory; window.clearPlateHistorySearch=clearPlateHistorySearch; window.exportPlateHistoryCSV=exportPlateHistoryCSV; window.startAddVehicle=startAddVehicle; window.toggleOrdered=toggleOrdered; window.go=go; window.openPartDialog=openPartDialog; window.closePartDialog=closePartDialog; window.openRestockDialog=openRestockDialog; window.closeRestockDialog=closeRestockDialog; window.viewPartUsage=viewPartUsage; window.viewJob=viewJob; window.closeJobDialog=closeJobDialog; window.deleteJob=deleteJob; window.deletePart=deletePart; window.exportInventory=exportInventory; window.importInventoryCSV=importInventoryCSV; window.exportJobs=exportJobs; window.exportUsage=exportUsage; window.exportMonthlyReport=exportMonthlyReport; window.exportFleet=exportFleet; window.toggleEmployeeDocRequested=toggleEmployeeDocRequested; window.clearVisibleReplacementCells=clearVisibleReplacementCells; window.replacementCellKeydown=replacementCellKeydown; window.editFleetVehicle=editFleetVehicle; window.deleteFleetVehicle=deleteFleetVehicle; window.clearFleetForm=clearFleetForm; window.resetDemo=resetDemo;
 init();
