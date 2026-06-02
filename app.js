@@ -2157,7 +2157,7 @@ function employeesHTML(){
   const formPanel = type === 'All'
     ? ''
     : `<section class="panel employee-form-panel"><h2>${getEditingEmployee() ? 'Edit' : 'Add'} ${type} Employee</h2>${employeeFormHTML(getEditingEmployee() || employeeFormDefaults())}</section>`;
-  return `<div class="page-head"><div><h1>Employees</h1><p class="muted">Manage SMG employees, outsourced employees, documents, salaries, and estimated UAE gratuity.</p></div><button class="btn light" onclick="exportEmployees()">${I('download','icon-sm')} Export CSV</button></div>
+  return `<div class="page-head"><div><h1>Employees</h1><p class="muted">Manage SMG employees, outsourced employees, documents, salaries, and estimated UAE gratuity.</p></div><div class="head-actions"><button class="btn light" onclick="importEmployeesCSV()">${I('download','icon-sm')} Import CSV</button><button class="btn light" onclick="exportEmployees()">${I('download','icon-sm')} Export CSV</button></div></div>
   <div class="kpis employee-kpis"><section class="card compact-kpi"><b>${state.employees.length}</b><span>All Employees</span></section><section class="card compact-kpi"><b>${smg.length}</b><span>SMG Employees</span></section><section class="card compact-kpi"><b>${out.length}</b><span>Outsourced Employees</span></section><section class="card compact-kpi"><b>${money(gratuityTotal)}</b><span>Estimated gratuity</span></section></div>
   ${employeeTypeTabs()}
   <div class="employee-layout ${type === 'All' ? 'employee-layout-all' : ''}">
@@ -2305,6 +2305,95 @@ async function saveEmployee(ev){
 }
 function editEmployee(empId){ const e = state.employees.find(x => x.id === empId); if(!e) return; state.employeeType = e.type || 'SMG'; state.editingEmployeeId = empId; render(); }
 async function removeEmployee(empId){ const e = state.employees.find(x => x.id === empId); if(!e) return; if(!confirm(`Remove ${e.name}?`)) return; state.employees = state.employees.filter(x => x.id !== empId); if(USE_SUPABASE) await deleteRemoteRow('employees', empId); await saveEmployees(); await logAction('Removed employee', 'Employees', e.name, e.type || '', state.user?.name); toast('Employee removed'); render(); }
+
+function truthyCSV(value){
+  const v = String(value ?? '').trim().toLowerCase();
+  return ['yes','y','true','1','checked','active','working'].includes(v);
+}
+function normalizeEmployeeType(value){
+  const v = String(value || '').trim().toLowerCase();
+  if(v.includes('out')) return 'Outsourced';
+  return 'SMG';
+}
+function importEmployeesCSV(){
+  const input=document.createElement('input');
+  input.type='file';
+  input.accept='.csv,text/csv';
+  input.onchange=async()=>{
+    const file=input.files?.[0];
+    if(!file) return;
+    try{
+      const rows=parseCSV(await file.text());
+      if(rows.length < 2) return toast('CSV is empty or missing rows');
+      const headers=rows[0].map(normalizeHeader);
+      let imported=0, updated=0, skipped=0;
+      for(const cols of rows.slice(1)){
+        const obj={}; headers.forEach((h,i)=>obj[h]=cols[i] ?? '');
+        const name=String(firstValue(obj,['Name','Employee','Employee Name','Staff Name'])).trim();
+        if(!name){ skipped++; continue; }
+        const type=normalizeEmployeeType(firstValue(obj,['Type','Employee Type','Staff Type'], 'SMG'));
+        const existing=state.employees.find(e=>String(e.name||'').trim().toLowerCase()===name.toLowerCase() && normalizeEmployeeType(e.type||'SMG')===type);
+        const currentValue=firstValue(obj,['Currently Working','Working','Status'], existing ? (employeeIsCurrentlyWorking(existing)?'Yes':'No') : 'Yes');
+        const currentWorking = String(currentValue||'').trim().toLowerCase()==='left' ? false : truthyCSV(currentValue);
+        const assignedCompany=firstValue(obj,['Assigned Company','Company','Client'], existing?.assignedCompany || '');
+        const assignedVehicle=firstValue(obj,['Assigned Vehicle','Vehicle','Plate','Plate Number'], existing?.assignedVehicle || '');
+        const oldAssign=`${existing?.assignedCompany||''}|${existing?.assignedVehicle||''}`;
+        const newAssign=`${assignedCompany||''}|${assignedVehicle||''}`;
+        const emp={
+          ...(existing || {}),
+          id: existing?.id || id('emp'),
+          type,
+          name,
+          startDate:firstValue(obj,['Start Date','Start'], existing?.startDate || ''),
+          currentWorking,
+          endDate: currentWorking ? '' : firstValue(obj,['End Date','Last Working Day'], existing?.endDate || ''),
+          assignedCompany,
+          assignedVehicle,
+          hasActivePermit:truthyCSV(firstValue(obj,['Active Permit','Has Active Permit'], existing?.hasActivePermit ? 'Yes' : 'No')),
+          permitCategory:firstValue(obj,['Permit Category','Permit Type'], existing?.permitCategory || ''),
+          permitExpiryDate:firstValue(obj,['Permit Expiry Date','Permit Expiry'], existing?.permitExpiryDate || ''),
+          permitRecordedAt: existing?.permitRecordedAt || today(),
+          updatedAt:new Date().toISOString(),
+          createdAt: existing?.createdAt || new Date().toISOString()
+        };
+        if(type === 'SMG'){
+          emp.visaStatus=firstValue(obj,['Visa Status','Visa / Type','Visa Type'], existing?.visaStatus || 'Garage');
+          emp.basicSalary=toNumber(firstValue(obj,['Basic Salary AED','Basic Salary','Basic'], existing?.basicSalary ?? 0),0);
+          emp.netSalary=toNumber(firstValue(obj,['Net Salary AED','Net Salary','Net'], existing?.netSalary ?? 0),0);
+          emp.passportExpiryDate=firstValue(obj,['Passport Expiry Date','Passport Expiry'], existing?.passportExpiryDate || '');
+          emp.drivingLicenseExpiryDate=firstValue(obj,["Driving License Expiry Date","Driver License Expiry Date","Driver's License Expiry","Driving License Expiry"], existing?.drivingLicenseExpiryDate || '');
+          emp.passportCollected=truthyCSV(firstValue(obj,['Passport Collected','Passport'], existing?.passportCollected ? 'Yes' : 'No'));
+          emp.passportRequested=truthyCSV(firstValue(obj,['Passport Requested'], existing?.passportRequested ? 'Yes' : 'No'));
+        }else{
+          emp.hasId=truthyCSV(firstValue(obj,['ID','Has ID'], existing?.hasId ? 'Yes' : 'No'));
+          emp.hasIdRequested=truthyCSV(firstValue(obj,['ID Requested'], existing?.hasIdRequested ? 'Yes' : 'No'));
+          emp.drivingLicense=truthyCSV(firstValue(obj,['Driving License','Driver License'], existing?.drivingLicense ? 'Yes' : 'No'));
+          emp.drivingLicenseRequested=truthyCSV(firstValue(obj,['Driving License Requested','Driver License Requested'], existing?.drivingLicenseRequested ? 'Yes' : 'No'));
+          emp.undertaking=truthyCSV(firstValue(obj,['Undertaking'], existing?.undertaking ? 'Yes' : 'No'));
+          emp.undertakingRequested=truthyCSV(firstValue(obj,['Undertaking Requested'], existing?.undertakingRequested ? 'Yes' : 'No'));
+          emp.labourPermit=truthyCSV(firstValue(obj,['Labour Part Time Permit','Labour Permit','Labor Permit'], existing?.labourPermit ? 'Yes' : 'No'));
+          emp.labourPermitRequested=truthyCSV(firstValue(obj,['Labour Permit Requested','Labour Part Time Permit Requested'], existing?.labourPermitRequested ? 'Yes' : 'No'));
+        }
+        emp.assignmentHistory = Array.isArray(existing?.assignmentHistory) ? existing.assignmentHistory.map(h=>({...h})) : [];
+        if(!existing && (emp.assignedCompany || emp.assignedVehicle)) emp.assignmentHistory.push({from:emp.startDate||today(), to:'Present', company:emp.assignedCompany||'—', vehicle:emp.assignedVehicle||'—', note:'Initial assignment'});
+        if(existing && oldAssign !== newAssign){
+          const d=today();
+          const last=emp.assignmentHistory[emp.assignmentHistory.length-1];
+          if(last && (!last.to || last.to==='Present')) last.to=d;
+          emp.assignmentHistory.push({from:d, to:'Present', company:emp.assignedCompany||'—', vehicle:emp.assignedVehicle||'—', note:'Assignment changed by CSV import'});
+        }
+        const idx=state.employees.findIndex(e=>e.id===emp.id);
+        if(idx>=0){ state.employees[idx]=emp; updated++; }
+        else { state.employees.unshift(emp); imported++; }
+      }
+      await saveEmployees();
+      await logAction('Imported employee CSV','Employees','CSV Import',`${imported} new, ${updated} updated, ${skipped} skipped`,state.user?.name);
+      toast(`Employees CSV imported: ${imported} new, ${updated} updated, ${skipped} skipped`);
+      render();
+    }catch(err){ console.error(err); toast('Could not import employee CSV'); }
+  };
+  input.click();
+}
 function exportEmployees(){
   const rows = [['Type','Name','Currently Working','Start Date','End Date','Total Tenure','Assigned Company','Assigned Vehicle','Visa Status','Basic Salary AED','Net Salary AED','Estimated Gratuity AED','Passport Expiry Date','Driving License Expiry Date','Active Permit','Permit Category','Permit Expiry Date','Passport Collected','Passport Requested','ID','ID Requested','Driving License','Driving License Requested','Undertaking','Undertaking Requested','Labour Part Time Permit','Labour Permit Requested']];
   state.employees.forEach(e => rows.push([e.type||'SMG', e.name||'', employeeIsCurrentlyWorking(e)?'Yes':'No', e.startDate||'', employeeIsCurrentlyWorking(e)?'':(e.endDate||''), employeeTenureText(e.startDate,employeeGratuityEndDate(e)), e.assignedCompany||'', e.assignedVehicle||'', e.visaStatus||'', e.basicSalary||0, e.netSalary||0, calcUAEGratuity(e.startDate,e.basicSalary,employeeGratuityEndDate(e)).toFixed(2), e.passportExpiryDate||'', e.drivingLicenseExpiryDate||'', e.hasActivePermit?'Yes':'No', e.permitCategory||'', e.permitExpiryDate||'', e.passportCollected?'Yes':'No', e.passportRequested?'Yes':'No', e.hasId?'Yes':'No', e.hasIdRequested?'Yes':'No', e.drivingLicense?'Yes':'No', e.drivingLicenseRequested?'Yes':'No', e.undertaking?'Yes':'No', e.undertakingRequested?'Yes':'No', e.labourPermit?'Yes':'No', e.labourPermitRequested?'Yes':'No']));
@@ -3017,5 +3106,5 @@ function exportActivity(){
 
 async function resetDemo(){ if(!confirm('Reset all demo data?')) return; if(USE_SUPABASE){ await sb.from('parts').delete().neq('id','__never__'); await sb.from('jobs').delete().neq('id','__never__'); await sb.from('vehicles').delete().neq('id','__never__'); try { await sb.from('staff').delete().neq('id','__never__'); } catch(e) { console.warn(e); } try { await sb.from('logs').delete().neq('id','__never__'); } catch(e) { console.warn(e); } try { await sb.from('tickets').delete().neq('id','__never__'); } catch(e) { console.warn(e); } state.parts=seedParts.map(p=>({...p})); state.jobs=seedJobs.map(j=>({...j})); state.vehicles=seedVehicles.map(v=>({...v})); state.staff=seedStaff.map(x=>({...x})); state.logs=[]; state.tickets=seedTickets.map(t=>({...t})); state.clients=seedClients.map(c=>({...c})); await saveParts(); await saveJobs(); await saveVehicles(); await saveStaff(); await saveLogs(); await saveTickets(); await saveClients(); } else { set(KEYS.parts, seedParts); set(KEYS.jobs, seedJobs); set(KEYS.vehicles, seedVehicles); set(KEYS.staff, seedStaff); set(KEYS.logs, []); set(KEYS.tickets, seedTickets); set(KEYS.clients, seedClients); } state.filters={q:'',category:'All',stock:'All'}; state.inventorySort={key:'name',dir:'asc'}; state.vehicleHistoryQuery=''; state.selectedClient=''; state.clientFilter=''; state.activityQuery=''; state.activitySection='All'; state.ticketTab='dashboard'; state.ticketSearch=''; state.ticketStatus='All'; state.ticketPriority='All'; toast('Demo data reset'); render(); }
 
-window.addStaffFromPrompt=addStaffFromPrompt; window.selectClient=selectClient; window.editClient=editClient; window.deleteClient=deleteClient; window.clearClientForm=clearClientForm; window.exportClients=exportClients; window.importFleetCSV=importFleetCSV; window.escalateTicket=escalateTicket; window.deEscalateTicket=deEscalateTicket; window.exportActivity=exportActivity; window.switchTicketTab=switchTicketTab; window.saveTicket=saveTicket; window.deleteTicket=deleteTicket; window.updateTicketStatus=updateTicketStatus; window.viewTicket=viewTicket; window.closeTicketDialog=closeTicketDialog; window.exportTickets=exportTickets; window.fillTicketFromFleet=fillTicketFromFleet; window.startNewJobCard=startNewJobCard; window.loadJobCardForEdit=loadJobCardForEdit; window.setInventorySort=setInventorySort; window.goInventory=goInventory; window.goJobs=goJobs; window.exportDashboardInventory=exportDashboardInventory; window.exportDashboardJobs=exportDashboardJobs; window.viewPlateHistory=viewPlateHistory; window.clearPlateHistorySearch=clearPlateHistorySearch; window.exportPlateHistoryCSV=exportPlateHistoryCSV; window.startAddVehicle=startAddVehicle; window.toggleOrdered=toggleOrdered; window.go=go; window.openPartDialog=openPartDialog; window.closePartDialog=closePartDialog; window.openRestockDialog=openRestockDialog; window.closeRestockDialog=closeRestockDialog; window.viewPartUsage=viewPartUsage; window.viewJob=viewJob; window.closeJobDialog=closeJobDialog; window.deleteJob=deleteJob; window.deletePart=deletePart; window.exportInventory=exportInventory; window.importInventoryCSV=importInventoryCSV; window.exportJobs=exportJobs; window.exportUsage=exportUsage; window.exportMonthlyReport=exportMonthlyReport; window.exportFleet=exportFleet; window.toggleEmployeeDocRequested=toggleEmployeeDocRequested; window.clearVisibleReplacementCells=clearVisibleReplacementCells; window.replacementCellKeydown=replacementCellKeydown; window.editFleetVehicle=editFleetVehicle; window.deleteFleetVehicle=deleteFleetVehicle; window.clearFleetForm=clearFleetForm; window.resetDemo=resetDemo;
+window.addStaffFromPrompt=addStaffFromPrompt; window.selectClient=selectClient; window.editClient=editClient; window.deleteClient=deleteClient; window.clearClientForm=clearClientForm; window.exportClients=exportClients; window.importFleetCSV=importFleetCSV; window.escalateTicket=escalateTicket; window.deEscalateTicket=deEscalateTicket; window.exportActivity=exportActivity; window.switchTicketTab=switchTicketTab; window.saveTicket=saveTicket; window.deleteTicket=deleteTicket; window.updateTicketStatus=updateTicketStatus; window.viewTicket=viewTicket; window.closeTicketDialog=closeTicketDialog; window.exportTickets=exportTickets; window.fillTicketFromFleet=fillTicketFromFleet; window.startNewJobCard=startNewJobCard; window.loadJobCardForEdit=loadJobCardForEdit; window.setInventorySort=setInventorySort; window.goInventory=goInventory; window.goJobs=goJobs; window.exportDashboardInventory=exportDashboardInventory; window.exportDashboardJobs=exportDashboardJobs; window.viewPlateHistory=viewPlateHistory; window.clearPlateHistorySearch=clearPlateHistorySearch; window.exportPlateHistoryCSV=exportPlateHistoryCSV; window.startAddVehicle=startAddVehicle; window.toggleOrdered=toggleOrdered; window.go=go; window.openPartDialog=openPartDialog; window.closePartDialog=closePartDialog; window.openRestockDialog=openRestockDialog; window.closeRestockDialog=closeRestockDialog; window.viewPartUsage=viewPartUsage; window.viewJob=viewJob; window.closeJobDialog=closeJobDialog; window.deleteJob=deleteJob; window.deletePart=deletePart; window.exportInventory=exportInventory; window.importInventoryCSV=importInventoryCSV; window.exportJobs=exportJobs; window.exportUsage=exportUsage; window.exportMonthlyReport=exportMonthlyReport; window.exportFleet=exportFleet; window.importEmployeesCSV=importEmployeesCSV; window.toggleEmployeeDocRequested=toggleEmployeeDocRequested; window.clearVisibleReplacementCells=clearVisibleReplacementCells; window.replacementCellKeydown=replacementCellKeydown; window.editFleetVehicle=editFleetVehicle; window.deleteFleetVehicle=deleteFleetVehicle; window.clearFleetForm=clearFleetForm; window.resetDemo=resetDemo;
 init();
