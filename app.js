@@ -913,6 +913,7 @@ function fillJobFromFleet(vehicleId){
     const driver = String(v.assignedDriver || '').trim();
     $('jobDriverName').value = driver && driver.toLowerCase() !== 'without driver' ? driver : '';
   }
+  if($('jobVehicleStatus')) $('jobVehicleStatus').value = vehicleUseLabel(v);
   if($('jobFleetSelect')) $('jobFleetSelect').value = vehicleId;
   updateFleetPlateSuggestions();
   toast(`Selected fleet vehicle ${v.plate} · ${vehicleUseLabel(v)}`);
@@ -930,7 +931,7 @@ function updateFleetPlateSuggestions(){
 function jobHTML(){
   const upcomingId = nextJobCardId();
   return `<div class="page-head"><div><h1>Raise Job Card</h1><p class="muted">Create a new job card or edit an existing one. Selected parts will automatically reduce inventory.</p></div></div>
-  <div class="job-layout"><section class="panel"><form id="jobForm" class="grid"><input id="jobEditId" type="hidden" value=""><div class="job-card-tools"><div><span class="muted">Mode</span><div class="mode-buttons"><button id="newJobModeBtn" type="button" class="mini-btn">Create New</button><label class="edit-job-select">Edit Existing<select id="jobEditSelect"><option value="">Choose job card...</option>${jobCardOptionsHTML()}</select></label></div></div><div class="job-id-preview"><span>Job Card ID</span><b id="jobCardPreview">${esc(upcomingId)}</b></div></div><div class="grid two"><label>Customer name<input id="jobCustomer" placeholder="Walk-in customer"></label><label>Driver name<input id="jobDriverName" list="jobDriverOptions" placeholder="Type or choose employee"><datalist id="jobDriverOptions">${jobDriverOptionsHTML()}</datalist></label><label>Car model<input id="jobCar" required placeholder="Toyota Corolla"></label><label>Choose from fleet <select id="jobFleetSelect"><option value="">Type manually / not in fleet</option>${fleetVehicleOptionsHTML()}</select></label><div class="plate-fields wide job-plate-row"><label>Plate code<input id="jobPlateCode" required placeholder="R" maxlength="8"></label><label>License number<input id="jobPlateNumber" required placeholder="14534"></label></div><div id="jobFleetMatches" class="fleet-match-box wide"><span class="muted">Type a plate or choose from fleet above.</span></div><label>Date<input id="jobDate" type="date" value="${today()}" required></label><label>Job status<select id="jobStatus">${JOB_STATUSES.map(x=>`<option>${x}</option>`).join('')}</select></label><div class="staff-row-clean wide"><label>Done by / Staff name<select id="jobDoneBySelect" required><option value="">Choose employee</option>${staffNames().map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('')}</select></label><button type="button" class="mini-btn add-staff-btn" onclick="addStaffFromPrompt()">${I('plus','icon-sm')} Add person</button></div></div><label>What job was done?<textarea id="jobDescription" required placeholder="Oil change, brake pad replacement, AC repair..."></textarea></label><div class="section-title"><h3>Parts Used</h3><button id="addLineBtn" class="mini-btn" type="button">${I('plus','icon-sm')} Add another part</button></div><div id="partLines" class="part-lines"></div><div class="section-title custom-title"><div><h3>Custom Charges</h3><p class="muted small-note">Use this for car wash, diagnosis, towing, polishing, or anything not in inventory.</p></div><button id="addCustomBtn" class="mini-btn" type="button">${I('plus','icon-sm')} Add custom charge</button></div><div id="customCharges" class="custom-lines"></div><div class="section-title labour-title"><div><h3>Labor</h3><p class="muted small-note">Add this after selecting parts and any extra charges.</p></div></div><div class="grid two labour-grid"><label>Labor hours<input id="jobLabourHours" type="number" min="0" step="0.25" value="0" placeholder="2.5"></label><label>Labor charge (AED)<input id="jobLabour" type="number" min="0" step="0.01" value="0" placeholder="50"></label></div><div id="jobSummary" class="summary-box"></div><button class="btn primary large-btn" type="submit">${I('clipboard')} Save Job Card & Update Inventory</button></form></section><aside class="panel"><h3>Simple Rule</h3><p class="muted">Example: if stock has 10 oil filters and you use 1 in this job card, the system automatically changes stock to 9.</p><div class="cost-card"><small>Inventory Cost Value</small><strong>${money(stats().costValue)}</strong></div><h3>Low Stock Now</h3>${state.parts.filter(p=>Number(p.qty)<=Number(p.threshold)).slice(0,6).map(p=>`<div class="pill orange">${esc(p.name)} · ${p.qty} left</div>`).join('') || '<p class="muted">No low stock items.</p>'}</aside></div>`;
+  <div class="job-layout"><section class="panel"><form id="jobForm" class="grid"><input id="jobEditId" type="hidden" value=""><div class="job-card-tools"><div><span class="muted">Mode</span><div class="mode-buttons"><button id="newJobModeBtn" type="button" class="mini-btn">Create New</button><label class="edit-job-select">Edit Existing<select id="jobEditSelect"><option value="">Choose job card...</option>${jobCardOptionsHTML()}</select></label></div></div><div class="job-id-preview"><span>Job Card ID</span><b id="jobCardPreview">${esc(upcomingId)}</b></div></div><div class="grid two"><label>Customer name<input id="jobCustomer" placeholder="Walk-in customer"></label><label>Driver name<input id="jobDriverName" list="jobDriverOptions" placeholder="Type or choose employee"><datalist id="jobDriverOptions">${jobDriverOptionsHTML()}</datalist></label><label>Car model<input id="jobCar" required placeholder="Toyota Corolla"></label><label>Choose from fleet <select id="jobFleetSelect"><option value="">Type manually / not in fleet</option>${fleetVehicleOptionsHTML()}</select></label><div class="plate-fields wide job-plate-row"><label>Plate code<input id="jobPlateCode" required placeholder="R" maxlength="8"></label><label>License number<input id="jobPlateNumber" required placeholder="14534"></label><label>Vehicle status<select id="jobVehicleStatus"><option>In Use</option><option>Idle</option></select></label></div><div id="jobFleetMatches" class="fleet-match-box wide"><span class="muted">Type a plate or choose from fleet above.</span></div><label>Date<input id="jobDate" type="date" value="${today()}" required></label><label>Job status<select id="jobStatus">${JOB_STATUSES.map(x=>`<option>${x}</option>`).join('')}</select></label><div class="staff-row-clean wide"><label>Done by / Staff name<select id="jobDoneBySelect" required><option value="">Choose employee</option>${staffNames().map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('')}</select></label><button type="button" class="mini-btn add-staff-btn" onclick="addStaffFromPrompt()">${I('plus','icon-sm')} Add person</button></div></div><label>What job was done?<textarea id="jobDescription" required placeholder="Oil change, brake pad replacement, AC repair..."></textarea></label><div class="section-title"><h3>Parts Used</h3><button id="addLineBtn" class="mini-btn" type="button">${I('plus','icon-sm')} Add another part</button></div><div id="partLines" class="part-lines"></div><div class="section-title custom-title"><div><h3>Custom Charges</h3><p class="muted small-note">Use this for car wash, diagnosis, towing, polishing, or anything not in inventory.</p></div><button id="addCustomBtn" class="mini-btn" type="button">${I('plus','icon-sm')} Add custom charge</button></div><div id="customCharges" class="custom-lines"></div><div class="section-title labour-title"><div><h3>Labor</h3><p class="muted small-note">Add this after selecting parts and any extra charges.</p></div></div><div class="grid two labour-grid"><label>Labor hours<input id="jobLabourHours" type="number" min="0" step="0.25" value="0" placeholder="2.5"></label><label>Labor charge (AED)<input id="jobLabour" type="number" min="0" step="0.01" value="0" placeholder="50"></label></div><div id="jobSummary" class="summary-box"></div><button class="btn primary large-btn" type="submit">${I('clipboard')} Save Job Card & Update Inventory</button></form></section><aside class="panel"><h3>Simple Rule</h3><p class="muted">Example: if stock has 10 oil filters and you use 1 in this job card, the system automatically changes stock to 9.</p><div class="cost-card"><small>Inventory Cost Value</small><strong>${money(stats().costValue)}</strong></div><h3>Low Stock Now</h3>${state.parts.filter(p=>Number(p.qty)<=Number(p.threshold)).slice(0,6).map(p=>`<div class="pill orange">${esc(p.name)} · ${p.qty} left</div>`).join('') || '<p class="muted">No low stock items.</p>'}</aside></div>`;
 }
 
 function plateHistoryData(){
@@ -1038,7 +1039,7 @@ function usedHTML(){
     ? state.jobs.filter(j => String(j.plate || '').toUpperCase().includes(plateQuery))
     : state.jobs).slice();
   matchingJobs = matchingJobs.filter(j=>{
-    const text=[ensureJobCardId(j),j.plate,j.car,j.description,j.doneBy,compactPartsList(j)].join(' ').toLowerCase();
+    const text=[ensureJobCardId(j),j.plate,j.car,j.vehicleStatus||'',j.description,j.doneBy,compactPartsList(j)].join(' ').toLowerCase();
     return (!q || text.includes(q)) && (statusFilter==='All' || jobStatus(j)===statusFilter) && (staffFilter==='All' || String(j.doneBy||'—')===staffFilter) && (!dateFilter || j.date===dateFilter);
   });
   const usage = usageRowsForJobs(matchingJobs);
@@ -2730,6 +2731,7 @@ function startNewJobCard(){
     const existingLockNotice = document.getElementById('jobLockNotice');
     if(existingLockNotice) existingLockNotice.remove();
     $('jobDate').value=today();
+    if($('jobVehicleStatus')) $('jobVehicleStatus').value = 'In Use';
     if($('jobDoneBySelect')) $('jobDoneBySelect').value = defaultStaffName();
     $('jobCardPreview').textContent=nextJobCardId($('jobDate').value || today());
     $('partLines').innerHTML='';
@@ -2762,6 +2764,7 @@ function setJobFormFromJob(job){
   $('jobCar').value = job.car || '';
   $('jobPlateCode').value = plate.code || '';
   $('jobPlateNumber').value = plate.license || '';
+  if($('jobVehicleStatus')) $('jobVehicleStatus').value = job.vehicleStatus || job.vehicle_status || 'In Use';
   $('jobDate').value = job.date || today();
   $('jobStatus').value = jobStatus(job);
   if($('jobDoneBySelect')) $('jobDoneBySelect').value = job.doneBy || '';
@@ -2827,6 +2830,7 @@ async function saveJob(e){
     phone:'',
     car:$('jobCar').value.trim(),
     plate: combinePlate($('jobPlateCode').value, $('jobPlateNumber').value),
+    vehicleStatus: ($('jobVehicleStatus')?.value || 'In Use'),
     date:$('jobDate').value,
     status:$('jobStatus').value,
     labour,
@@ -2853,7 +2857,7 @@ async function saveJob(e){
 }
 
 async function deleteJob(jobId){ const job=state.jobs.find(j=>j.id===jobId); if(job && !requireJobOverride(job, 'delete it')) return; if(!confirm('Delete this job and return the parts back to inventory?')) return; if(job) job.lines.forEach(l=>{ const p=state.parts.find(x=>x.id===l.partId); if(p) p.qty=Number(p.qty)+Number(l.qty); }); state.jobs=state.jobs.filter(j=>j.id!==jobId); await saveJobs(); await saveParts(); await deleteRemoteRow('jobs', jobId); if(job) await logAction('Deleted job card', 'Job Card', ensureJobCardId(job), `${job.plate || ''} · returned stock`, job.doneBy || state.user?.name); toast('Job deleted and stock returned'); render(); }
-function viewJob(jobId){ const j=state.jobs.find(x=>x.id===jobId); if(!j) return; $('jobDialogTitle').textContent=`${ensureJobCardId(j)} · ${j.plate} · ${j.car}`; $('jobDialogBody').innerHTML=`<div class="part-detail"><p><b>Job Card ID:</b> ${esc(ensureJobCardId(j))}</p><p><b>Date:</b> ${esc(j.date)}</p><p><b>Customer:</b> ${esc(j.customer||'N/A')}</p><p><b>Driver:</b> ${esc(j.driverName || '—')}</p><p><b>Job:</b> ${esc(j.description)}</p><p><b>Status:</b></p><div class="status-inline modal-status-edit">${statusPill(jobStatus(j))}${statusSelect(j.id, jobStatus(j))}</div><p><b>Done by:</b> ${esc(j.doneBy || '—')}</p><p><b>Parts used:</b></p>${j.lines.length?`<div class="table-wrap"><table><thead><tr><th>Part</th><th>Serial Number</th><th>Qty</th><th>Price</th></tr></thead><tbody>${j.lines.map(l=>`<tr><td>${esc(l.name)}</td><td>${esc(l.sku)}</td><td>${l.qty}</td><td>${money(l.price)}</td></tr>`).join('')}</tbody></table></div>`:'<p class="muted">No parts used.</p>'}${(j.customCharges||[]).length?`<p><b>Custom charges:</b></p><div class="table-wrap"><table><thead><tr><th>Description</th><th>Amount</th></tr></thead><tbody>${(j.customCharges||[]).map(c=>`<tr><td>${esc(c.name)}</td><td>${money(c.amount)}</td></tr>`).join('')}</tbody></table></div>`:''}<button type="button" class="mini-btn" onclick="loadJobCardForEdit('${j.id}'); closeJobDialog();">${isJobLocked(j) && !hasJobOverride(j.id) ? 'Unlock / Edit Job Card' : 'Edit Job Card'}</button><div class="summary-box"><span>Labor hours: ${Number(j.labourHours||0)}</span><span>Labor charge: ${money(j.labour)}</span><span>Custom charges: ${money((j.customCharges||[]).reduce((a,c)=>a+Number(c.amount||0),0))}</span><span>Total: ${money(j.total)}</span></div></div>`; $('jobDialog').showModal(); }
+function viewJob(jobId){ const j=state.jobs.find(x=>x.id===jobId); if(!j) return; $('jobDialogTitle').textContent=`${ensureJobCardId(j)} · ${j.plate} · ${j.car}`; $('jobDialogBody').innerHTML=`<div class="part-detail"><p><b>Job Card ID:</b> ${esc(ensureJobCardId(j))}</p><p><b>Date:</b> ${esc(j.date)}</p><p><b>Customer:</b> ${esc(j.customer||'N/A')}</p><p><b>Driver:</b> ${esc(j.driverName || '—')}</p><p><b>Vehicle status:</b> ${esc(j.vehicleStatus || '—')}</p><p><b>Job:</b> ${esc(j.description)}</p><p><b>Status:</b></p><div class="status-inline modal-status-edit">${statusPill(jobStatus(j))}${statusSelect(j.id, jobStatus(j))}</div><p><b>Done by:</b> ${esc(j.doneBy || '—')}</p><p><b>Parts used:</b></p>${j.lines.length?`<div class="table-wrap"><table><thead><tr><th>Part</th><th>Serial Number</th><th>Qty</th><th>Price</th></tr></thead><tbody>${j.lines.map(l=>`<tr><td>${esc(l.name)}</td><td>${esc(l.sku)}</td><td>${l.qty}</td><td>${money(l.price)}</td></tr>`).join('')}</tbody></table></div>`:'<p class="muted">No parts used.</p>'}${(j.customCharges||[]).length?`<p><b>Custom charges:</b></p><div class="table-wrap"><table><thead><tr><th>Description</th><th>Amount</th></tr></thead><tbody>${(j.customCharges||[]).map(c=>`<tr><td>${esc(c.name)}</td><td>${money(c.amount)}</td></tr>`).join('')}</tbody></table></div>`:''}<button type="button" class="mini-btn" onclick="loadJobCardForEdit('${j.id}'); closeJobDialog();">${isJobLocked(j) && !hasJobOverride(j.id) ? 'Unlock / Edit Job Card' : 'Edit Job Card'}</button><div class="summary-box"><span>Labor hours: ${Number(j.labourHours||0)}</span><span>Labor charge: ${money(j.labour)}</span><span>Custom charges: ${money((j.customCharges||[]).reduce((a,c)=>a+Number(c.amount||0),0))}</span><span>Total: ${money(j.total)}</span></div></div>`; $('jobDialog').showModal(); }
 function closeJobDialog(){ $('jobDialog').close(); }
 function viewPartUsage(partId){ const p=state.parts.find(x=>x.id===partId); const jobs=state.jobs.filter(j=>j.lines.some(l=>l.partId===partId)); $('jobDialogTitle').textContent=`Where used: ${p?.name || 'Part'}`; $('jobDialogBody').innerHTML=jobs.length?`<div class="table-wrap"><table><thead><tr><th>Job ID</th><th>Date</th><th>Plate</th><th>Car</th><th>Job</th><th>Status</th><th>Qty</th></tr></thead><tbody>${jobs.map(j=>{const line=j.lines.find(l=>l.partId===partId); return `<tr><td>${esc(j.date)}</td><td>${esc(j.plate)}</td><td>${esc(j.car)}</td><td>${esc(j.description)}</td><td>${statusPill(jobStatus(j))}${statusSelect(j.id, jobStatus(j))}</td><td>${line.qty}</td></tr>`}).join('')}</tbody></table></div>`:'<div class="empty">This part has not been used in any job yet.</div>'; $('jobDialog').showModal(); }
 
@@ -2908,7 +2912,7 @@ function exportPlateHistoryCSV(){
   const { plateQuery, exactPlateJobs } = plateHistoryData();
   if(!plateQuery) return toast('Search a plate first');
   if(!exactPlateJobs.length) return toast('No plate history to export');
-  const rows=[['Job Card ID','Date','Status','Done By','Customer','Driver Name','Plate','Car','Job','Part','Qty','Item Price AED','Parts Line Total AED','Custom Charge','Custom Charge AED','Labor Hours','Labor Charge AED','Total AED']];
+  const rows=[['Job Card ID','Date','Status','Done By','Customer','Driver Name','Plate','Car','Vehicle Status','Job','Part','Qty','Item Price AED','Parts Line Total AED','Custom Charge','Custom Charge AED','Labor Hours','Labor Charge AED','Total AED']];
 
   let grandPartsLineTotal = 0;
   let grandCustomTotal = 0;
@@ -2954,7 +2958,7 @@ function exportPlateHistoryCSV(){
         ]);
       });
     } else {
-      rows.push([ensureJobCardId(j),j.date,jobStatus(j),j.doneBy||'',j.customer,j.driverName||'',j.plate,j.car,j.description,'',0,0,0,customNames,customTotal,laborHours,laborCharge,jobTotal]);
+      rows.push([ensureJobCardId(j),j.date,jobStatus(j),j.doneBy||'',j.customer,j.driverName||'',j.plate,j.car,j.vehicleStatus||'',j.description,'',0,0,0,customNames,customTotal,laborHours,laborCharge,jobTotal]);
     }
   });
 
@@ -3074,14 +3078,14 @@ function importInventoryCSV(){
   input.click();
 }
 function exportJobs(){
-  const rows=[['Job Card ID','Date','Status','Done By','Customer','Driver Name','Plate','Car','Job','Part','Qty','Item Price AED','Parts Line Total AED','Custom Charge','Custom Charge AED','Labor Hours','Labor Charge AED','Total AED']];
+  const rows=[['Job Card ID','Date','Status','Done By','Customer','Driver Name','Plate','Car','Vehicle Status','Job','Part','Qty','Item Price AED','Parts Line Total AED','Custom Charge','Custom Charge AED','Labor Hours','Labor Charge AED','Total AED']];
   state.jobs.forEach(j=>{
     const customNames=(j.customCharges||[]).map(c=>c.name).join('; ');
     const customTotal=(j.customCharges||[]).reduce((a,c)=>a+Number(c.amount||0),0);
     if(j.lines.length){
-      j.lines.forEach(l=>rows.push([ensureJobCardId(j),j.date,jobStatus(j),j.doneBy||'',j.customer,j.driverName||'',j.plate,j.car,j.description,l.name,l.qty,l.price,Number(l.qty)*Number(l.price||0),customNames,customTotal,j.labourHours||0,j.labour,j.total]));
+      j.lines.forEach(l=>rows.push([ensureJobCardId(j),j.date,jobStatus(j),j.doneBy||'',j.customer,j.driverName||'',j.plate,j.car,j.vehicleStatus||'',j.description,l.name,l.qty,l.price,Number(l.qty)*Number(l.price||0),customNames,customTotal,j.labourHours||0,j.labour,j.total]));
     } else {
-      rows.push([ensureJobCardId(j),j.date,jobStatus(j),j.doneBy||'',j.customer,j.driverName||'',j.plate,j.car,j.description,'',0,0,0,customNames,customTotal,j.labourHours||0,j.labour,j.total]);
+      rows.push([ensureJobCardId(j),j.date,jobStatus(j),j.doneBy||'',j.customer,j.driverName||'',j.plate,j.car,j.vehicleStatus||'',j.description,'',0,0,0,customNames,customTotal,j.labourHours||0,j.labour,j.total]);
     }
   });
   downloadCSV('sarab-jobs.csv', rows);
@@ -3092,9 +3096,9 @@ function exportUsage(){
     const customNames=(j.customCharges||[]).map(c=>c.name).join('; ');
     const customTotal=(j.customCharges||[]).reduce((a,c)=>a+Number(c.amount||0),0);
     if(j.lines.length){
-      j.lines.forEach(l=>rows.push([ensureJobCardId(j),j.date,jobStatus(j),j.doneBy||'',j.plate,j.car,j.description,l.name,l.sku,l.qty,l.price,customNames,customTotal,j.labour,j.total]));
+      j.lines.forEach(l=>rows.push([ensureJobCardId(j),j.date,jobStatus(j),j.doneBy||'',j.plate,j.car,j.vehicleStatus||'',j.description,l.name,l.sku,l.qty,l.price,customNames,customTotal,j.labour,j.total]));
     } else {
-      rows.push([ensureJobCardId(j),j.date,jobStatus(j),j.doneBy||'',j.plate,j.car,j.description,'','',0,0,customNames,customTotal,j.labour,j.total]);
+      rows.push([ensureJobCardId(j),j.date,jobStatus(j),j.doneBy||'',j.plate,j.car,j.vehicleStatus||'',j.description,'','',0,0,customNames,customTotal,j.labour,j.total]);
     }
   });
   downloadCSV('sarab-parts-used.csv', rows);
@@ -3106,8 +3110,8 @@ function exportMonthlyReport(){
   state.jobs.filter(j => (j.date || '').slice(0,7) === month).forEach(j=>{
     const customNames=(j.customCharges||[]).map(c=>c.name).join('; ');
     const customTotal=(j.customCharges||[]).reduce((a,c)=>a+Number(c.amount||0),0);
-    if(j.lines.length){ j.lines.forEach(l=>rows.push([ensureJobCardId(j),j.date,jobStatus(j),j.doneBy||'',j.plate,j.car,j.description,l.name,l.qty,l.price,customNames,customTotal,j.labour,j.total])); }
-    else rows.push([ensureJobCardId(j),j.date,jobStatus(j),j.doneBy||'',j.plate,j.car,j.description,'',0,0,customNames,customTotal,j.labour,j.total]);
+    if(j.lines.length){ j.lines.forEach(l=>rows.push([ensureJobCardId(j),j.date,jobStatus(j),j.doneBy||'',j.plate,j.car,j.vehicleStatus||'',j.description,l.name,l.qty,l.price,customNames,customTotal,j.labour,j.total])); }
+    else rows.push([ensureJobCardId(j),j.date,jobStatus(j),j.doneBy||'',j.plate,j.car,j.vehicleStatus||'',j.description,'',0,0,customNames,customTotal,j.labour,j.total]);
   });
   downloadCSV(`sarab-monthly-report-${month}.csv`, rows);
 }

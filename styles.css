@@ -197,7 +197,7 @@ label{font-weight:700;font-size:14px;display:grid;gap:7px}input,select,textarea{
 
 /* v22 Log Job fleet plate selector */
 .job-plate-row {
-  grid-template-columns: 130px minmax(0, 1fr);
+  grid-template-columns: 130px minmax(0, 1fr) 180px;
 }
 .fleet-match-box {
   min-height: 42px;
