@@ -1874,3 +1874,33 @@ th.sortable:hover{color:var(--green-dark);background:var(--green-soft);}
 .manual-part-fields{grid-column:1/-1;display:grid;grid-template-columns:1fr 180px;gap:10px;margin-top:8px;padding-top:10px;border-top:1px dashed var(--line);}
 .manual-part-fields.hidden{display:none!important;}
 @media(max-width:800px){.manual-part-fields{grid-template-columns:1fr;}}
+
+/* v80 job card part search + monthly SALIK */
+.searchable-part-line label:first-child{
+  gap:8px;
+}
+.searchable-part-line .partSearch{
+  min-height:42px;
+  font-weight:650;
+}
+.searchable-part-line .linePart{
+  min-height:44px;
+}
+.salik-month-bar{
+  display:flex;
+  align-items:end;
+  gap:12px;
+  flex-wrap:wrap;
+  margin-bottom:16px;
+}
+.salik-month-bar label{
+  min-width:190px;
+  max-width:240px;
+}
+.salik-month-bar .pill{
+  margin-bottom:7px;
+}
+@media(max-width:800px){
+  .salik-month-bar{align-items:stretch;}
+  .salik-month-bar label,.salik-month-bar .mini-btn{width:100%;max-width:none;}
+}

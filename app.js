@@ -5,7 +5,7 @@
   - If config.js is empty, it falls back to localStorage for local testing.
 */
 const $ = (id) => document.getElementById(id);
-const CONFIG = window.SARAB_CONFIG || {}; 
+const CONFIG = window.SARAB_CONFIG || {};
 const USE_SUPABASE = Boolean(CONFIG.SUPABASE_URL && CONFIG.SUPABASE_ANON_KEY && window.supabase);
 const sb = USE_SUPABASE ? window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY) : null;
 const KEYS = {
@@ -125,7 +125,7 @@ const seedTickets = [
   ...importedComplaintTickets
 ];
 
-const state = { user:null, view:'dashboard', parts:[], jobs:[], vehicles:[], clients:[], employees:[], staff:[], logs:[], tickets:[], filters:{ q:'', category:'All', stock:'All' }, inventorySort:{key:'name',dir:'asc'}, vehicleHistoryQuery:'', fleetFilter:'', clientFilter:'', selectedClient:'', summarySearch:'', activityQuery:'', activitySection:'All', ticketTab:'dashboard', ticketSearch:'', ticketStatus:'All', ticketPriority:'All', fleetSubView:'list', replacementMonth:today().slice(0,7), replacementClient:'', replacementVehicleSearch:'', replacementUndoStack:[], replacementDirty:false, replacementUnlockedMonths:[], vehicleHistorySearch:'', replacements:[], employeeType:'All', employeeSearch:'', editingEmployeeId:'', employeeTicketSearch:'', editingEmployeeTicketId:'', salikSearch:'' };
+const state = { user:null, view:'dashboard', parts:[], jobs:[], vehicles:[], clients:[], employees:[], staff:[], logs:[], tickets:[], filters:{ q:'', category:'All', stock:'All' }, inventorySort:{key:'name',dir:'asc'}, vehicleHistoryQuery:'', fleetFilter:'', clientFilter:'', selectedClient:'', summarySearch:'', activityQuery:'', activitySection:'All', ticketTab:'dashboard', ticketSearch:'', ticketStatus:'All', ticketPriority:'All', fleetSubView:'list', replacementMonth:today().slice(0,7), replacementClient:'', replacementVehicleSearch:'', replacementUndoStack:[], replacementDirty:false, replacementUnlockedMonths:[], vehicleHistorySearch:'', replacements:[], employeeType:'All', employeeSearch:'', editingEmployeeId:'', employeeTicketSearch:'', editingEmployeeTicketId:'', salikSearch:'', salikMonth:today().slice(0,7) };
 function duplicateKey(value){ return String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, ''); }
 function plateDuplicateKey(value){ return String(value || '').trim().toUpperCase().replace(/[^A-Z0-9]+/g, ''); }
 function inventoryDuplicate(part){
@@ -2463,18 +2463,33 @@ function editEmployeeTicket(id){ const t=(state.employeeTickets||[]).find(x=>x.i
 async function removeEmployeeTicket(id){ const t=(state.employeeTickets||[]).find(x=>x.id===id); if(!t || !confirm('Remove this employee ticket?')) return; state.employeeTickets=state.employeeTickets.filter(x=>x.id!==id); if(USE_SUPABASE) await deleteRemoteRow('employee_tickets', id); await saveEmployeeTickets(); toast('Ticket removed'); render(); }
 function exportEmployeeTicketsCSV(){ downloadCSV('sarab-employee-tickets.csv', [['Date','Employee','Category','Status','Approval Status','Approved At','Approved By','Leave Start Date','Leave End Date','Leave Duration','Return To Duty Date','Overstay Alert','Notes'], ...(state.employeeTickets||[]).map(t=>[t.date,t.employee,t.category,t.status,t.approvalStatus||'Pending Approval',t.approvedAt||'',t.approvedBy||'',t.leaveStartDate||'',t.leaveEndDate||'',leaveDurationText(t.leaveStartDate,t.leaveEndDate),t.returnToDutyDate||'',ticketLeaveOverstay(t)?`Yes - ${ticketOverstayDays(t)} day${ticketOverstayDays(t)===1?'':'s'}`:'No',t.notes])]); }
 
-function salikRowForVehicle(v){ return (state.salik||[]).find(r=>r.vehicleId===v.id) || { id:`salik_${v.id}`, vehicleId:v.id, incurred:0, crossCharged:0 }; }
+function currentSalikMonth(){ return state.salikMonth || today().slice(0,7); }
+function monthLabel(ym){
+  const [y,m]=String(ym||today().slice(0,7)).split('-').map(Number);
+  return new Date(y, (m||1)-1, 1).toLocaleDateString('en-AE',{month:'long',year:'numeric'});
+}
+function shiftSalikMonth(delta){
+  const [y,m]=currentSalikMonth().split('-').map(Number);
+  const d=new Date(y, (m||1)-1 + delta, 1);
+  state.salikMonth=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+  render();
+}
+function salikRowForVehicle(v, month=currentSalikMonth()){
+  const normalizedMonth = month || today().slice(0,7);
+  return (state.salik||[]).find(r=>r.vehicleId===v.id && (r.month || today().slice(0,7))===normalizedMonth) || { id:`salik_${v.id}_${normalizedMonth}`, vehicleId:v.id, month:normalizedMonth, incurred:0, crossCharged:0 };
+}
 function salikHTML(){
   const q=String(state.salikSearch||'').toLowerCase();
+  const month=currentSalikMonth();
   const vehicles=state.vehicles.filter(v=>!q||[v.plate,v.modelNumber,fleetClientName(v),v.status].join(' ').toLowerCase().includes(q));
-  const totalIncurred=state.vehicles.reduce((a,v)=>a+Number(salikRowForVehicle(v).incurred||0),0);
-  const totalCharged=state.vehicles.reduce((a,v)=>a+Number(salikRowForVehicle(v).crossCharged||0),0);
-  return `<div class="page-head"><div><h1>Fleet</h1><p class="muted">SALIK incurred and cross-charged by vehicle.</p></div><div class="head-actions"><button class="btn light" onclick="exportSalikCSV()">${I('download','icon-sm')} Export CSV</button><button class="btn primary" onclick="saveSalikTable()">Save SALIK</button></div></div>${fleetSubnavHeader('salik')}<section class="panel"><div class="kpis"><section class="card compact-kpi"><b>${money(totalIncurred)}</b><span>Total SALIK incurred</span></section><section class="card compact-kpi"><b>${money(totalCharged)}</b><span>Total cross charged</span></section><section class="card compact-kpi"><b>${money(totalCharged-totalIncurred)}</b><span>Difference</span></section></div><input id="salikSearch" class="search-input" placeholder="Search plate, vehicle, client..." value="${esc(state.salikSearch||'')}" oninput="state.salikSearch=this.value; renderAndRefocus('salikSearch')">${salikTable(vehicles)}</section>`;
+  const totalIncurred=state.vehicles.reduce((a,v)=>a+Number(salikRowForVehicle(v, month).incurred||0),0);
+  const totalCharged=state.vehicles.reduce((a,v)=>a+Number(salikRowForVehicle(v, month).crossCharged||0),0);
+  return `<div class="page-head"><div><h1>Fleet</h1><p class="muted">SALIK incurred and cross-charged by vehicle for ${esc(monthLabel(month))}.</p></div><div class="head-actions"><button class="btn light" onclick="exportSalikCSV()">${I('download','icon-sm')} Export CSV</button><button class="btn primary" onclick="saveSalikTable()">Save SALIK</button></div></div>${fleetSubnavHeader('salik')}<section class="panel"><div class="salik-month-bar"><button class="mini-btn" onclick="shiftSalikMonth(-1)">Previous month</button><label>Month<input id="salikMonth" type="month" value="${esc(month)}" onchange="state.salikMonth=this.value||today().slice(0,7); render()"></label><button class="mini-btn" onclick="shiftSalikMonth(1)">Next month</button><span class="pill green">Viewing ${esc(monthLabel(month))}</span></div><div class="kpis"><section class="card compact-kpi"><b>${money(totalIncurred)}</b><span>Total SALIK incurred</span></section><section class="card compact-kpi"><b>${money(totalCharged)}</b><span>Total cross charged</span></section><section class="card compact-kpi"><b>${money(totalCharged-totalIncurred)}</b><span>Difference</span></section></div><input id="salikSearch" class="search-input" placeholder="Search plate, vehicle, client..." value="${esc(state.salikSearch||'')}" oninput="state.salikSearch=this.value; renderAndRefocus('salikSearch')">${salikTable(vehicles, month)}</section>`;
 }
-function salikTable(vehicles){ return `<div class="table-wrap"><table><tr><th>Plate</th><th>Vehicle</th><th>Client</th><th>Status</th><th>SALIK incurred</th><th>SALIK cross charged</th><th>Difference</th></tr><tbody>${vehicles.map(v=>{ const r=salikRowForVehicle(v); return `<tr><td><span class="fleet-plate">${esc(v.plate||'—')}</span></td><td><b>${esc(v.modelNumber||'Vehicle')}</b></td><td>${esc(fleetClientName(v))}</td><td>${esc(v.status||'—')}</td><td><input class="salik-input" data-vehicle="${esc(v.id)}" data-field="incurred" type="number" min="0" step="0.01" value="${Number(r.incurred||0)}" oninput="stageSalikInput(this)"></td><td><input class="salik-input" data-vehicle="${esc(v.id)}" data-field="crossCharged" type="number" min="0" step="0.01" value="${Number(r.crossCharged||0)}" oninput="stageSalikInput(this)"></td><td><b class="${Number(r.crossCharged||0)-Number(r.incurred||0)>=0?'green-text':'orange'}">${money(Number(r.crossCharged||0)-Number(r.incurred||0))}</b></td></tr>`; }).join('')}</tbody></table></div>`; }
-function stageSalikInput(input){ const vehicleId=input.dataset.vehicle; const field=input.dataset.field; if(!state.salik) state.salik=[]; let r=state.salik.find(x=>x.vehicleId===vehicleId); if(!r){ r={id:`salik_${vehicleId}`,vehicleId,incurred:0,crossCharged:0}; state.salik.push(r); } r[field]=Number(input.value||0); r.updatedAt=new Date().toISOString(); }
-async function saveSalikTable(){ await saveSalik(); await logAction('Saved SALIK table','Fleet','SALIK','Updated incurred/cross-charged values',state.user?.name); toast('SALIK saved'); render(); }
-function exportSalikCSV(){ const rows=[['Plate','Vehicle','Client','Status','SALIK Incurred AED','SALIK Cross Charged AED','Difference AED']]; state.vehicles.forEach(v=>{ const r=salikRowForVehicle(v); rows.push([v.plate||'',v.modelNumber||'',fleetClientName(v),v.status||'',Number(r.incurred||0),Number(r.crossCharged||0),Number(r.crossCharged||0)-Number(r.incurred||0)]); }); downloadCSV('sarab-salik.csv', rows); }
+function salikTable(vehicles, month=currentSalikMonth()){ return `<div class="table-wrap"><table><tr><th>Plate</th><th>Vehicle</th><th>Client</th><th>Status</th><th>SALIK incurred</th><th>SALIK cross charged</th><th>Difference</th></tr><tbody>${vehicles.map(v=>{ const r=salikRowForVehicle(v, month); return `<tr><td><span class="fleet-plate">${esc(v.plate||'—')}</span></td><td><b>${esc(v.modelNumber||'Vehicle')}</b></td><td>${esc(fleetClientName(v))}</td><td>${esc(v.status||'—')}</td><td><input class="salik-input" data-vehicle="${esc(v.id)}" data-month="${esc(month)}" data-field="incurred" type="number" min="0" step="0.01" value="${Number(r.incurred||0)}" oninput="stageSalikInput(this)"></td><td><input class="salik-input" data-vehicle="${esc(v.id)}" data-month="${esc(month)}" data-field="crossCharged" type="number" min="0" step="0.01" value="${Number(r.crossCharged||0)}" oninput="stageSalikInput(this)"></td><td><b class="${Number(r.crossCharged||0)-Number(r.incurred||0)>=0?'green-text':'orange'}">${money(Number(r.crossCharged||0)-Number(r.incurred||0))}</b></td></tr>`; }).join('')}</tbody></table></div>`; }
+function stageSalikInput(input){ const vehicleId=input.dataset.vehicle; const field=input.dataset.field; const month=input.dataset.month || currentSalikMonth(); if(!state.salik) state.salik=[]; let r=state.salik.find(x=>x.vehicleId===vehicleId && (x.month || today().slice(0,7))===month); if(!r){ r={id:`salik_${vehicleId}_${month}`,vehicleId,month,incurred:0,crossCharged:0}; state.salik.push(r); } r.month=month; r[field]=Number(input.value||0); r.updatedAt=new Date().toISOString(); }
+async function saveSalikTable(){ await saveSalik(); await logAction('Saved SALIK table','Fleet','SALIK',`Updated ${monthLabel(currentSalikMonth())} SALIK values`,state.user?.name); toast('SALIK saved'); render(); }
+function exportSalikCSV(){ const month=currentSalikMonth(); const rows=[['Month','Plate','Vehicle','Client','Status','SALIK Incurred AED','SALIK Cross Charged AED','Difference AED']]; state.vehicles.forEach(v=>{ const r=salikRowForVehicle(v, month); rows.push([month,v.plate||'',v.modelNumber||'',fleetClientName(v),v.status||'',Number(r.incurred||0),Number(r.crossCharged||0),Number(r.crossCharged||0)-Number(r.incurred||0)]); }); downloadCSV(`sarab-salik-${month}.csv`, rows); }
 
 function settingsHTML(){ return `<div class="page-head"><div><h1>Settings</h1><p class="muted">Settings are currently disabled for garage staff.</p></div></div><section class="card settings-card settings-disabled" aria-disabled="true"><div class="disabled-badge">Disabled</div><h2>Settings locked</h2><p class="muted">This section is greyed out to avoid accidental changes. Only the app owner should update system settings from the code or Supabase dashboard.</p><div class="settings-placeholder"><p><b>Current user</b></p><p>${esc(state.user?.name||'Sarab Al Madina Team')}<br>${esc(state.user?.email||'')}</p><p>Storage mode: ${USE_SUPABASE ? 'Supabase shared database' : 'localStorage local demo'}.</p></div></section>`; }
 
@@ -2560,40 +2575,44 @@ function bindPageEvents(){
   if($('fleetForm')){ $('fleetForm').onsubmit=saveFleetVehicle; if($('fleetSearch')) $('fleetSearch').oninput=e=>{state.fleetFilter=e.target.value; renderFleetResults();}; if($('fleetOwnership')) $('fleetOwnership').onchange=toggleFleetVendorField; if($('fleetHasActivePermit')) $('fleetHasActivePermit').onchange=toggleFleetPermitFields; if($('fleetStatus')) $('fleetStatus').onchange=toggleFleetVendorField; if($('fleetModel')) $('fleetModel').onblur=()=>{ const y=extractYearFromModel($('fleetModel').value); if(y && !$('fleetYear').value){ $('fleetYear').value=y; $('fleetModel').value=modelWithoutYear($('fleetModel').value); } }; toggleFleetVendorField(); }
   if($('jobForm')){ $('addLineBtn').onclick=()=>addPartLine(); $('addCustomBtn').onclick=()=>addCustomCharge(); if($('newJobModeBtn')) $('newJobModeBtn').onclick=startNewJobCard; if($('jobEditSelect')) $('jobEditSelect').onchange=e=>{ if(e.target.value) loadJobCardForEdit(e.target.value); }; if($('jobDate')) $('jobDate').onchange=()=>{ if(!$('jobEditId').value) $('jobCardPreview').textContent=nextJobCardId($('jobDate').value || today()); }; $('jobLabour').oninput=updateJobSummary; $('jobLabourHours').oninput=updateJobSummary; if($('jobFleetSelect')) $('jobFleetSelect').onchange=e=>{ if(e.target.value) fillJobFromFleet(e.target.value); }; if($('jobDoneBySelect')) $('jobDoneBySelect').onchange=e=>{ if(e.target.value) addStaffName(e.target.value); }; if($('jobPlateCode')) $('jobPlateCode').oninput=updateFleetPlateSuggestions; if($('jobPlateNumber')) $('jobPlateNumber').oninput=updateFleetPlateSuggestions; addPartLine(); addCustomCharge('', 0); updateFleetPlateSuggestions(); updateJobSummary(); $('jobForm').onsubmit=saveJob; }
 }
-function addPartLine(selected='', qty=1, manualName='', manualPrice=0){
+function partSelectOptionsHTML(selected='', query=''){
+  const q=String(query||'').trim().toLowerCase();
+  const parts=state.parts.filter(p=>!q || [p.name,p.sku,p.category,p.supplier,p.fits].join(' ').toLowerCase().includes(q));
+  return `<option value="">Choose part...</option>${parts.map(p=>`<option value="${p.id}" ${p.id===selected?'selected':''}>${esc(p.name)} — stock ${p.qty} — selling ${money(p.price)}</option>`).join('')}`;
+}
+function addPartLine(selected='', qty=1){
   const wrap=$('partLines');
   if(!wrap) return;
-  const isManual = selected === '__manual__' || (!selected && manualName);
   const selectedPart = state.parts.find(p=>p.id===selected);
   const div=document.createElement('div');
-  div.className='part-line';
-  div.innerHTML=`<label>Part<select class="linePart"><option value="">Choose part...</option><option value="__manual__" ${isManual?'selected':''}>Manual part / not in inventory</option>${state.parts.map(p=>`<option value="${p.id}" ${p.id===selected?'selected':''}>${esc(p.name)} — stock ${p.qty} — selling ${money(p.price)}</option>`).join('')}</select><small class="line-price-note">${selectedPart ? `Selling price: ${money(selectedPart.price)} each` : ''}</small></label><label>Qty<input class="lineQty" type="number" min="1" step="1" value="${qty || 1}"></label><button type="button" class="btn danger">Remove</button><div class="manual-part-fields ${isManual?'':'hidden'}"><label>Manual part name<input class="manualPartName" placeholder="Part name" value="${esc(manualName || '')}"></label><label>Selling price AED<input class="manualPartPrice" type="number" min="0" step="0.01" placeholder="0" value="${manualPrice || ''}"></label></div>`;
+  div.className='part-line searchable-part-line';
+  div.innerHTML=`<label>Part<input class="partSearch" placeholder="Search part name, serial number, supplier..." value="${selectedPart ? esc(selectedPart.name) : ''}"><select class="linePart">${partSelectOptionsHTML(selected, selectedPart ? selectedPart.name : '')}</select><small class="line-price-note">${selectedPart ? `Selling price: ${money(selectedPart.price)} each` : ''}</small></label><label>Qty<input class="lineQty" type="number" min="1" step="1" value="${qty || 1}"></label><button type="button" class="btn danger">Remove</button>`;
   const select = div.querySelector('.linePart');
+  const search = div.querySelector('.partSearch');
   const qtyInput = div.querySelector('.lineQty');
   const note = div.querySelector('.line-price-note');
-  const manualBox = div.querySelector('.manual-part-fields');
   const refreshLine = () => {
-    const isManualNow = select.value === '__manual__';
-    manualBox.classList.toggle('hidden', !isManualNow);
     const part = state.parts.find(p=>p.id===select.value);
     const q = Number(qtyInput.value || 0);
-    if(isManualNow){
-      const manualPrice = Number(div.querySelector('.manualPartPrice')?.value || 0);
-      note.textContent = manualPrice ? `Manual selling price: ${money(manualPrice)} each${q > 1 ? ` · Line total: ${money(manualPrice * q)}` : ''}` : 'Manual part will not reduce inventory stock.';
-    } else {
-      note.textContent = part ? `Selling price: ${money(part.price)} each${q > 1 ? ` · Line total: ${money(Number(part.price || 0) * q)}` : ''}` : '';
-    }
+    note.textContent = part ? `Selling price: ${money(part.price)} each${q > 1 ? ` · Line total: ${money(Number(part.price || 0) * q)}` : ''}` : '';
     updateJobSummary();
   };
   div.querySelector('button').onclick=()=>{div.remove(); updateJobSummary();};
-  select.onchange=refreshLine;
+  search.oninput=()=>{
+    const current = select.value;
+    select.innerHTML = partSelectOptionsHTML(current, search.value);
+    if(current && ![...select.options].some(o=>o.value===current)) select.value='';
+    const exact = state.parts.find(p=>`${p.name}`.toLowerCase()===search.value.trim().toLowerCase() || `${p.sku}`.toLowerCase()===search.value.trim().toLowerCase());
+    if(exact){ select.innerHTML = partSelectOptionsHTML(exact.id, search.value); select.value=exact.id; }
+    refreshLine();
+  };
+  select.onchange=()=>{ const part=state.parts.find(p=>p.id===select.value); if(part) search.value=part.name; refreshLine(); };
   qtyInput.oninput=refreshLine;
-  div.querySelectorAll('.manualPartName,.manualPartPrice').forEach(x=>x.oninput=refreshLine);
   wrap.appendChild(div);
   refreshLine();
 }
 function addCustomCharge(name='', amount=0){ const wrap=$('customCharges'); if(!wrap) return; const div=document.createElement('div'); div.className='custom-line'; div.innerHTML=`<label>Charge name<input class="customName" placeholder="Car wash" value="${esc(name)}"></label><label>Amount AED<input class="customAmount" type="number" min="0" step="0.01" placeholder="20" value="${amount || ''}"></label><button type="button" class="btn danger">Remove</button>`; div.querySelector('button').onclick=()=>{div.remove(); updateJobSummary();}; div.querySelectorAll('input').forEach(x=>x.oninput=updateJobSummary); wrap.appendChild(div); updateJobSummary(); }
-function getJobLines(){ return [...document.querySelectorAll('.part-line')].map(row=>{ const selected=row.querySelector('.linePart').value; const qty=Number(row.querySelector('.lineQty').value || 0); if(selected==='__manual__'){ const name=row.querySelector('.manualPartName')?.value.trim(); const price=Number(row.querySelector('.manualPartPrice')?.value || 0); return name && qty>0 ? {partId:'manual_'+id('line'), name, sku:'Manual', qty, price, manual:true} : null; } const p=state.parts.find(x=>x.id===selected); return p?{partId:p.id,name:p.name,sku:p.sku,qty,price:Number(p.price)}:null; }).filter(x=>x&&x.qty>0); }
+function getJobLines(){ return [...document.querySelectorAll('.part-line')].map(row=>{ const selected=row.querySelector('.linePart')?.value; const qty=Number(row.querySelector('.lineQty')?.value || 0); const p=state.parts.find(x=>x.id===selected); return p?{partId:p.id,name:p.name,sku:p.sku,qty,price:Number(p.price)}:null; }).filter(x=>x&&x.qty>0); }
 function getCustomCharges(){ return [...document.querySelectorAll('.custom-line')].map(row=>({ name: row.querySelector('.customName').value.trim(), amount: Number(row.querySelector('.customAmount').value || 0) })).filter(x=>x.name && x.amount>0); }
 function updateJobSummary(){ const lines=getJobLines(); const customCharges=getCustomCharges(); const partsTotal=lines.reduce((a,l)=>a+(l.qty*l.price),0); const customTotal=customCharges.reduce((a,c)=>a+c.amount,0); const labour=Number($('jobLabour')?.value||0); const hours=Number($('jobLabourHours')?.value||0); if($('jobSummary')) $('jobSummary').innerHTML=`<span>Parts total: ${money(partsTotal)}</span><span>Labor hours: ${hours || 0}</span><span>Labor charge: ${money(labour)}</span><span>Custom charges: ${money(customTotal)}</span><span>Job total: ${money(partsTotal+labour+customTotal)}</span>`; }
 
