@@ -5,7 +5,7 @@
   - If config.js is empty, it falls back to localStorage for local testing.
 */
 const $ = (id) => document.getElementById(id);
-const CONFIG = window.SARAB_CONFIG || {};
+const CONFIG = window.SARAB_CONFIG || {}; 
 const USE_SUPABASE = Boolean(CONFIG.SUPABASE_URL && CONFIG.SUPABASE_ANON_KEY && window.supabase);
 const sb = USE_SUPABASE ? window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY) : null;
 const KEYS = {
