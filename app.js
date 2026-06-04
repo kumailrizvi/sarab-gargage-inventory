@@ -905,7 +905,6 @@ async function addVendorFromPrompt(){
   const clean = String(name||'').trim();
   if(!clean) return;
   await logAction('Added vendor','Vendors',clean,clean,state.user?.name);
-  if($('restockVendor')) $('restockVendor').value = clean;
   if($('vendorOptions')) $('vendorOptions').innerHTML = vendorDatalistHTML();
   if($('restockVendorSelect')) $('restockVendorSelect').innerHTML = vendorOptionsHTML(clean);
   toast('Vendor added');
@@ -3023,7 +3022,6 @@ function openRestockDialog(partId=''){
   if($('restockOldPrice')) $('restockOldPrice').textContent = `Current buying price: ${money(p.cost || 0)}`;
   if($('vendorOptions')) $('vendorOptions').innerHTML = vendorDatalistHTML();
   if($('restockVendorSelect')) $('restockVendorSelect').innerHTML = vendorOptionsHTML('');
-  if($('restockVendor')) $('restockVendor').value = '';
   $('restockQty').value=1;
   if($('restockNewPrice')) $('restockNewPrice').value='';
   $('restockDialog').showModal();
@@ -3034,7 +3032,7 @@ async function saveRestock(e){
   const qtyAdded = Number($('restockQty').value||0);
   const p=state.parts.find(x=>x.id===$('restockPart').value);
   if(!p) return toast('Part not found');
-  const vendor = String($('restockVendor')?.value || '').trim();
+  const vendor = String($('restockVendorSelect')?.value || '').trim();
   const oldPrice = Number(p.cost || 0);
   const newPriceRaw = $('restockNewPrice')?.value;
   const buyingPrice = newPriceRaw === '' || newPriceRaw === null || newPriceRaw === undefined ? oldPrice : Number(newPriceRaw || 0);
@@ -3245,27 +3243,53 @@ function importInventoryCSV(){
   input.click();
 }
 function exportJobs(){
-  const rows=[['Job Card ID','Date','Status','Done By','Customer','Driver Name','Plate','Car','Vehicle Status','Job','Part','Qty','Item Price AED','Parts Line Total AED','Custom Charge','Custom Charge AED','Labor Hours','Labor Charge AED','Total AED']];
+  const rows=[['Job Card ID','Date','Job Card Status','Done By','Customer','Driver Name','Plate','Car','Vehicle Status','Job Description','Part','Qty','Item Price AED','Parts Line Total AED','Custom Charge','Custom Charge AED','Labor Hours','Labor Charge AED','Job Total AED']];
   state.jobs.forEach(j=>{
     const customNames=(j.customCharges||[]).map(c=>c.name).join('; ');
     const customTotal=(j.customCharges||[]).reduce((a,c)=>a+Number(c.amount||0),0);
+    const laborHours=Number(j.labourHours||0);
+    const laborCharge=Number(j.labour||0);
+    const jobTotal=Number(j.total||0);
     if(j.lines.length){
-      j.lines.forEach(l=>rows.push([ensureJobCardId(j),j.date,jobStatus(j),j.doneBy||'',j.customer,j.driverName||'',j.plate,j.car,j.vehicleStatus||'',j.description,l.name,l.qty,l.price,Number(l.qty)*Number(l.price||0),customNames,customTotal,j.labourHours||0,j.labour,j.total]));
+      j.lines.forEach((l,index)=>{
+        const lineTotal = Number(l.qty||0)*Number(l.price||0);
+        rows.push([
+          ensureJobCardId(j), j.date, jobStatus(j), j.doneBy||'', j.customer, j.driverName||'', j.plate, j.car, j.vehicleStatus||'', j.description,
+          l.name, l.qty, l.price, lineTotal,
+          index===0 ? customNames : '',
+          index===0 ? customTotal : '',
+          index===0 ? laborHours : '',
+          index===0 ? laborCharge : '',
+          index===0 ? jobTotal : ''
+        ]);
+      });
     } else {
-      rows.push([ensureJobCardId(j),j.date,jobStatus(j),j.doneBy||'',j.customer,j.driverName||'',j.plate,j.car,j.vehicleStatus||'',j.description,'',0,0,0,customNames,customTotal,j.labourHours||0,j.labour,j.total]);
+      rows.push([ensureJobCardId(j),j.date,jobStatus(j),j.doneBy||'',j.customer,j.driverName||'',j.plate,j.car,j.vehicleStatus||'',j.description,'',0,0,0,customNames,customTotal,laborHours,laborCharge,jobTotal]);
     }
   });
   downloadCSV('sarab-jobs.csv', rows);
 }
 function exportUsage(){
-  const rows=[['Job Card ID','Date','Status','Done By','Plate','Car','Job','Part','Serial Number','Qty','Item Price AED','Custom Charge','Custom Charge AED','Labor Charge AED','Total AED']];
+  const rows=[['Job Card ID','Date','Job Card Status','Done By','Plate','Car','Vehicle Status','Job Description','Part','Serial Number','Qty','Item Price AED','Parts Line Total AED','Custom Charge','Custom Charge AED','Labor Charge AED','Job Total AED']];
   state.jobs.forEach(j=>{
     const customNames=(j.customCharges||[]).map(c=>c.name).join('; ');
     const customTotal=(j.customCharges||[]).reduce((a,c)=>a+Number(c.amount||0),0);
+    const laborCharge=Number(j.labour||0);
+    const jobTotal=Number(j.total||0);
     if(j.lines.length){
-      j.lines.forEach(l=>rows.push([ensureJobCardId(j),j.date,jobStatus(j),j.doneBy||'',j.plate,j.car,j.vehicleStatus||'',j.description,l.name,l.sku,l.qty,l.price,customNames,customTotal,j.labour,j.total]));
+      j.lines.forEach((l,index)=>{
+        const lineTotal = Number(l.qty||0)*Number(l.price||0);
+        rows.push([
+          ensureJobCardId(j), j.date, jobStatus(j), j.doneBy||'', j.plate, j.car, j.vehicleStatus||'', j.description,
+          l.name, l.sku, l.qty, l.price, lineTotal,
+          index===0 ? customNames : '',
+          index===0 ? customTotal : '',
+          index===0 ? laborCharge : '',
+          index===0 ? jobTotal : ''
+        ]);
+      });
     } else {
-      rows.push([ensureJobCardId(j),j.date,jobStatus(j),j.doneBy||'',j.plate,j.car,j.vehicleStatus||'',j.description,'','',0,0,customNames,customTotal,j.labour,j.total]);
+      rows.push([ensureJobCardId(j),j.date,jobStatus(j),j.doneBy||'',j.plate,j.car,j.vehicleStatus||'',j.description,'','',0,0,0,customNames,customTotal,laborCharge,jobTotal]);
     }
   });
   downloadCSV('sarab-parts-used.csv', rows);

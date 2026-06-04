@@ -129,14 +129,12 @@
       <input id="restockPart" type="hidden" />
       <div class="restock-part-preview"><span>Part</span><b id="restockPartName">—</b><small id="restockOldPrice" class="muted"></small></div>
       <label>Vendor Name
-        <div class="vendor-input-row vendor-input-row-stacked">
-          <input id="restockVendor" list="vendorOptions" placeholder="Type vendor name or choose below" autocomplete="off" />
-          <select id="restockVendorSelect" onchange="if(this.value) document.getElementById('restockVendor').value=this.value">
+        <div class="vendor-input-row vendor-input-row-single">
+          <select id="restockVendorSelect">
             <option value="">Choose vendor...</option>
           </select>
           <button type="button" class="mini-btn" onclick="addVendorFromPrompt()">+ Add vendor</button>
         </div>
-        <datalist id="vendorOptions"></datalist>
       </label>
       <div class="grid two">
         <label>Add quantity<input id="restockQty" type="number" min="1" step="1" value="1" required /></label>
