@@ -405,16 +405,33 @@ async function refreshReplacementLocks(renderIfChanged=false){
   try{
     const rows = await fetchRows('replacements', { quiet:true });
     const remoteLocks = (rows || []).filter(r => r && (r.kind === 'lock' || r.type === 'lock' || r.locked));
+    const remoteLockIds = new Set(remoteLocks.map(r => r.id || replacementLockId(r.month)));
     let changed = false;
+
+    // Remove local lock rows that no longer exist in Supabase.
+    // This makes an unlock by one user unlock the month for everyone else too.
+    const before = (state.replacements || []).length;
+    state.replacements = (state.replacements || []).filter(r => {
+      const isLock = r && (r.kind === 'lock' || r.type === 'lock' || r.locked);
+      if(!isLock) return true;
+      const lockId = r.id || replacementLockId(r.month);
+      return remoteLockIds.has(lockId);
+    });
+    if(state.replacements.length !== before) changed = true;
+
+    // Add/update remote locks locally.
     for(const lock of remoteLocks){
-      const idx = (state.replacements || []).findIndex(r => r.id === lock.id || ((r.kind==='lock' || r.type==='lock') && r.month === lock.month));
+      const lockId = lock.id || replacementLockId(lock.month);
+      const normalizedLock = { ...lock, id: lockId, type: 'lock', kind: 'lock', locked: true };
+      const idx = (state.replacements || []).findIndex(r => (r.id || replacementLockId(r.month)) === lockId);
       if(idx >= 0){
-        if(JSON.stringify(state.replacements[idx]) !== JSON.stringify(lock)){ state.replacements[idx] = lock; changed = true; }
+        if(JSON.stringify(state.replacements[idx]) !== JSON.stringify(normalizedLock)){ state.replacements[idx] = normalizedLock; changed = true; }
       } else {
-        state.replacements.push(lock); changed = true;
+        state.replacements.push(normalizedLock); changed = true;
       }
     }
-    if(changed){ markRemoteSnapshot(); if(renderIfChanged && state.view === 'replacements') render(); }
+
+    if(changed){ markRemoteSnapshot(); if(renderIfChanged && state.fleetSubView === 'replacements') render(); }
     return changed;
   }catch(err){ console.warn('Could not refresh replacement locks', err); return false; }
 }
@@ -1487,35 +1504,47 @@ function unlockReplacementMonth(){
 
 const REPLACEMENT_LOCK_PIN = '0408';
 function replacementLockId(month){ return `rep_lock_${String(month || '').replace(/[^0-9-]/g,'_')}`; }
-function replacementLockRow(month){ return (state.replacements || []).find(r => r.id === replacementLockId(month) || ((r.kind==='lock' || r.type==='lock') && r.month===month)); }
+function replacementLockRow(month){ return (state.replacements || []).find(r => r && (r.id === replacementLockId(month) || ((r.kind==='lock' || r.type==='lock' || r.locked) && r.month===month))); }
 function isReplacementMonthLocked(month){ const r=replacementLockRow(month); return Boolean(r && (r.locked || r.kind==='lock' || r.type==='lock')); }
-function canEditReplacementMonth(month){ return !isReplacementMonthLocked(month) || sessionStorage.getItem(`replacement_unlock_${month}`) === 'yes'; }
+function canEditReplacementMonth(month){ return !isReplacementMonthLocked(month); }
 function replacementLockNotice(month){
   if(!isReplacementMonthLocked(month)) return '';
-  const unlocked = canEditReplacementMonth(month);
-  return `<div class="lock-notice ${unlocked?'unlocked':''}"><b>${unlocked?'Override active':'Month locked'}</b><span>${unlocked?'You can edit this month until the page is refreshed.':'This month cannot be edited unless it is unlocked.'}</span>${!unlocked?`<button class="mini-btn" onclick="unlockReplacementMonth()">Unlock</button>`:''}</div>`;
+  return `<div class="lock-notice"><b>Month locked</b><span>This month is locked for everyone. Unlocking with PIN will unlock it for everyone.</span><button class="mini-btn" onclick="unlockReplacementMonth()">Unlock</button></div>`;
 }
 async function lockReplacementMonth(){
   const month = state.replacementMonth || today().slice(0,7);
-  if(!confirm(`Lock ${month}? Once locked, it cannot be edited without approval.`)) return;
-  const row = { id: replacementLockId(month), type:'lock', month, locked:true, lockedAt:new Date().toISOString(), lockedBy:state.user?.name||state.user?.email||'—' };
+  await refreshReplacementLocks(false);
+  if(isReplacementMonthLocked(month)){ toast('Month is already locked for everyone'); render(); return; }
+  if(!confirm(`Lock ${month} for everyone? Once locked, no user can edit it until it is unlocked with approval.`)) return;
+  const row = { id: replacementLockId(month), type:'lock', kind:'lock', month, locked:true, lockedAt:new Date().toISOString(), lockedBy:state.user?.name||state.user?.email||'—' };
   const idx = (state.replacements || []).findIndex(r=>r.id===row.id);
   if(idx>=0) state.replacements[idx]=row; else state.replacements.push(row);
-  await saveReplacements();
-  sessionStorage.removeItem(`replacement_unlock_${month}`);
-  toast(`Month ${month} locked`);
+  if(USE_SUPABASE){
+    const { error } = await sb.from('replacements').upsert([{ id: row.id, data: row, updated_at: new Date().toISOString() }]);
+    if(error){ console.warn('Could not lock replacement month globally', error); toast('Could not lock month globally. Check Supabase schema.'); return; }
+    markRemoteSnapshot();
+  } else {
+    set(KEYS.replacements, state.replacements);
+  }
+  toast(`Month ${month} locked for everyone`);
   render();
 }
-function unlockReplacementMonth(){
+async function unlockReplacementMonth(){
   const month = state.replacementMonth || today().slice(0,7);
-  const pin = prompt('Enter approval PIN to edit this locked month');
-  if(pin === REPLACEMENT_LOCK_PIN){
-    sessionStorage.setItem(`replacement_unlock_${month}`, 'yes');
-    toast('Override accepted. You can edit this month now.');
-    render();
-  } else if(pin !== null){
-    toast('Wrong PIN');
+  const pin = prompt('Enter approval PIN to unlock this month');
+  if(pin !== REPLACEMENT_LOCK_PIN){ if(pin !== null) toast('Wrong PIN'); return; }
+  const lockId = replacementLockId(month);
+  state.replacements = (state.replacements || []).filter(r => !(r && (r.id === lockId || ((r.kind==='lock' || r.type==='lock' || r.locked) && r.month===month))));
+  sessionStorage.removeItem(`replacement_unlock_${month}`);
+  if(USE_SUPABASE){
+    const { error } = await sb.from('replacements').delete().eq('id', lockId);
+    if(error){ console.warn('Could not unlock replacement month globally', error); toast('Could not unlock month globally.'); return; }
+    markRemoteSnapshot();
+  } else {
+    set(KEYS.replacements, state.replacements);
   }
+  toast(`Month ${month} unlocked for everyone`);
+  render();
 }
 function guardReplacementEdit(){
   const month = state.replacementMonth || today().slice(0,7);
