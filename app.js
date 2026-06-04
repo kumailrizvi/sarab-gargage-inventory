@@ -779,8 +779,9 @@ function clientOverviewHTML(client){
   const vehicles=clientVehicles(client.name);
   const tickets=clientTickets(client.name);
   const openTickets=tickets.filter(t=>t.status!=='Resolved');
+  const totalFleet=vehicles.filter(v=>v.status!=='Off-hire').length;
   const inUse=vehicles.filter(v=>v.status==='In Use').length;
-  const outsource=vehicles.filter(v=>v.ownership==='Outsource').length;
+  const outsource=vehicles.filter(v=>v.ownership==='Outsource' && v.status!=='Off-hire').length;
   const revenue=clientRevenue(client.name);
   const activeFleet=vehicles.filter(v=>v.status==='In Use');
   return `<section class="panel client-overview redesigned">
@@ -797,7 +798,7 @@ function clientOverviewHTML(client){
       </div>
     </div>
     <div class="client-summary-grid redesigned">
-      <div><span>Total Fleet</span><b>${vehicles.length}</b></div>
+      <div><span>Total Fleet</span><b>${totalFleet}</b></div>
       <div><span>In Use</span><b>${inUse}</b></div>
       <div><span>Outsource</span><b>${outsource}</b></div>
       <div><span>Monthly Revenue</span><b>${money(revenue)}</b></div>
@@ -1733,6 +1734,7 @@ function isFleetOutsourceForm(){ return $('fleetOwnership') && $('fleetOwnership
 
 function fleetHTML(){
   const vehicles = filteredFleetVehicles();
+  const totalFleet = state.vehicles.filter(v => v.status !== 'Off-hire').length;
   const inUse = state.vehicles.filter(v => v.status === 'In Use').length;
   const spare = state.vehicles.filter(v => v.status === 'Spare').length;
   const backup = state.vehicles.filter(v => v.status === 'Back-up').length;
@@ -1740,7 +1742,7 @@ function fleetHTML(){
   const monthlyClientRevenue = state.vehicles.reduce((a,v)=>a+(v.status === 'In Use' ? Number(v.clientRate||0) : 0),0);
   return `<div class="page-head"><div><h1>Fleet</h1><p class="muted">Track SMG vehicles, outsourced vehicles, customers, status, rent cost, and client rate.</p></div><div class="head-actions"><button class="btn light" onclick="importFleetCSV()">${I('download','icon-sm')} Import CSV</button><button class="btn primary" onclick="startAddVehicle()">${I('plus','icon-sm')} Add Vehicle</button></div></div>
   ${fleetSubnavHeader('fleet')}
-  <div class="fleet-hero"><div><small>Fleet Revenue View</small><h2>${money(monthlyClientRevenue)}</h2><p>Client rate total for vehicles marked In Use.</p></div><div><span>Total Fleet</span><b>${state.vehicles.length}</b></div><div><span>In Use</span><b>${inUse}</b></div><div><span>Spare / Backup</span><b>${spare + backup}</b></div><div><span>Outsource Rent</span><b>${money(monthlyRentCost)}</b></div></div>
+  <div class="fleet-hero"><div><small>Fleet Revenue View</small><h2>${money(monthlyClientRevenue)}</h2><p>Client rate total for vehicles marked In Use.</p></div><div><span>Total Fleet</span><b>${totalFleet}</b></div><div><span>In Use</span><b>${inUse}</b></div><div><span>Spare / Backup</span><b>${spare + backup}</b></div><div><span>Outsource Rent</span><b>${money(monthlyRentCost)}</b></div></div>
   <div class="fleet-layout improved"><section id="fleetFormPanel" class="panel fleet-form-card"><div class="section-title"><div><h3>Vehicle Details</h3><p class="muted small-note">Add or edit one vehicle. Plate is split into code + plate number, for example R 14534. If year is typed inside model, the app separates it automatically.</p></div></div>
     <form id="fleetForm" class="grid two">
       <input id="fleetId" type="hidden">
