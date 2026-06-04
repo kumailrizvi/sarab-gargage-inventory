@@ -161,6 +161,35 @@ function normalizeFleetVehicles(){
   });
   return changed;
 }
+
+function normalizeSalikAprilMigration(){
+  // Existing SALIK numbers entered before month support belong to April 2026.
+  // This runs once per browser so May/June can stay blank for fresh user entry.
+  const flag = 'sam_salik_april_migration_v87';
+  if(typeof localStorage !== 'undefined' && localStorage.getItem(flag)) return false;
+  let changed = false;
+  const april = '2026-04';
+  const may = '2026-05';
+  (state.salik || []).forEach(r => {
+    const hasAmount = Number(r.incurred || 0) !== 0 || Number(r.crossCharged || 0) !== 0;
+    if(hasAmount && (!r.month || r.month === may)){
+      const existingApril = (state.salik || []).find(x => x !== r && x.vehicleId === r.vehicleId && x.month === april);
+      if(existingApril){
+        if(Number(existingApril.incurred || 0) === 0) existingApril.incurred = Number(r.incurred || 0);
+        if(Number(existingApril.crossCharged || 0) === 0) existingApril.crossCharged = Number(r.crossCharged || 0);
+        r.month = may;
+        r.incurred = 0;
+        r.crossCharged = 0;
+      } else {
+        r.month = april;
+        if(!String(r.id || '').includes(april)) r.id = `salik_${r.vehicleId}_${april}`;
+      }
+      changed = true;
+    }
+  });
+  if(typeof localStorage !== 'undefined') localStorage.setItem(flag, '1');
+  return changed;
+}
 const jobStatus = (j) => j?.status || 'Done Completed';
 const JOB_LOCK_PIN = '3100';
 const isJobLocked = (j) => jobStatus(j) === 'Done Completed';
@@ -236,7 +265,7 @@ async function updateJobStatus(jobId, newStatus){
   render();
 }
 function ensureLocalData(){ if(!localStorage.getItem(KEYS.users)) set(KEYS.users, seedUsers); if(!localStorage.getItem(KEYS.parts)) set(KEYS.parts, seedParts); if(!localStorage.getItem(KEYS.jobs)) set(KEYS.jobs, seedJobs); if(!localStorage.getItem(KEYS.vehicles)) set(KEYS.vehicles, seedVehicles); if(!localStorage.getItem(KEYS.staff)) set(KEYS.staff, seedStaff); if(!localStorage.getItem(KEYS.logs)) set(KEYS.logs, []); if(!localStorage.getItem(KEYS.tickets)) set(KEYS.tickets, seedTickets); if(!localStorage.getItem(KEYS.clients)) set(KEYS.clients, seedClients); if(!localStorage.getItem(KEYS.replacements)) set(KEYS.replacements, []); if(!localStorage.getItem(KEYS.employees)) set(KEYS.employees, []); if(!localStorage.getItem(KEYS.employeeTickets)) set(KEYS.employeeTickets, []); if(!localStorage.getItem(KEYS.salik)) set(KEYS.salik, []); }
-function loadLocalData(){ state.user = get(KEYS.session, null); state.parts = get(KEYS.parts, []); state.jobs = get(KEYS.jobs, []); state.vehicles = get(KEYS.vehicles, []); state.clients = get(KEYS.clients, []); state.employees = get(KEYS.employees, []); state.staff = get(KEYS.staff, []); state.logs = get(KEYS.logs, []); state.tickets = get(KEYS.tickets, []); state.replacements = get(KEYS.replacements, []); state.employeeTickets = get(KEYS.employeeTickets, []); state.salik = get(KEYS.salik, []); }
+function loadLocalData(){ state.user = get(KEYS.session, null); state.parts = get(KEYS.parts, []); state.jobs = get(KEYS.jobs, []); state.vehicles = get(KEYS.vehicles, []); state.clients = get(KEYS.clients, []); state.employees = get(KEYS.employees, []); state.staff = get(KEYS.staff, []); state.logs = get(KEYS.logs, []); state.tickets = get(KEYS.tickets, []); state.replacements = get(KEYS.replacements, []); state.employeeTickets = get(KEYS.employeeTickets, []); state.salik = get(KEYS.salik, []); if(normalizeSalikAprilMigration()) set(KEYS.salik, state.salik); }
 function mergeImportedComplaintTickets(){
   const existing = new Set((state.tickets || []).map(t => `${String(t.ticketNo||'').toLowerCase()}|${String(t.plate||'').replace(/\s+/g,'').toLowerCase()}|${String(t.category||'').toLowerCase()}`));
   const missing = importedComplaintTickets.filter(t => !existing.has(`${String(t.ticketNo||'').toLowerCase()}|${String(t.plate||'').replace(/\s+/g,'').toLowerCase()}|${String(t.category||'').toLowerCase()}`));
@@ -272,6 +301,7 @@ async function loadRemoteData(){
   state.replacements = await fetchRows('replacements', { quiet:true });
   state.employeeTickets = await fetchRows('employee_tickets', { quiet:true });
   state.salik = await fetchRows('salik', { quiet:true });
+  const salikMigrated = normalizeSalikAprilMigration();
   const fleetNormalized = normalizeFleetVehicles();
   state.staff = await fetchRows('staff', { quiet:true });
   state.logs = await fetchRows('logs', { quiet:true });
@@ -280,6 +310,7 @@ async function loadRemoteData(){
   else if(mergeImportedComplaintTickets()){ await saveTickets(); }
   if(jobIdsAdded) await saveJobs();
   if(fleetNormalized) await saveVehicles();
+  if(salikMigrated) await saveSalik();
   if(state.parts.length === 0){
     state.parts = seedParts.map(p => ({...p}));
     await saveParts();
@@ -866,7 +897,7 @@ function knownVendors(){
   return [...vendors.values()].sort((a,b)=>a.localeCompare(b));
 }
 function vendorOptionsHTML(selected=''){
-  return knownVendors().map(v=>`<option value="${esc(v)}" ${v===selected?'selected':''}>${esc(v)}</option>`).join('');
+  return ['<option value="">Choose vendor...</option>', ...knownVendors().map(v=>`<option value="${esc(v)}" ${v===selected?'selected':''}>${esc(v)}</option>`)].join('');
 }
 function vendorDatalistHTML(){ return knownVendors().map(v=>`<option value="${esc(v)}"></option>`).join(''); }
 async function addVendorFromPrompt(){
@@ -876,6 +907,7 @@ async function addVendorFromPrompt(){
   await logAction('Added vendor','Vendors',clean,clean,state.user?.name);
   if($('restockVendor')) $('restockVendor').value = clean;
   if($('vendorOptions')) $('vendorOptions').innerHTML = vendorDatalistHTML();
+  if($('restockVendorSelect')) $('restockVendorSelect').innerHTML = vendorOptionsHTML(clean);
   toast('Vendor added');
 }
 function stockHistoryHTML(){
@@ -2630,7 +2662,7 @@ async function removeEmployeeTicket(id){ const t=(state.employeeTickets||[]).fin
 function exportEmployeeTicketsCSV(){ downloadCSV('sarab-employee-tickets.csv', [['Date','Employee','Category','Status','Approval Status','Approved At','Approved By','Leave Start Date','Leave End Date','Leave Duration','Return To Duty Date','Overstay Alert','Notes'], ...(state.employeeTickets||[]).map(t=>[t.date,t.employee,t.category,t.status,t.approvalStatus||'Pending Approval',t.approvedAt||'',t.approvedBy||'',t.leaveStartDate||'',t.leaveEndDate||'',leaveDurationText(t.leaveStartDate,t.leaveEndDate),t.returnToDutyDate||'',ticketLeaveOverstay(t)?`Yes - ${ticketOverstayDays(t)} day${ticketOverstayDays(t)===1?'':'s'}`:'No',t.notes])]); }
 
 function currentSalikMonth(){ return state.salikMonth || today().slice(0,7); }
-function salikLegacyMonth(){ return '2026-05'; }
+function salikLegacyMonth(){ return '2026-04'; }
 function monthLabel(ym){
   const [y,m]=String(ym||today().slice(0,7)).split('-').map(Number);
   return new Date(y, (m||1)-1, 1).toLocaleDateString('en-AE',{month:'long',year:'numeric'});
@@ -2643,7 +2675,7 @@ function shiftSalikMonth(delta){
 }
 function salikRowForVehicle(v, month=currentSalikMonth()){
   const normalizedMonth = month || currentSalikMonth();
-  // Existing SALIK rows created before monthly SALIK support are May 2026 only.
+  // Existing SALIK rows created before monthly SALIK support are April 2026 only.
   return (state.salik||[]).find(r=>r.vehicleId===v.id && (r.month || salikLegacyMonth())===normalizedMonth) || { id:`salik_${v.id}_${normalizedMonth}`, vehicleId:v.id, month:normalizedMonth, incurred:0, crossCharged:0 };
 }
 function salikHTML(){
@@ -2652,12 +2684,52 @@ function salikHTML(){
   const vehicles=state.vehicles.filter(v=>!q||[v.plate,v.modelNumber,fleetClientName(v),v.status].join(' ').toLowerCase().includes(q));
   const totalIncurred=state.vehicles.reduce((a,v)=>a+Number(salikRowForVehicle(v, month).incurred||0),0);
   const totalCharged=state.vehicles.reduce((a,v)=>a+Number(salikRowForVehicle(v, month).crossCharged||0),0);
-  return `<div class="page-head"><div><h1>Fleet</h1><p class="muted">SALIK incurred and cross-charged by vehicle for ${esc(monthLabel(month))}.</p></div><div class="head-actions salik-head-actions"><div class="salik-month-bar"><button class="mini-btn" onclick="shiftSalikMonth(-1)">Previous month</button><label>Month<input id="salikMonth" type="month" value="${esc(month)}" onchange="state.salikMonth=this.value||today().slice(0,7); render()"></label><button class="mini-btn" onclick="shiftSalikMonth(1)">Next month</button><span class="pill green">Viewing ${esc(monthLabel(month))}</span></div><button class="btn light" onclick="exportSalikCSV()">${I('download','icon-sm')} Export CSV</button><button class="btn primary" onclick="saveSalikTable()">Save SALIK</button></div></div>${fleetSubnavHeader('salik')}<section class="panel"><div class="kpis"><section class="card compact-kpi"><b>${money(totalIncurred)}</b><span>Total SALIK incurred</span></section><section class="card compact-kpi"><b>${money(totalCharged)}</b><span>Total cross charged</span></section><section class="card compact-kpi"><b>${money(totalCharged-totalIncurred)}</b><span>Difference</span></section></div><input id="salikSearch" class="search-input" placeholder="Search plate, vehicle, client..." value="${esc(state.salikSearch||'')}" oninput="state.salikSearch=this.value; renderAndRefocus('salikSearch')">${salikTable(vehicles, month)}</section>`;
+  return `<div class="page-head"><div><h1>Fleet</h1><p class="muted">SALIK incurred and cross-charged by vehicle for ${esc(monthLabel(month))}.</p></div><div class="head-actions salik-head-actions"><div class="salik-month-bar"><button class="mini-btn" onclick="shiftSalikMonth(-1)">Previous month</button><label>Month<input id="salikMonth" type="month" value="${esc(month)}" onchange="state.salikMonth=this.value||today().slice(0,7); render()"></label><button class="mini-btn" onclick="shiftSalikMonth(1)">Next month</button><span class="pill green">Viewing ${esc(monthLabel(month))}</span></div><button class="btn light" onclick="importSalikCSV()">${I('download','icon-sm')} Import CSV</button><button class="btn light" onclick="exportSalikCSV()">${I('download','icon-sm')} Export CSV</button><button class="btn primary" onclick="saveSalikTable()">Save SALIK</button></div></div>${fleetSubnavHeader('salik')}<section class="panel"><div class="kpis"><section class="card compact-kpi"><b>${money(totalIncurred)}</b><span>Total SALIK incurred</span></section><section class="card compact-kpi"><b>${money(totalCharged)}</b><span>Total cross charged</span></section><section class="card compact-kpi"><b>${money(totalCharged-totalIncurred)}</b><span>Difference</span></section></div><input id="salikSearch" class="search-input" placeholder="Search plate, vehicle, client..." value="${esc(state.salikSearch||'')}" oninput="state.salikSearch=this.value; renderAndRefocus('salikSearch')">${salikTable(vehicles, month)}</section>`;
 }
 function salikTable(vehicles, month=currentSalikMonth()){ return `<div class="table-wrap"><table><tr><th>Plate</th><th>Vehicle</th><th>Client</th><th>Status</th><th>SALIK incurred</th><th>SALIK cross charged</th><th>Difference</th></tr><tbody>${vehicles.map(v=>{ const r=salikRowForVehicle(v, month); return `<tr><td><span class="fleet-plate">${esc(v.plate||'—')}</span></td><td><b>${esc(v.modelNumber||'Vehicle')}</b></td><td>${esc(fleetClientName(v))}</td><td>${esc(v.status||'—')}</td><td><input class="salik-input" data-vehicle="${esc(v.id)}" data-month="${esc(month)}" data-field="incurred" type="number" min="0" step="0.01" value="${Number(r.incurred||0)}" oninput="stageSalikInput(this)"></td><td><input class="salik-input" data-vehicle="${esc(v.id)}" data-month="${esc(month)}" data-field="crossCharged" type="number" min="0" step="0.01" value="${Number(r.crossCharged||0)}" oninput="stageSalikInput(this)"></td><td><b class="${Number(r.crossCharged||0)-Number(r.incurred||0)>=0?'green-text':'orange'}">${money(Number(r.crossCharged||0)-Number(r.incurred||0))}</b></td></tr>`; }).join('')}</tbody></table></div>`; }
 function stageSalikInput(input){ const vehicleId=input.dataset.vehicle; const field=input.dataset.field; const month=input.dataset.month || currentSalikMonth(); if(!state.salik) state.salik=[]; let r=state.salik.find(x=>x.vehicleId===vehicleId && (x.month || salikLegacyMonth())===month); if(!r){ r={id:`salik_${vehicleId}_${month}`,vehicleId,month,incurred:0,crossCharged:0}; state.salik.push(r); } r.month=month; r[field]=Number(input.value||0); r.updatedAt=new Date().toISOString(); }
 async function saveSalikTable(){ await saveSalik(); await logAction('Saved SALIK table','Fleet','SALIK',`Updated ${monthLabel(currentSalikMonth())} SALIK values`,state.user?.name); toast('SALIK saved'); render(); }
 function exportSalikCSV(){ const month=currentSalikMonth(); const rows=[['Month','Plate','Vehicle','Client','Status','SALIK Incurred AED','SALIK Cross Charged AED','Difference AED']]; state.vehicles.forEach(v=>{ const r=salikRowForVehicle(v, month); rows.push([month,v.plate||'',v.modelNumber||'',fleetClientName(v),v.status||'',Number(r.incurred||0),Number(r.crossCharged||0),Number(r.crossCharged||0)-Number(r.incurred||0)]); }); downloadCSV(`sarab-salik-${month}.csv`, rows); }
+
+function importSalikCSV(){
+  const month = currentSalikMonth();
+  const input=document.createElement('input');
+  input.type='file'; input.accept='.csv,text/csv';
+  input.onchange=()=>{
+    const file=input.files?.[0]; if(!file) return;
+    const reader=new FileReader();
+    reader.onload=async()=>{
+      const rows=parseCSV(String(reader.result||''));
+      if(rows.length < 2) return toast('CSV has no rows');
+      const headers=rows[0].map(normalizeHeader);
+      const idx=(names)=>{ for(const n of names){ const i=headers.indexOf(normalizeHeader(n)); if(i>=0) return i; } return -1; };
+      const plateI=idx(['plate','plate number','license number','vehicle plate']);
+      const incurredI=idx(['salik incurred','salik incurred aed','incurred','amount incurred']);
+      const chargedI=idx(['salik cross charged','salik cross charged aed','cross charged','charged','crosscharged']);
+      if(plateI<0) return toast('CSV needs a Plate column');
+      let updated=0;
+      for(const row of rows.slice(1)){
+        const plate=String(row[plateI]||'').trim();
+        if(!plate) continue;
+        const v=(state.vehicles||[]).find(x=>plateDuplicateKey(x.plate)===plateDuplicateKey(plate));
+        if(!v) continue;
+        let r=(state.salik||[]).find(x=>x.vehicleId===v.id && (x.month || salikLegacyMonth())===month);
+        if(!r){ r={id:`salik_${v.id}_${month}`,vehicleId:v.id,month,incurred:0,crossCharged:0}; state.salik.push(r); }
+        r.month=month;
+        if(incurredI>=0) r.incurred=Number(String(row[incurredI]||'0').replace(/[^0-9.-]/g,''))||0;
+        if(chargedI>=0) r.crossCharged=Number(String(row[chargedI]||'0').replace(/[^0-9.-]/g,''))||0;
+        r.updatedAt=new Date().toISOString();
+        updated++;
+      }
+      await saveSalik();
+      await logAction('Imported SALIK CSV','Fleet','SALIK',`Imported ${updated} rows for ${monthLabel(month)}`,state.user?.name);
+      toast(`${updated} SALIK rows imported for ${monthLabel(month)}`);
+      render();
+    };
+    reader.readAsText(file);
+  };
+  input.click();
+}
 
 function settingsHTML(){ return `<div class="page-head"><div><h1>Settings</h1><p class="muted">Settings are currently disabled for garage staff.</p></div></div><section class="card settings-card settings-disabled" aria-disabled="true"><div class="disabled-badge">Disabled</div><h2>Settings locked</h2><p class="muted">This section is greyed out to avoid accidental changes. Only the app owner should update system settings from the code or Supabase dashboard.</p><div class="settings-placeholder"><p><b>Current user</b></p><p>${esc(state.user?.name||'Sarab Al Madina Team')}<br>${esc(state.user?.email||'')}</p><p>Storage mode: ${USE_SUPABASE ? 'Supabase shared database' : 'localStorage local demo'}.</p></div></section>`; }
 
@@ -2950,7 +3022,8 @@ function openRestockDialog(partId=''){
   if($('restockPartName')) $('restockPartName').textContent = `${p.name} — stock ${p.qty}`;
   if($('restockOldPrice')) $('restockOldPrice').textContent = `Current buying price: ${money(p.cost || 0)}`;
   if($('vendorOptions')) $('vendorOptions').innerHTML = vendorDatalistHTML();
-  if($('restockVendor')) $('restockVendor').value = p.supplier || '';
+  if($('restockVendorSelect')) $('restockVendorSelect').innerHTML = vendorOptionsHTML('');
+  if($('restockVendor')) $('restockVendor').value = '';
   $('restockQty').value=1;
   if($('restockNewPrice')) $('restockNewPrice').value='';
   $('restockDialog').showModal();
@@ -3220,5 +3293,5 @@ function exportActivity(){
 
 async function resetDemo(){ if(!confirm('Reset all demo data?')) return; if(USE_SUPABASE){ await sb.from('parts').delete().neq('id','__never__'); await sb.from('jobs').delete().neq('id','__never__'); await sb.from('vehicles').delete().neq('id','__never__'); try { await sb.from('staff').delete().neq('id','__never__'); } catch(e) { console.warn(e); } try { await sb.from('logs').delete().neq('id','__never__'); } catch(e) { console.warn(e); } try { await sb.from('tickets').delete().neq('id','__never__'); } catch(e) { console.warn(e); } state.parts=seedParts.map(p=>({...p})); state.jobs=seedJobs.map(j=>({...j})); state.vehicles=seedVehicles.map(v=>({...v})); state.staff=seedStaff.map(x=>({...x})); state.logs=[]; state.tickets=seedTickets.map(t=>({...t})); state.clients=seedClients.map(c=>({...c})); await saveParts(); await saveJobs(); await saveVehicles(); await saveStaff(); await saveLogs(); await saveTickets(); await saveClients(); } else { set(KEYS.parts, seedParts); set(KEYS.jobs, seedJobs); set(KEYS.vehicles, seedVehicles); set(KEYS.staff, seedStaff); set(KEYS.logs, []); set(KEYS.tickets, seedTickets); set(KEYS.clients, seedClients); } state.filters={q:'',category:'All',stock:'All'}; state.inventorySort={key:'name',dir:'asc'}; state.vehicleHistoryQuery=''; state.selectedClient=''; state.clientFilter=''; state.activityQuery=''; state.activitySection='All'; state.ticketTab='dashboard'; state.ticketSearch=''; state.ticketStatus='All'; state.ticketPriority='All'; toast('Demo data reset'); render(); }
 
-window.addStaffFromPrompt=addStaffFromPrompt; window.selectClient=selectClient; window.editClient=editClient; window.deleteClient=deleteClient; window.clearClientForm=clearClientForm; window.exportClients=exportClients; window.importFleetCSV=importFleetCSV; window.escalateTicket=escalateTicket; window.deEscalateTicket=deEscalateTicket; window.exportActivity=exportActivity; window.switchTicketTab=switchTicketTab; window.saveTicket=saveTicket; window.deleteTicket=deleteTicket; window.updateTicketStatus=updateTicketStatus; window.viewTicket=viewTicket; window.closeTicketDialog=closeTicketDialog; window.exportTickets=exportTickets; window.fillTicketFromFleet=fillTicketFromFleet; window.startNewJobCard=startNewJobCard; window.loadJobCardForEdit=loadJobCardForEdit; window.setInventorySort=setInventorySort; window.goInventory=goInventory; window.goJobs=goJobs; window.exportDashboardInventory=exportDashboardInventory; window.exportDashboardJobs=exportDashboardJobs; window.viewPlateHistory=viewPlateHistory; window.clearPlateHistorySearch=clearPlateHistorySearch; window.exportPlateHistoryCSV=exportPlateHistoryCSV; window.startAddVehicle=startAddVehicle; window.addVendorFromPrompt=addVendorFromPrompt; window.exportStockHistory=exportStockHistory; window.exportVendorsCSV=exportVendorsCSV; window.importVendorsCSV=importVendorsCSV; window.toggleOrdered=toggleOrdered; window.go=go; window.openPartDialog=openPartDialog; window.closePartDialog=closePartDialog; window.openRestockDialog=openRestockDialog; window.closeRestockDialog=closeRestockDialog; window.viewPartUsage=viewPartUsage; window.viewJob=viewJob; window.closeJobDialog=closeJobDialog; window.deleteJob=deleteJob; window.deletePart=deletePart; window.exportInventory=exportInventory; window.importInventoryCSV=importInventoryCSV; window.exportJobs=exportJobs; window.exportUsage=exportUsage; window.exportMonthlyReport=exportMonthlyReport; window.exportFleet=exportFleet; window.importEmployeesCSV=importEmployeesCSV; window.toggleEmployeeDocRequested=toggleEmployeeDocRequested; window.clearVisibleReplacementCells=clearVisibleReplacementCells; window.replacementCellKeydown=replacementCellKeydown; window.editFleetVehicle=editFleetVehicle; window.deleteFleetVehicle=deleteFleetVehicle; window.clearFleetForm=clearFleetForm; window.resetDemo=resetDemo;
+window.addStaffFromPrompt=addStaffFromPrompt; window.selectClient=selectClient; window.editClient=editClient; window.deleteClient=deleteClient; window.clearClientForm=clearClientForm; window.exportClients=exportClients; window.importFleetCSV=importFleetCSV; window.escalateTicket=escalateTicket; window.deEscalateTicket=deEscalateTicket; window.exportActivity=exportActivity; window.switchTicketTab=switchTicketTab; window.saveTicket=saveTicket; window.deleteTicket=deleteTicket; window.updateTicketStatus=updateTicketStatus; window.viewTicket=viewTicket; window.closeTicketDialog=closeTicketDialog; window.exportTickets=exportTickets; window.fillTicketFromFleet=fillTicketFromFleet; window.startNewJobCard=startNewJobCard; window.loadJobCardForEdit=loadJobCardForEdit; window.setInventorySort=setInventorySort; window.goInventory=goInventory; window.goJobs=goJobs; window.exportDashboardInventory=exportDashboardInventory; window.exportDashboardJobs=exportDashboardJobs; window.viewPlateHistory=viewPlateHistory; window.clearPlateHistorySearch=clearPlateHistorySearch; window.exportPlateHistoryCSV=exportPlateHistoryCSV; window.startAddVehicle=startAddVehicle; window.addVendorFromPrompt=addVendorFromPrompt; window.exportStockHistory=exportStockHistory; window.exportVendorsCSV=exportVendorsCSV; window.importSalikCSV=importSalikCSV; window.importVendorsCSV=importVendorsCSV; window.toggleOrdered=toggleOrdered; window.go=go; window.openPartDialog=openPartDialog; window.closePartDialog=closePartDialog; window.openRestockDialog=openRestockDialog; window.closeRestockDialog=closeRestockDialog; window.viewPartUsage=viewPartUsage; window.viewJob=viewJob; window.closeJobDialog=closeJobDialog; window.deleteJob=deleteJob; window.deletePart=deletePart; window.exportInventory=exportInventory; window.importInventoryCSV=importInventoryCSV; window.exportJobs=exportJobs; window.exportUsage=exportUsage; window.exportMonthlyReport=exportMonthlyReport; window.exportFleet=exportFleet; window.importEmployeesCSV=importEmployeesCSV; window.toggleEmployeeDocRequested=toggleEmployeeDocRequested; window.clearVisibleReplacementCells=clearVisibleReplacementCells; window.replacementCellKeydown=replacementCellKeydown; window.editFleetVehicle=editFleetVehicle; window.deleteFleetVehicle=deleteFleetVehicle; window.clearFleetForm=clearFleetForm; window.resetDemo=resetDemo;
 init();

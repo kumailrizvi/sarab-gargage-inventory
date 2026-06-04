@@ -1923,3 +1923,14 @@ th.sortable:hover{color:var(--green-dark);background:var(--green-soft);}
 .stock-history-filters{grid-template-columns:minmax(260px,1fr) auto;}
 .sortable{cursor:pointer;user-select:none;}
 @media(max-width:800px){.vendor-input-row,.stock-history-filters{grid-template-columns:1fr}.inventory-subnav{margin-left:0}}
+
+/* v87 vendor picker + salik import */
+.vendor-input-row-stacked{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) minmax(170px,.65fr) auto;
+  gap:10px;
+  align-items:center;
+}
+.vendor-input-row-stacked select,
+.vendor-input-row-stacked input{min-height:44px;}
+@media(max-width:800px){.vendor-input-row-stacked{grid-template-columns:1fr;}}
