@@ -1912,3 +1912,14 @@ th.sortable:hover{color:var(--green-dark);background:var(--green-soft);}
   .salik-month-bar{align-items:stretch;justify-content:flex-start;width:100%;}
   .salik-month-bar label,.salik-month-bar .mini-btn{width:100%;max-width:none;}
 }
+
+/* v86 inventory stock history + vendor restock */
+.inventory-subnav{margin-top:-8px;margin-bottom:8px;}
+.inventory-page-tabs{margin-bottom:16px;}
+.restock-part-preview{border:1px solid var(--line);border-radius:14px;background:#fafafa;padding:12px 14px;display:grid;gap:4px;margin-bottom:12px;}
+.restock-part-preview span{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:800;}
+.restock-part-preview b{font-size:16px;color:var(--text);}
+.vendor-input-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center;}
+.stock-history-filters{grid-template-columns:minmax(260px,1fr) auto;}
+.sortable{cursor:pointer;user-select:none;}
+@media(max-width:800px){.vendor-input-row,.stock-history-filters{grid-template-columns:1fr}.inventory-subnav{margin-left:0}}

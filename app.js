@@ -125,7 +125,7 @@ const seedTickets = [
   ...importedComplaintTickets
 ];
 
-const state = { user:null, view:'dashboard', parts:[], jobs:[], vehicles:[], clients:[], employees:[], staff:[], logs:[], tickets:[], filters:{ q:'', category:'All', stock:'All' }, inventorySort:{key:'name',dir:'asc'}, vehicleHistoryQuery:'', fleetFilter:'', clientFilter:'', selectedClient:'', summarySearch:'', activityQuery:'', activitySection:'All', ticketTab:'dashboard', ticketSearch:'', ticketStatus:'All', ticketPriority:'All', fleetSubView:'list', replacementMonth:today().slice(0,7), replacementClient:'', replacementVehicleSearch:'', replacementUndoStack:[], replacementDirty:false, replacementUnlockedMonths:[], vehicleHistorySearch:'', replacements:[], employeeType:'All', employeeSearch:'', editingEmployeeId:'', employeeTicketSearch:'', editingEmployeeTicketId:'', salikSearch:'', salikMonth:today().slice(0,7) };
+const state = { user:null, view:'dashboard', parts:[], jobs:[], vehicles:[], clients:[], employees:[], staff:[], logs:[], tickets:[], filters:{ q:'', category:'All', stock:'All' }, inventorySort:{key:'name',dir:'asc'}, vehicleHistoryQuery:'', fleetFilter:'', clientFilter:'', selectedClient:'', summarySearch:'', activityQuery:'', activitySection:'All', ticketTab:'dashboard', ticketSearch:'', ticketStatus:'All', ticketPriority:'All', fleetSubView:'list', replacementMonth:today().slice(0,7), replacementClient:'', replacementVehicleSearch:'', replacementUndoStack:[], replacementDirty:false, replacementUnlockedMonths:[], vehicleHistorySearch:'', replacements:[], employeeType:'All', employeeSearch:'', editingEmployeeId:'', employeeTicketSearch:'', editingEmployeeTicketId:'', salikSearch:'', salikMonth:today().slice(0,7), stockHistorySearch:'' };
 function duplicateKey(value){ return String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, ''); }
 function plateDuplicateKey(value){ return String(value || '').trim().toUpperCase().replace(/[^A-Z0-9]+/g, ''); }
 function inventoryDuplicate(part){
@@ -482,7 +482,7 @@ async function logout(){
   if(USE_SUPABASE) await sb.auth.signOut();
   localStorage.removeItem(KEYS.session); state.user=null; showAuth();
 }
-function go(view){ state.view=view; document.querySelectorAll('.subnav').forEach(b=>b.classList.toggle('active', b.dataset.view===view)); document.querySelectorAll('.nav').forEach(b=>{ const v=b.dataset.view; const active = v===view || (v==='fleet' && ['fleet','fleetSummary','replacements','vehicleHistory','salik'].includes(view)); b.classList.toggle('active', active || (v==='employees' && ['employees','employeeHistory','employeeTickets'].includes(view)) || (v==='job' && ['job','used'].includes(view))); }); $('sidebar').classList.remove('open'); render(); }
+function go(view){ state.view=view; document.querySelectorAll('.subnav').forEach(b=>b.classList.toggle('active', b.dataset.view===view)); document.querySelectorAll('.nav').forEach(b=>{ const v=b.dataset.view; const active = v===view || (v==='fleet' && ['fleet','fleetSummary','replacements','vehicleHistory','salik'].includes(view)) || (v==='inventory' && ['inventory','stockHistory'].includes(view)); b.classList.toggle('active', active || (v==='employees' && ['employees','employeeHistory','employeeTickets'].includes(view)) || (v==='job' && ['job','used'].includes(view))); }); $('sidebar').classList.remove('open'); render(); }
 function goInventory(stock='All'){ state.filters.stock=stock; state.view='inventory'; document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('active', b.dataset.view==='inventory')); $('sidebar').classList.remove('open'); render(); }
 function goJobs(){ state.view='used'; document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('active', b.dataset.view==='job')); document.querySelectorAll('.subnav').forEach(b=>b.classList.toggle('active', b.dataset.view==='job')); document.querySelectorAll('.subnav').forEach(b=>b.classList.toggle('active', b.dataset.view==='used')); $('sidebar').classList.remove('open'); render(); }
 
@@ -534,7 +534,7 @@ function stats(){
   const salesValue = state.parts.reduce((a,p)=>a+(Number(p.qty||0)*Number(p.price||0)),0);
   return { totalUnits, lowCount: low.length, todayJobs: todayJobs.length, partsUsedToday, costValue, salesValue };
 }
-function render(){ if(!USE_SUPABASE) loadData(); const s=stats(); const page=$('page'); const views={dashboard:dashboardHTML, clients:clientsHTML, inventory:inventoryHTML, employees:employeesHTML, employeeHistory:employeeHistoryHTML, employeeTickets:employeeTicketsHTML, fleet:fleetHTML, fleetSummary:fleetSummaryHTML, replacements:replacementsHTML, vehicleHistory:vehicleHistoryHTML, salik:salikHTML, tickets:ticketsHTML, job:jobHTML, used:usedHTML, expiry:expiryHTML, reports:reportsHTML, activity:activityHTML, export:exportHTML, settings:settingsHTML}; page.innerHTML=(views[state.view]||dashboardHTML)(s); bindPageEvents(); hydrateStaticIcons(); updateExpiryNavBadge(); }
+function render(){ if(!USE_SUPABASE) loadData(); const s=stats(); const page=$('page'); const views={dashboard:dashboardHTML, clients:clientsHTML, inventory:inventoryHTML, stockHistory:stockHistoryHTML, employees:employeesHTML, employeeHistory:employeeHistoryHTML, employeeTickets:employeeTicketsHTML, fleet:fleetHTML, fleetSummary:fleetSummaryHTML, replacements:replacementsHTML, vehicleHistory:vehicleHistoryHTML, salik:salikHTML, tickets:ticketsHTML, job:jobHTML, used:usedHTML, expiry:expiryHTML, reports:reportsHTML, activity:activityHTML, export:exportHTML, settings:settingsHTML}; page.innerHTML=(views[state.view]||dashboardHTML)(s); bindPageEvents(); hydrateStaticIcons(); updateExpiryNavBadge(); }
 function kpi(title,num,sub,icon,warn=false,action=''){ const tone=warn?'orange':''; const moneyClass=String(num).includes('AED')?'money':''; const click=action ? ` onclick="${action}" role="button" tabindex="0"` : ''; return `<section class="card kpi ${action ? 'clickable-kpi' : ''}"${click}><div><h3>${title}</h3><div class="num ${tone} ${moneyClass}">${num}</div><p>${sub}</p></div><div class="kpi-icon ${warn?'warn':''}">${I(icon,'icon-xl')}</div></section>`; }
 function statusSummaryCard(){
   const c = statusCounts();
@@ -838,10 +838,71 @@ function exportClients(){
   downloadCSV('sarab-clients.csv', rows);
 }
 
+
+function inventoryTabs(active='inventory'){
+  return `<div class="fleet-page-tabs inventory-page-tabs"><button class="tab ${active==='inventory'?'active':''}" onclick="go('inventory')">Inventory List</button><button class="tab ${active==='stockHistory'?'active':''}" onclick="go('stockHistory')">Stock History</button></div>`;
+}
+function parseJSONSafe(value, fallback={}){
+  try { return typeof value === 'string' ? JSON.parse(value) : (value || fallback); } catch(e){ return fallback; }
+}
+function stockHistoryEntries(){
+  return (state.logs || [])
+    .filter(l => l.section === 'Stock History' || l.action === 'Stock Purchased' || l.action === 'Restocked part')
+    .map(l => {
+      const data = parseJSONSafe(l.details, null);
+      if(data && typeof data === 'object' && data.partName){
+        return { id:l.id, timestamp:l.timestamp, date:(l.timestamp||'').slice(0,10), staff:l.staff||'—', ...data };
+      }
+      return { id:l.id, timestamp:l.timestamp, date:(l.timestamp||'').slice(0,10), staff:l.staff||'—', serial:l.reference||'', partName:String(l.details||'').split(' +')[0] || 'Part', qtyAdded:'', vendor:'—', buyingPrice:'', oldBuyingPrice:'', newStock:'', note:l.details||'' };
+    })
+    .sort((a,b)=>String(b.timestamp||'').localeCompare(String(a.timestamp||'')));
+}
+function knownVendors(){
+  const vendors = new Map();
+  const add = (v) => { const clean=String(v||'').trim(); if(clean) vendors.set(clean.toLowerCase(), clean); };
+  (state.parts||[]).forEach(p=>add(p.supplier));
+  stockHistoryEntries().forEach(h=>add(h.vendor));
+  (state.logs||[]).filter(l=>l.section==='Vendors').forEach(l=>add(l.reference || l.details));
+  return [...vendors.values()].sort((a,b)=>a.localeCompare(b));
+}
+function vendorOptionsHTML(selected=''){
+  return knownVendors().map(v=>`<option value="${esc(v)}" ${v===selected?'selected':''}>${esc(v)}</option>`).join('');
+}
+function vendorDatalistHTML(){ return knownVendors().map(v=>`<option value="${esc(v)}"></option>`).join(''); }
+async function addVendorFromPrompt(){
+  const name = prompt('Enter vendor name');
+  const clean = String(name||'').trim();
+  if(!clean) return;
+  await logAction('Added vendor','Vendors',clean,clean,state.user?.name);
+  if($('restockVendor')) $('restockVendor').value = clean;
+  if($('vendorOptions')) $('vendorOptions').innerHTML = vendorDatalistHTML();
+  toast('Vendor added');
+}
+function stockHistoryHTML(){
+  const q = String(state.stockHistorySearch||'').toLowerCase();
+  const rows = stockHistoryEntries().filter(r => [r.partName,r.serial,r.vendor,r.staff,r.note].join(' ').toLowerCase().includes(q));
+  return `<div class="page-head"><div><h1>Inventory</h1><p class="muted">Stock purchase and restock history by vendor, quantity, price, and staff.</p></div><div class="head-actions"><button class="btn light" onclick="importVendorsCSV()">${I('download','icon-sm')} Import Vendors</button><button class="btn light" onclick="exportVendorsCSV()">${I('download','icon-sm')} Export Vendors</button><button class="btn light" onclick="exportStockHistory()">${I('download','icon-sm')} Export Stock History</button></div></div>${inventoryTabs('stockHistory')}<section class="panel"><div class="filters stock-history-filters"><input id="stockHistorySearch" placeholder="Search part, serial number, vendor, staff..." value="${esc(state.stockHistorySearch||'')}" autocomplete="off"><button class="btn light" onclick="openRestockDialog()">${I('cart','icon-sm')} Restock</button></div>${stockHistoryTable(rows)}</section>`;
+}
+function stockHistoryTable(rows){
+  if(!rows.length) return '<div class="empty">No stock history yet. Restock a part to create the first entry.</div>';
+  return `<div class="table-wrap"><table><thead><tr><th>Date</th><th>Part</th><th>Serial Number</th><th>Vendor</th><th>Qty Added</th><th>Buying Price</th><th>New Stock</th><th>Purchased / logged by</th><th>Note</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.date||'')}</td><td><b>${esc(r.partName||'')}</b></td><td>${esc(r.serial||'')}</td><td>${esc(r.vendor||'—')}</td><td>${esc(r.qtyAdded||'')}</td><td>${r.buyingPrice!=='' && r.buyingPrice!==undefined ? money(r.buyingPrice) : '—'}</td><td>${esc(r.newStock||'')}</td><td>${esc(r.staff||'—')}</td><td>${esc(r.note||'')}</td></tr>`).join('')}</tbody></table></div>`;
+}
+function exportStockHistory(){
+  const rows=[['Date','Part','Serial Number','Vendor','Quantity Added','Old Buying Price AED','Buying Price AED','New Stock','Purchased / Logged By','Note']];
+  stockHistoryEntries().forEach(r=>rows.push([r.date||'',r.partName||'',r.serial||'',r.vendor||'',r.qtyAdded||'',r.oldBuyingPrice||'',r.buyingPrice||'',r.newStock||'',r.staff||'',r.note||'']));
+  downloadCSV('sarab-stock-history.csv', rows);
+}
+function exportVendorsCSV(){ downloadCSV('sarab-vendors.csv', [['Vendor Name'], ...knownVendors().map(v=>[v])]); }
+function importVendorsCSV(){
+  const input=document.createElement('input'); input.type='file'; input.accept='.csv,text/csv';
+  input.onchange=()=>{ const file=input.files?.[0]; if(!file) return; const reader=new FileReader(); reader.onload=async()=>{ const rows=parseCSV(String(reader.result||'')); let added=0; for(const row of rows.slice(1)){ const vendor=String(row[0]||'').trim(); if(vendor && !knownVendors().some(v=>v.toLowerCase()===vendor.toLowerCase())){ await logAction('Added vendor','Vendors',vendor,vendor,state.user?.name); added++; } } toast(`${added} vendors imported`); render(); }; reader.readAsText(file); };
+  input.click();
+}
+
 function inventoryHTML(){
   const cats=['All',...new Set(state.parts.map(p=>p.category))];
   const filtered=sortedInventoryParts(filteredInventoryParts());
-  return `<div class="page-head"><div><h1>Inventory</h1><p class="muted">Add, search, edit, delete, import and restock garage parts.</p></div><div class="head-actions"><button class="btn light" onclick="importInventoryCSV()">${I('download','icon-sm')} Import CSV</button><button class="btn primary" onclick="openPartDialog()">${I('plus','icon-sm')} Add Part</button></div></div>
+  return `<div class="page-head"><div><h1>Inventory</h1><p class="muted">Add, search, edit, delete, import and restock garage parts.</p></div><div class="head-actions"><button class="btn light" onclick="importInventoryCSV()">${I('download','icon-sm')} Import CSV</button><button class="btn primary" onclick="openPartDialog()">${I('plus','icon-sm')} Add Part</button></div></div>${inventoryTabs('inventory')}
   <section class="panel"><div class="filters"><input id="searchInput" placeholder="Search by part, serial number, supplier, car..." value="${esc(state.filters.q)}" autocomplete="off"><select id="categoryFilter">${cats.map(c=>`<option ${c===state.filters.category?'selected':''}>${c}</option>`).join('')}</select><select id="stockFilter">${['All','Low','In Stock','Finished'].map(x=>`<option ${x===state.filters.stock?'selected':''}>${x}</option>`).join('')}</select><button class="btn light" onclick="exportInventory()">${I('download','icon-sm')} CSV</button></div><div id="inventoryResults">${inventoryTable(filtered, false)}</div></section>`;
 }
 function inventoryTable(parts, compact=false){
@@ -2653,6 +2714,7 @@ function bindPageEvents(){
   if($('searchInput')) $('searchInput').oninput=e=>{state.filters.q=e.target.value; renderInventoryResults();};
   if($('categoryFilter')) $('categoryFilter').onchange=e=>{state.filters.category=e.target.value; renderInventoryResults();};
   if($('stockFilter')) $('stockFilter').onchange=e=>{state.filters.stock=e.target.value; renderInventoryResults();};
+  if($('stockHistorySearch')) $('stockHistorySearch').oninput=e=>{state.stockHistorySearch=e.target.value; renderAndRefocus('stockHistorySearch', e.target.selectionStart);};
   if($('reportMonth')) $('reportMonth').onchange=e=>{state.reportMonth=e.target.value; render();};
   if($('clientSearch')) $('clientSearch').oninput=e=>{state.clientFilter=e.target.value; render();};
   if($('expirySearch')) $('expirySearch').oninput=e=>{state.expirySearch=e.target.value; renderAndRefocus('expirySearch', e.target.selectionStart);};
@@ -2878,9 +2940,41 @@ async function savePartFromForm(e){
   toast('Part saved');
   render();
 }
-function openRestockDialog(partId=''){ $('restockPart').innerHTML=state.parts.map(p=>`<option value="${p.id}" ${p.id===partId?'selected':''}>${esc(p.name)} — stock ${p.qty}</option>`).join(''); $('restockQty').value=1; $('restockDialog').showModal(); }
+function openRestockDialog(partId=''){
+  let p = state.parts.find(x=>x.id===partId);
+  if(!p){
+    p = state.parts[0];
+    if(!p) return toast('Add an inventory part first');
+  }
+  $('restockPart').value = p.id;
+  if($('restockPartName')) $('restockPartName').textContent = `${p.name} — stock ${p.qty}`;
+  if($('restockOldPrice')) $('restockOldPrice').textContent = `Current buying price: ${money(p.cost || 0)}`;
+  if($('vendorOptions')) $('vendorOptions').innerHTML = vendorDatalistHTML();
+  if($('restockVendor')) $('restockVendor').value = p.supplier || '';
+  $('restockQty').value=1;
+  if($('restockNewPrice')) $('restockNewPrice').value='';
+  $('restockDialog').showModal();
+}
 function closeRestockDialog(){ $('restockDialog').close(); }
-async function saveRestock(e){ e.preventDefault(); const qtyAdded = Number($('restockQty').value||0); const p=state.parts.find(x=>x.id===$('restockPart').value); if(p){ p.qty=Number(p.qty)+qtyAdded; if(Number(p.qty)>0) p.ordered=false; } await saveParts(); if(p) await logAction('Restocked part', 'Inventory', p.sku, `${p.name} +${qtyAdded}`, state.user?.name); closeRestockDialog(); toast('Stock added'); render(); }
+async function saveRestock(e){
+  e.preventDefault();
+  const qtyAdded = Number($('restockQty').value||0);
+  const p=state.parts.find(x=>x.id===$('restockPart').value);
+  if(!p) return toast('Part not found');
+  const vendor = String($('restockVendor')?.value || '').trim();
+  const oldPrice = Number(p.cost || 0);
+  const newPriceRaw = $('restockNewPrice')?.value;
+  const buyingPrice = newPriceRaw === '' || newPriceRaw === null || newPriceRaw === undefined ? oldPrice : Number(newPriceRaw || 0);
+  p.qty=Number(p.qty)+qtyAdded;
+  if(Number(p.qty)>0) p.ordered=false;
+  if(vendor) p.supplier = vendor;
+  if(!Number.isNaN(buyingPrice)) p.cost = buyingPrice;
+  await saveParts();
+  await logAction('Stock Purchased', 'Stock History', p.sku, JSON.stringify({ partId:p.id, partName:p.name, serial:p.sku, vendor:vendor || p.supplier || '—', qtyAdded, oldBuyingPrice:oldPrice, buyingPrice, newStock:p.qty, note:`Restocked ${qtyAdded} unit${qtyAdded===1?'':'s'}` }), state.user?.name);
+  closeRestockDialog();
+  toast('Stock added and stock history updated');
+  render();
+}
 async function deletePart(partId){ const used=state.jobs.some(j=>j.lines.some(l=>l.partId===partId)); if(used) return toast('Cannot delete: this part is used in a job history'); if(!confirm('Delete this part from inventory?')) return; state.parts=state.parts.filter(p=>p.id!==partId); await saveParts(); await deleteRemoteRow('parts', partId); toast('Part deleted'); render(); }
 
 
@@ -3126,5 +3220,5 @@ function exportActivity(){
 
 async function resetDemo(){ if(!confirm('Reset all demo data?')) return; if(USE_SUPABASE){ await sb.from('parts').delete().neq('id','__never__'); await sb.from('jobs').delete().neq('id','__never__'); await sb.from('vehicles').delete().neq('id','__never__'); try { await sb.from('staff').delete().neq('id','__never__'); } catch(e) { console.warn(e); } try { await sb.from('logs').delete().neq('id','__never__'); } catch(e) { console.warn(e); } try { await sb.from('tickets').delete().neq('id','__never__'); } catch(e) { console.warn(e); } state.parts=seedParts.map(p=>({...p})); state.jobs=seedJobs.map(j=>({...j})); state.vehicles=seedVehicles.map(v=>({...v})); state.staff=seedStaff.map(x=>({...x})); state.logs=[]; state.tickets=seedTickets.map(t=>({...t})); state.clients=seedClients.map(c=>({...c})); await saveParts(); await saveJobs(); await saveVehicles(); await saveStaff(); await saveLogs(); await saveTickets(); await saveClients(); } else { set(KEYS.parts, seedParts); set(KEYS.jobs, seedJobs); set(KEYS.vehicles, seedVehicles); set(KEYS.staff, seedStaff); set(KEYS.logs, []); set(KEYS.tickets, seedTickets); set(KEYS.clients, seedClients); } state.filters={q:'',category:'All',stock:'All'}; state.inventorySort={key:'name',dir:'asc'}; state.vehicleHistoryQuery=''; state.selectedClient=''; state.clientFilter=''; state.activityQuery=''; state.activitySection='All'; state.ticketTab='dashboard'; state.ticketSearch=''; state.ticketStatus='All'; state.ticketPriority='All'; toast('Demo data reset'); render(); }
 
-window.addStaffFromPrompt=addStaffFromPrompt; window.selectClient=selectClient; window.editClient=editClient; window.deleteClient=deleteClient; window.clearClientForm=clearClientForm; window.exportClients=exportClients; window.importFleetCSV=importFleetCSV; window.escalateTicket=escalateTicket; window.deEscalateTicket=deEscalateTicket; window.exportActivity=exportActivity; window.switchTicketTab=switchTicketTab; window.saveTicket=saveTicket; window.deleteTicket=deleteTicket; window.updateTicketStatus=updateTicketStatus; window.viewTicket=viewTicket; window.closeTicketDialog=closeTicketDialog; window.exportTickets=exportTickets; window.fillTicketFromFleet=fillTicketFromFleet; window.startNewJobCard=startNewJobCard; window.loadJobCardForEdit=loadJobCardForEdit; window.setInventorySort=setInventorySort; window.goInventory=goInventory; window.goJobs=goJobs; window.exportDashboardInventory=exportDashboardInventory; window.exportDashboardJobs=exportDashboardJobs; window.viewPlateHistory=viewPlateHistory; window.clearPlateHistorySearch=clearPlateHistorySearch; window.exportPlateHistoryCSV=exportPlateHistoryCSV; window.startAddVehicle=startAddVehicle; window.toggleOrdered=toggleOrdered; window.go=go; window.openPartDialog=openPartDialog; window.closePartDialog=closePartDialog; window.openRestockDialog=openRestockDialog; window.closeRestockDialog=closeRestockDialog; window.viewPartUsage=viewPartUsage; window.viewJob=viewJob; window.closeJobDialog=closeJobDialog; window.deleteJob=deleteJob; window.deletePart=deletePart; window.exportInventory=exportInventory; window.importInventoryCSV=importInventoryCSV; window.exportJobs=exportJobs; window.exportUsage=exportUsage; window.exportMonthlyReport=exportMonthlyReport; window.exportFleet=exportFleet; window.importEmployeesCSV=importEmployeesCSV; window.toggleEmployeeDocRequested=toggleEmployeeDocRequested; window.clearVisibleReplacementCells=clearVisibleReplacementCells; window.replacementCellKeydown=replacementCellKeydown; window.editFleetVehicle=editFleetVehicle; window.deleteFleetVehicle=deleteFleetVehicle; window.clearFleetForm=clearFleetForm; window.resetDemo=resetDemo;
+window.addStaffFromPrompt=addStaffFromPrompt; window.selectClient=selectClient; window.editClient=editClient; window.deleteClient=deleteClient; window.clearClientForm=clearClientForm; window.exportClients=exportClients; window.importFleetCSV=importFleetCSV; window.escalateTicket=escalateTicket; window.deEscalateTicket=deEscalateTicket; window.exportActivity=exportActivity; window.switchTicketTab=switchTicketTab; window.saveTicket=saveTicket; window.deleteTicket=deleteTicket; window.updateTicketStatus=updateTicketStatus; window.viewTicket=viewTicket; window.closeTicketDialog=closeTicketDialog; window.exportTickets=exportTickets; window.fillTicketFromFleet=fillTicketFromFleet; window.startNewJobCard=startNewJobCard; window.loadJobCardForEdit=loadJobCardForEdit; window.setInventorySort=setInventorySort; window.goInventory=goInventory; window.goJobs=goJobs; window.exportDashboardInventory=exportDashboardInventory; window.exportDashboardJobs=exportDashboardJobs; window.viewPlateHistory=viewPlateHistory; window.clearPlateHistorySearch=clearPlateHistorySearch; window.exportPlateHistoryCSV=exportPlateHistoryCSV; window.startAddVehicle=startAddVehicle; window.addVendorFromPrompt=addVendorFromPrompt; window.exportStockHistory=exportStockHistory; window.exportVendorsCSV=exportVendorsCSV; window.importVendorsCSV=importVendorsCSV; window.toggleOrdered=toggleOrdered; window.go=go; window.openPartDialog=openPartDialog; window.closePartDialog=closePartDialog; window.openRestockDialog=openRestockDialog; window.closeRestockDialog=closeRestockDialog; window.viewPartUsage=viewPartUsage; window.viewJob=viewJob; window.closeJobDialog=closeJobDialog; window.deleteJob=deleteJob; window.deletePart=deletePart; window.exportInventory=exportInventory; window.importInventoryCSV=importInventoryCSV; window.exportJobs=exportJobs; window.exportUsage=exportUsage; window.exportMonthlyReport=exportMonthlyReport; window.exportFleet=exportFleet; window.importEmployeesCSV=importEmployeesCSV; window.toggleEmployeeDocRequested=toggleEmployeeDocRequested; window.clearVisibleReplacementCells=clearVisibleReplacementCells; window.replacementCellKeydown=replacementCellKeydown; window.editFleetVehicle=editFleetVehicle; window.deleteFleetVehicle=deleteFleetVehicle; window.clearFleetForm=clearFleetForm; window.resetDemo=resetDemo;
 init();
