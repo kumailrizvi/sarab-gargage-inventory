@@ -191,15 +191,15 @@ function normalizeSalikAprilMigration(){
   return changed;
 }
 const jobStatus = (j) => j?.status || 'Done Completed';
-const JOB_LOCK_PIN = '3100';
+const JOB_LOCK_PIN = '0408';
 const isJobLocked = (j) => jobStatus(j) === 'Done Completed';
 function hasJobOverride(jobId){ return (state.jobEditOverrideIds || []).includes(jobId); }
 function markJobOverride(jobId){ if(!state.jobEditOverrideIds) state.jobEditOverrideIds=[]; if(!state.jobEditOverrideIds.includes(jobId)) state.jobEditOverrideIds.push(jobId); }
 function requireJobOverride(job, action='edit'){
   if(!job || !isJobLocked(job) || hasJobOverride(job.id)) return true;
-  const pin = prompt(`This job card is Done Completed and locked. Enter override PIN 3100 to ${action}.`);
+  const pin = prompt(`This job card is Done Completed and locked. Enter approval PIN to ${action}.`);
   if(pin === JOB_LOCK_PIN){ markJobOverride(job.id); toast('Override accepted. Job card unlocked for this session.'); return true; }
-  toast('Wrong override PIN. Job card remains locked.');
+  toast('Wrong PIN. Job card remains locked.');
   return false;
 }
 function existingJobNumbersForDate(date=today()){
@@ -400,6 +400,25 @@ async function saveReplacements(){
   if(error){ console.warn('Could not save replacements. Run updated schema for the replacements table.', error); } else markRemoteSnapshot();
 }
 
+async function refreshReplacementLocks(renderIfChanged=false){
+  if(!USE_SUPABASE) return false;
+  try{
+    const rows = await fetchRows('replacements', { quiet:true });
+    const remoteLocks = (rows || []).filter(r => r && (r.kind === 'lock' || r.type === 'lock' || r.locked));
+    let changed = false;
+    for(const lock of remoteLocks){
+      const idx = (state.replacements || []).findIndex(r => r.id === lock.id || ((r.kind==='lock' || r.type==='lock') && r.month === lock.month));
+      if(idx >= 0){
+        if(JSON.stringify(state.replacements[idx]) !== JSON.stringify(lock)){ state.replacements[idx] = lock; changed = true; }
+      } else {
+        state.replacements.push(lock); changed = true;
+      }
+    }
+    if(changed){ markRemoteSnapshot(); if(renderIfChanged && state.view === 'replacements') render(); }
+    return changed;
+  }catch(err){ console.warn('Could not refresh replacement locks', err); return false; }
+}
+
 async function deleteRemoteRow(table, id){
   if(!USE_SUPABASE) return;
   const { error } = await sb.from(table).delete().eq('id', id);
@@ -438,6 +457,7 @@ function startRemoteUpdateWatcher(){
   markRemoteSnapshot();
   remoteWatcherTimer = setInterval(async()=>{
     try{
+      await refreshReplacementLocks(true);
       const sig = await fetchRemoteSignature();
       if(!remoteSignature){ remoteSignature = sig; return; }
       if(sig && sig !== remoteSignature) showRefreshToast();
@@ -912,7 +932,7 @@ async function addVendorFromPrompt(){
 function stockHistoryHTML(){
   const q = String(state.stockHistorySearch||'').toLowerCase();
   const rows = stockHistoryEntries().filter(r => [r.partName,r.serial,r.vendor,r.staff,r.note].join(' ').toLowerCase().includes(q));
-  return `<div class="page-head"><div><h1>Inventory</h1><p class="muted">Stock purchase and restock history by vendor, quantity, price, and staff.</p></div><div class="head-actions"><button class="btn light" onclick="importVendorsCSV()">${I('download','icon-sm')} Import Vendors</button><button class="btn light" onclick="exportVendorsCSV()">${I('download','icon-sm')} Export Vendors</button><button class="btn light" onclick="exportStockHistory()">${I('download','icon-sm')} Export Stock History</button></div></div>${inventoryTabs('stockHistory')}<section class="panel"><div class="filters stock-history-filters"><input id="stockHistorySearch" placeholder="Search part, serial number, vendor, staff..." value="${esc(state.stockHistorySearch||'')}" autocomplete="off"><button class="btn light" onclick="openRestockDialog()">${I('cart','icon-sm')} Restock</button></div>${stockHistoryTable(rows)}</section>`;
+  return `<div class="page-head"><div><h1>Inventory</h1><p class="muted">Stock purchase and restock history by vendor, quantity, price, and staff.</p></div><div class="head-actions"><button class="btn light" onclick="exportStockHistory()">${I('download','icon-sm')} Export Stock History</button></div></div>${inventoryTabs('stockHistory')}<section class="panel"><div class="filters stock-history-filters"><input id="stockHistorySearch" placeholder="Search part, serial number, vendor, staff..." value="${esc(state.stockHistorySearch||'')}" autocomplete="off"><button class="btn light" onclick="openRestockDialog()">${I('cart','icon-sm')} Restock</button></div>${stockHistoryTable(rows)}</section>`;
 }
 function stockHistoryTable(rows){
   if(!rows.length) return '<div class="empty">No stock history yet. Restock a part to create the first entry.</div>';
@@ -1369,7 +1389,7 @@ function stageReplacementCellInput(cell){
 function toggleReplacementTick(input){
   if(!input) return;
   const month=state.replacementMonth || today().slice(0,7);
-  if(!canEditReplacementMonth(month)){ toast('This month is locked. Use Override PIN to edit.'); return; }
+  if(!canEditReplacementMonth(month)){ toast('This month is locked. Use approval to edit.'); return; }
   if(!state.replacementUndoStack) state.replacementUndoStack=[];
   state.replacementUndoStack.push(currentReplacementCellSnapshot());
   input.value = input.value === '✓' ? '' : '✓';
@@ -1391,7 +1411,8 @@ async function saveReplacementCell(vehicleId, day, value){
 }
 async function saveReplacementTable(){
   const month=state.replacementMonth || today().slice(0,7);
-  if(!canEditReplacementMonth(month)){ toast('This month is locked. Use Override PIN to edit.'); return; }
+  await refreshReplacementLocks(true);
+  if(!canEditReplacementMonth(month)){ toast('This month is locked. Use approval to edit.'); return; }
   const cells=[...document.querySelectorAll('.rep-cell')];
   for(const cell of cells){ await saveReplacementCell(cell.dataset.vehicle, cell.dataset.day, cell.value); }
   await saveReplacements();
@@ -1425,7 +1446,7 @@ function replacementCellKeydown(event, input){
 }
 function clearVisibleReplacementCells(){
   const month=state.replacementMonth || today().slice(0,7);
-  if(!canEditReplacementMonth(month)){ toast('This month is locked. Use Override PIN to edit.'); return; }
+  if(!canEditReplacementMonth(month)){ toast('This month is locked. Use approval to edit.'); return; }
   const cells=[...document.querySelectorAll('.rep-cell')];
   if(!cells.length){ toast('No visible replacement cells to clear'); return; }
   if(!confirm('Clear all visible replacement cells for the selected filters/month? Click Save after clearing.')) return;
@@ -1456,15 +1477,15 @@ async function lockReplacementMonth(){
 }
 function unlockReplacementMonth(){
   const month=state.replacementMonth || today().slice(0,7);
-  const pin=prompt('Enter override PIN to edit this locked month');
-  if(pin !== '3100') { toast('Wrong override PIN'); return; }
+  const pin=prompt('Enter approval PIN to edit this locked month');
+  if(pin !== REPLACEMENT_LOCK_PIN) { toast('Wrong PIN'); return; }
   if(!state.replacementUnlockedMonths) state.replacementUnlockedMonths=[];
   if(!state.replacementUnlockedMonths.includes(month)) state.replacementUnlockedMonths.push(month);
   toast(`Override enabled for ${month}. You can edit until you leave/reload this page.`);
   render();
 }
 
-const REPLACEMENT_LOCK_PIN = '3100';
+const REPLACEMENT_LOCK_PIN = '0408';
 function replacementLockId(month){ return `rep_lock_${String(month || '').replace(/[^0-9-]/g,'_')}`; }
 function replacementLockRow(month){ return (state.replacements || []).find(r => r.id === replacementLockId(month) || ((r.kind==='lock' || r.type==='lock') && r.month===month)); }
 function isReplacementMonthLocked(month){ const r=replacementLockRow(month); return Boolean(r && (r.locked || r.kind==='lock' || r.type==='lock')); }
@@ -1472,11 +1493,11 @@ function canEditReplacementMonth(month){ return !isReplacementMonthLocked(month)
 function replacementLockNotice(month){
   if(!isReplacementMonthLocked(month)) return '';
   const unlocked = canEditReplacementMonth(month);
-  return `<div class="lock-notice ${unlocked?'unlocked':''}"><b>${unlocked?'Override active':'Month locked'}</b><span>${unlocked?'You can edit this month until the page is refreshed.':'This month cannot be edited unless you enter the override PIN.'}</span>${!unlocked?`<button class="mini-btn" onclick="unlockReplacementMonth()">Unlock with PIN</button>`:''}</div>`;
+  return `<div class="lock-notice ${unlocked?'unlocked':''}"><b>${unlocked?'Override active':'Month locked'}</b><span>${unlocked?'You can edit this month until the page is refreshed.':'This month cannot be edited unless it is unlocked.'}</span>${!unlocked?`<button class="mini-btn" onclick="unlockReplacementMonth()">Unlock</button>`:''}</div>`;
 }
 async function lockReplacementMonth(){
   const month = state.replacementMonth || today().slice(0,7);
-  if(!confirm(`Lock ${month}? Once locked, it cannot be edited without the override PIN.`)) return;
+  if(!confirm(`Lock ${month}? Once locked, it cannot be edited without approval.`)) return;
   const row = { id: replacementLockId(month), type:'lock', month, locked:true, lockedAt:new Date().toISOString(), lockedBy:state.user?.name||state.user?.email||'—' };
   const idx = (state.replacements || []).findIndex(r=>r.id===row.id);
   if(idx>=0) state.replacements[idx]=row; else state.replacements.push(row);
@@ -1487,7 +1508,7 @@ async function lockReplacementMonth(){
 }
 function unlockReplacementMonth(){
   const month = state.replacementMonth || today().slice(0,7);
-  const pin = prompt('Enter override PIN to edit this locked month');
+  const pin = prompt('Enter approval PIN to edit this locked month');
   if(pin === REPLACEMENT_LOCK_PIN){
     sessionStorage.setItem(`replacement_unlock_${month}`, 'yes');
     toast('Override accepted. You can edit this month now.');
@@ -1499,7 +1520,7 @@ function unlockReplacementMonth(){
 function guardReplacementEdit(){
   const month = state.replacementMonth || today().slice(0,7);
   if(canEditReplacementMonth(month)) return true;
-  toast('This month is locked. Use override PIN to edit.');
+  toast('This month is locked. Use approval to edit.');
   return false;
 }
 
@@ -1514,7 +1535,7 @@ function replacementsHTML(){
   return `<div class="page-head"><div><h1>Fleet</h1><p class="muted">Replacement register by client and month.</p></div><div class="head-actions"><button class="btn light" onclick="exportReplacementsCSV()">${I('download','icon-sm')} Export CSV</button><button class="btn primary" onclick="saveReplacementTable()">Save Replacements</button></div></div>
     ${fleetSubnavHeader('replacements')}
     <section class="panel replacements-panel"><div class="section-title"><div><h3>Replacements</h3><p class="muted small-note">Choose all clients or one client. Use ✓ for normal use, or type/select a replacement plate from the existing fleet list.</p></div></div>
-      <div class="replacement-lockbar ${locked && !editable ? 'locked' : ''}"><div><b>${locked && !editable ? 'Month locked' : locked && editable ? 'Override active' : 'Month open'}</b><span>${locked && !editable ? `Locked by ${esc(lock?.lockedBy || '—')} on ${esc((lock?.lockedAt || '').slice(0,10))}` : locked && editable ? 'This month is unlocked for editing with the override PIN.' : 'You can edit and save this replacement register.'}</span></div><div>${locked && !editable ? `<button class="btn light" onclick="unlockReplacementMonth()">Override PIN</button>` : locked && editable ? `<button class="btn light" onclick="lockReplacementMonth()">Re-lock Month</button>` : `<button class="btn light" onclick="lockReplacementMonth()">Lock Month</button>`}</div></div>
+      <div class="replacement-lockbar ${locked && !editable ? 'locked' : ''}"><div><b>${locked && !editable ? 'Month locked' : locked && editable ? 'Override active' : 'Month open'}</b><span>${locked && !editable ? `Locked by ${esc(lock?.lockedBy || '—')} on ${esc((lock?.lockedAt || '').slice(0,10))}` : locked && editable ? 'This month is unlocked for editing.' : 'You can edit and save this replacement register.'}</span></div><div>${locked && !editable ? `<button class="btn light" onclick="unlockReplacementMonth()">Unlock</button>` : locked && editable ? `<button class="btn light" onclick="lockReplacementMonth()">Re-lock Month</button>` : `<button class="btn light" onclick="lockReplacementMonth()">Lock Month</button>`}</div></div>
       <div class="filters replacement-filters upgraded"><label>Client<select id="replacementClient"><option value="">All clients</option>${clients.map(c=>`<option value="${esc(c)}" ${state.replacementClient===c?'selected':''}>${esc(c)}</option>`).join('')}</select></label><label>Search vehicle<input id="replacementVehicleSearch" placeholder="Plate, model, client..." value="${esc(state.replacementVehicleSearch || '')}" autocomplete="off"></label><label>Month<input id="replacementMonth" type="month" value="${esc(state.replacementMonth)}"></label><button class="btn light" onclick="markVisibleReplacementDays()" ${!editable?'disabled':''}>Fill blanks with ✓</button><button class="btn light" onclick="clearVisibleReplacementCells()" ${!editable?'disabled':''}>Clear all</button><button class="btn light" onclick="undoReplacementFill()" ${!editable?'disabled':''}>Undo</button><button class="btn primary" onclick="saveReplacementTable()" ${!editable?'disabled':''}>Save</button></div>
       ${replacementFleetDatalist()}${vehicles.length ? replacementMatrix(vehicles, days, editable) : '<div class="empty">No vehicles found for this filter.</div>'}
     </section>`;
@@ -1530,7 +1551,7 @@ function replacementMatrix(vehicles, days, editable=true){
 
 function markVisibleReplacementDays(){
   const month=state.replacementMonth || today().slice(0,7);
-  if(!canEditReplacementMonth(month)){ toast('This month is locked. Use Override PIN to edit.'); return; }
+  if(!canEditReplacementMonth(month)){ toast('This month is locked. Use approval to edit.'); return; }
   const cells=[...document.querySelectorAll('.rep-cell')];
   if(!state.replacementUndoStack) state.replacementUndoStack=[];
   state.replacementUndoStack.push(currentReplacementCellSnapshot());
@@ -2889,7 +2910,7 @@ function setJobFormFromJob(job){
     const notice=document.createElement('div');
     notice.id='jobLockNotice';
     notice.className='lock-notice unlocked';
-    notice.innerHTML='<div><b>Completed job card is locked</b><span>Any edit, delete, or status change requires override PIN 3100.</span></div>';
+    notice.innerHTML='<div><b>Completed job card is locked</b><span>Any edit, delete, or status change requires an approval.</span></div>';
     $('jobForm')?.prepend(notice);
   }
   $('jobCustomer').value = job.customer || '';
@@ -3046,7 +3067,30 @@ async function saveRestock(e){
   toast('Stock added and stock history updated');
   render();
 }
-async function deletePart(partId){ const used=state.jobs.some(j=>j.lines.some(l=>l.partId===partId)); if(used) return toast('Cannot delete: this part is used in a job history'); if(!confirm('Delete this part from inventory?')) return; state.parts=state.parts.filter(p=>p.id!==partId); await saveParts(); await deleteRemoteRow('parts', partId); toast('Part deleted'); render(); }
+async function deletePart(partId){
+  const part = state.parts.find(p=>p.id===partId);
+  if(!part) return;
+  const used = state.jobs.some(j=>(j.lines||[]).some(l=>l.partId===partId));
+  const msg = used
+    ? 'This spare part is used in job history. Delete it from inventory anyway? Existing job cards will keep their saved part name, but the part will be removed from Inventory and Stock History.'
+    : 'Delete this part from inventory and remove its stock history?';
+  if(!confirm(msg)) return;
+  state.parts = state.parts.filter(p=>p.id!==partId);
+  const removedLogs = (state.logs || []).filter(l => {
+    if(!(l.section === 'Stock History' || l.action === 'Stock Purchased' || l.action === 'Restocked part')) return false;
+    const raw = String(l.details || '');
+    let details = null;
+    try{ details = JSON.parse(raw); }catch(_){ details = null; }
+    return (details && (details.partId === partId || details.serial === part.sku || details.partName === part.name)) || raw.includes(partId) || raw.includes(part.sku || '') || raw.includes(part.name || '');
+  });
+  state.logs = (state.logs || []).filter(l => !removedLogs.some(r=>r.id===l.id));
+  await saveParts();
+  await saveLogs();
+  await deleteRemoteRow('parts', partId);
+  for(const log of removedLogs){ await deleteRemoteRow('logs', log.id); }
+  toast('Part deleted from inventory and stock history');
+  render();
+}
 
 
 async function toggleOrdered(partId){
