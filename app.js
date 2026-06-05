@@ -23,6 +23,30 @@ const KEYS = {
   employeeTickets: 'sam_employee_tickets_v1',
   salik: 'sam_salik_v1'
 };
+
+const USER_DISPLAY_MAP = {
+  'operations@sarabalmadina.com': { name: 'Munir', role: 'Munir - Operations Supervisor' },
+  'info@sarabalmadina.com': { name: 'Rashid', role: 'Rashid - Head Office Staff' },
+  'admin@sarabalmadina.com': { name: 'Arslan', role: 'Arslan - Head Office Staff' },
+  'asamaashraf55@gmail.com': { name: 'Asama Ashraf', role: 'Logistics Manager' },
+  'muzafar@sarabalmadina.com': { name: 'Muzafar Iqbal', role: 'General Manager' },
+  'ashrafgill@hotmail.com': { name: 'Ch Ashraf', role: 'Owner / CEO' }
+};
+function displayUserProfile(user=state.user){
+  const email = String(user?.email || '').trim().toLowerCase();
+  const mapped = USER_DISPLAY_MAP[email];
+  if(mapped) return mapped;
+  return {
+    name: user?.name || 'Sarab Al Madina Team',
+    role: user?.role || 'Garage Inventory'
+  };
+}
+function refreshTopUser(){
+  const profile = displayUserProfile();
+  if($('userName')) $('userName').textContent = profile.name;
+  if($('userRole')) $('userRole').textContent = profile.role;
+}
+
 const AED = new Intl.NumberFormat('en-AE', { style: 'currency', currency: 'AED' });
 const today = () => new Date().toISOString().slice(0, 10);
 const id = (prefix) => `${prefix}_${Date.now()}_${Math.random().toString(16).slice(2)}`;
@@ -518,7 +542,7 @@ function bindGlobal(){
 }
 function toggleAuth(mode){ $('loginTab').classList.toggle('active', mode==='login'); $('signupTab').classList.toggle('active', mode==='signup'); $('loginForm').classList.toggle('hidden', mode!=='login'); $('signupForm').classList.toggle('hidden', mode!=='signup'); }
 function showAuth(){ $('authScreen').classList.remove('hidden'); $('appShell').classList.add('hidden'); }
-function showApp(){ $('authScreen').classList.add('hidden'); $('appShell').classList.remove('hidden'); $('userName').textContent = 'Sarab Al Madina Team'; render(); if(USE_SUPABASE){ markRemoteSnapshot(); startRemoteUpdateWatcher(); } }
+function showApp(){ $('authScreen').classList.add('hidden'); $('appShell').classList.remove('hidden'); refreshTopUser(); render(); if(USE_SUPABASE){ markRemoteSnapshot(); startRemoteUpdateWatcher(); } }
 async function login(e){
   e.preventDefault();
   const email=$('loginEmail').value.trim().toLowerCase(); const pass=$('loginPassword').value;
