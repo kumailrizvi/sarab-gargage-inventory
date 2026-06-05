@@ -25,9 +25,9 @@ const KEYS = {
 };
 
 const USER_DISPLAY_MAP = {
-  'operations@sarabalmadina.com': { name: 'Munir', role: 'Munir - Operations Supervisor' },
-  'info@sarabalmadina.com': { name: 'Rashid', role: 'Rashid - Head Office Staff' },
-  'admin@sarabalmadina.com': { name: 'Arslan', role: 'Arslan - Head Office Staff' },
+  'operations@sarabalmadina.com': { name: 'Munir', role: 'Operations Supervisor' },
+  'info@sarabalmadina.com': { name: 'Rashid', role: 'Head Office Staff' },
+  'admin@sarabalmadina.com': { name: 'Arslan', role: 'Head Office Staff' },
   'asamaashraf55@gmail.com': { name: 'Asama Ashraf', role: 'Logistics Manager' },
   'muzafar@sarabalmadina.com': { name: 'Muzafar Iqbal', role: 'General Manager' },
   'ashrafgill@hotmail.com': { name: 'Ch Ashraf', role: 'Owner / CEO' }
