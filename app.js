@@ -175,6 +175,7 @@ const seedTickets = [
 ];
 
 const state = { user:null, view:'dashboard', parts:[], jobs:[], vehicles:[], clients:[], employees:[], staff:[], logs:[], tickets:[], filters:{ q:'', category:'All', stock:'All' }, inventorySort:{key:'name',dir:'asc'}, vehicleHistoryQuery:'', fleetFilter:'', clientFilter:'', selectedClient:'', summarySearch:'', activityQuery:'', activitySection:'All', ticketTab:'dashboard', ticketSearch:'', ticketStatus:'All', ticketPriority:'All', fleetSubView:'list', replacementMonth:today().slice(0,7), replacementClient:'', replacementVehicleSearch:'', replacementUndoStack:[], replacementDirty:false, replacementUnlockedMonths:[], vehicleHistorySearch:'', replacements:[], employeeType:'All', employeeSearch:'', editingEmployeeId:'', employeeTicketSearch:'', editingEmployeeTicketId:'', salikSearch:'', salikMonth:today().slice(0,7), stockHistorySearch:'' };
+const replacementAutosaveTimers = {};
 function duplicateKey(value){ return String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, ''); }
 function plateDuplicateKey(value){ return String(value || '').trim().toUpperCase().replace(/[^A-Z0-9]+/g, ''); }
 function inventoryDuplicate(part){
@@ -1447,7 +1448,8 @@ function restoreReplacementSnapshot(snapshot){
     cell.classList.toggle('has-value', Boolean(val));
   });
   state.replacementDirty=true;
-  toast('Undo applied. Click Save to keep it.');
+  saveReplacementTable(true);
+  toast('Undo applied and saved.');
 }
 function stageReplacementCellInput(cell){
   if(!cell) return;
@@ -1461,6 +1463,22 @@ function stageReplacementCellInput(cell){
   cell.classList.toggle('has-value', Boolean(String(cell.value||'').trim()));
   state.replacementDirty=true;
 }
+function scheduleReplacementCellAutosave(cell){
+  if(!cell || !guardReplacementEdit()) return;
+  const key = `${cell.dataset.vehicle}_${cell.dataset.day}`;
+  clearTimeout(replacementAutosaveTimers[key]);
+  replacementAutosaveTimers[key] = setTimeout(async()=>{
+    try{
+      await saveReplacementCell(cell.dataset.vehicle, cell.dataset.day, cell.value);
+      await saveReplacements();
+      state.replacementDirty=false;
+      analyticsAction('replacements', 'cell_auto_saved', { month: state.replacementMonth || today().slice(0,7), is_auto_save:true });
+    }catch(err){
+      console.error(err);
+      toast('Could not auto-save replacement entry');
+    }
+  }, 450);
+}
 function toggleReplacementTick(input){
   if(!input) return;
   const month=state.replacementMonth || today().slice(0,7);
@@ -1469,6 +1487,7 @@ function toggleReplacementTick(input){
   state.replacementUndoStack.push(currentReplacementCellSnapshot());
   input.value = input.value === '✓' ? '' : '✓';
   stageReplacementCellInput(input);
+  scheduleReplacementCellAutosave(input);
 }
 async function saveReplacementCell(vehicleId, day, value){
   const month = state.replacementMonth || today().slice(0,7);
@@ -1484,7 +1503,7 @@ async function saveReplacementCell(vehicleId, day, value){
     await deleteRemoteRow('replacements', rid);
   }
 }
-async function saveReplacementTable(){
+async function saveReplacementTable(silent=false){
   const month=state.replacementMonth || today().slice(0,7);
   await refreshReplacementLocks(true);
   if(!canEditReplacementMonth(month)){ toast('This month is locked. Use approval to edit.'); return; }
@@ -1493,7 +1512,7 @@ async function saveReplacementTable(){
   await saveReplacements();
   state.replacementDirty=false;
   analyticsAction('replacements', 'saved', { month, row_count: (state.replacements || []).filter(r=>r.month===month && !r.type && !r.kind).length });
-  toast('Replacements saved');
+  if(!silent) toast('Replacements saved');
 }
 function tickReplacementCell(btn){
   const input = btn?.closest('td')?.querySelector('.rep-cell') || btn;
@@ -1520,17 +1539,18 @@ function replacementCellKeydown(event, input){
     input.classList.remove('is-tick','has-value');
   }
 }
-function clearVisibleReplacementCells(){
+async function clearVisibleReplacementCells(){
   const month=state.replacementMonth || today().slice(0,7);
   if(!canEditReplacementMonth(month)){ toast('This month is locked. Use approval to edit.'); return; }
   const cells=[...document.querySelectorAll('.rep-cell')];
   if(!cells.length){ toast('No visible replacement cells to clear'); return; }
-  if(!confirm('Clear all visible replacement cells for the selected filters/month? Click Save after clearing.')) return;
+  if(!confirm('Clear all visible replacement cells for the selected filters/month?')) return;
   if(!state.replacementUndoStack) state.replacementUndoStack=[];
   state.replacementUndoStack.push(currentReplacementCellSnapshot());
   cells.forEach(cell=>{ cell.value=''; stageReplacementCellInput(cell); });
   analyticsAction('replacements', 'clear_visible_cells', { month, visible_count: cells.length });
-  toast('Visible replacement cells cleared. Click Save to keep it.');
+  await saveReplacementTable(true);
+  toast('Visible replacement cells cleared and saved.');
 }
 
 
@@ -1636,18 +1656,19 @@ function replacementMatrix(vehicles, days, editable=true){
   const dayHeads=Array.from({length:days},(_,i)=>`<th class="rep-day-head">${i+1}</th>`).join('');
   return `<div class="replacement-help-line"><span><b>Tip:</b> each row is one vehicle. Double-click a day cell to mark ✓, or just type a replacement plate. Press Enter to toggle ✓.</span><span>${vehicles.length} vehicle${vehicles.length===1?'':'s'} shown</span></div>
   <div class="replacement-scroll"><table class="replacement-table fixed-replacement-table"><thead><tr><th class="sticky-col rep-vehicle-head">Client / Vehicle</th><th class="sticky-col-2">Plate</th>${dayHeads}</tr></thead><tbody>
-  ${vehicles.map(v=>`<tr><td class="sticky-col rep-vehicle"><b>${esc(fleetClientName(v))}</b><small>${esc(modelWithoutYear(v.modelNumber)||'Vehicle')} ${v.year?`· ${esc(v.year)}`:''}</small></td><td class="sticky-col-2"><span class="fleet-plate">${esc(v.plate || '—')}</span></td>${Array.from({length:days},(_,i)=>{ const d=i+1; const val=replacementValue(month,v.id,d); const isTick=val==='✓'; return `<td class="rep-cell-wrap ${!editable?'locked-cell':''}"><input class="rep-cell ${isTick?'is-tick':''} ${val?'has-value':''}" data-vehicle="${esc(v.id)}" data-day="${d}" value="${esc(val)}" placeholder="" title="Enter ✓ or type replacement plate" list="replacementFleetOptions" onkeydown="replacementCellKeydown(event,this)" ondblclick="toggleReplacementTick(this)" oninput="stageReplacementCellInput(this)" onchange="pickReplacementFromFleet(this)" ${!editable?'disabled':''}></td>`; }).join('')}</tr>`).join('')}
+  ${vehicles.map(v=>`<tr><td class="sticky-col rep-vehicle"><b>${esc(fleetClientName(v))}</b><small>${esc(modelWithoutYear(v.modelNumber)||'Vehicle')} ${v.year?`· ${esc(v.year)}`:''}</small></td><td class="sticky-col-2"><span class="fleet-plate">${esc(v.plate || '—')}</span></td>${Array.from({length:days},(_,i)=>{ const d=i+1; const val=replacementValue(month,v.id,d); const isTick=val==='✓'; return `<td class="rep-cell-wrap ${!editable?'locked-cell':''}"><input class="rep-cell ${isTick?'is-tick':''} ${val?'has-value':''}" data-vehicle="${esc(v.id)}" data-day="${d}" value="${esc(val)}" placeholder="" title="Enter ✓ or type replacement plate" list="replacementFleetOptions" onkeydown="replacementCellKeydown(event,this)" ondblclick="toggleReplacementTick(this)" oninput="stageReplacementCellInput(this); scheduleReplacementCellAutosave(this)" onchange="pickReplacementFromFleet(this); scheduleReplacementCellAutosave(this)" ${!editable?'disabled':''}></td>`; }).join('')}</tr>`).join('')}
   </tbody></table></div>`;
 }
 
-function markVisibleReplacementDays(){
+async function markVisibleReplacementDays(){
   const month=state.replacementMonth || today().slice(0,7);
   if(!canEditReplacementMonth(month)){ toast('This month is locked. Use approval to edit.'); return; }
   const cells=[...document.querySelectorAll('.rep-cell')];
   if(!state.replacementUndoStack) state.replacementUndoStack=[];
   state.replacementUndoStack.push(currentReplacementCellSnapshot());
   cells.forEach(cell=>{ if(!String(cell.value||'').trim()){ cell.value='✓'; stageReplacementCellInput(cell); } });
-  toast('Visible blanks filled with ✓. Click Save to keep it.');
+  await saveReplacementTable(true);
+  toast('Visible blanks filled with ✓ and saved.');
 }
 function undoReplacementFill(){
   if(!guardReplacementEdit()) return;
@@ -2547,6 +2568,13 @@ function normalizeEmployeeType(value){
   if(v.includes('out')) return 'Outsourced';
   return 'SMG';
 }
+function activeEmployeeScope(){
+  return ['SMG','Outsourced'].includes(state.employeeType) ? state.employeeType : 'All';
+}
+function activeEmployeeRows(){
+  const scope = activeEmployeeScope();
+  return (state.employees || []).filter(e => scope === 'All' || (e.type || 'SMG') === scope);
+}
 function importEmployeesCSV(){
   const input=document.createElement('input');
   input.type='file';
@@ -2563,7 +2591,8 @@ function importEmployeesCSV(){
         const obj={}; headers.forEach((h,i)=>obj[h]=cols[i] ?? '');
         const name=String(firstValue(obj,['Name','Employee','Employee Name','Staff Name'])).trim();
         if(!name){ skipped++; continue; }
-        const type=normalizeEmployeeType(firstValue(obj,['Type','Employee Type','Staff Type'], 'SMG'));
+        const scope=activeEmployeeScope();
+        const type=scope === 'All' ? normalizeEmployeeType(firstValue(obj,['Type','Employee Type','Staff Type'], 'SMG')) : scope;
         const existing=state.employees.find(e=>String(e.name||'').trim().toLowerCase()===name.toLowerCase() && normalizeEmployeeType(e.type||'SMG')===type);
         const currentValue=firstValue(obj,['Currently Working','Working','Status'], existing ? (employeeIsCurrentlyWorking(existing)?'Yes':'No') : 'Yes');
         const currentWorking = String(currentValue||'').trim().toLowerCase()==='left' ? false : truthyCSV(currentValue);
@@ -2619,9 +2648,9 @@ function importEmployeesCSV(){
         else { state.employees.unshift(emp); imported++; }
       }
       await saveEmployees();
-      await logAction('Imported employee CSV','Employees','CSV Import',`${imported} new, ${updated} updated, ${skipped} skipped`,state.user?.name);
-      analyticsAction('employees', 'import_csv', { is_import:true, row_count: imported + updated, count: imported + updated });
-      toast(`Employees CSV imported: ${imported} new, ${updated} updated, ${skipped} skipped`);
+      await logAction('Imported employee CSV','Employees','CSV Import',`${activeEmployeeScope()} page: ${imported} new, ${updated} updated, ${skipped} skipped`,state.user?.name);
+      analyticsAction('employees', 'import_csv', { is_import:true, row_count: imported + updated, count: imported + updated, scope: activeEmployeeScope() });
+      toast(`${activeEmployeeScope()} CSV imported: ${imported} new, ${updated} updated, ${skipped} skipped`);
       render();
     }catch(err){ console.error(err); toast('Could not import employee CSV'); }
   };
@@ -2629,9 +2658,12 @@ function importEmployeesCSV(){
 }
 function exportEmployees(){
   const rows = [['Type','Name','Currently Working','Start Date','End Date','Total Tenure','Assigned Company','Assigned Vehicle','Visa Status','Basic Salary AED','Net Salary AED','Estimated Gratuity AED','Passport Expiry Date','Driving License Expiry Date','Active Permit','Permit Category','Permit Expiry Date','Passport Collected','Passport Requested','ID','ID Requested','Driving License','Driving License Requested','Undertaking','Undertaking Requested','Labour Part Time Permit','Labour Permit Requested']];
-  state.employees.forEach(e => rows.push([e.type||'SMG', e.name||'', employeeIsCurrentlyWorking(e)?'Yes':'No', e.startDate||'', employeeIsCurrentlyWorking(e)?'':(e.endDate||''), employeeTenureText(e.startDate,employeeGratuityEndDate(e)), e.assignedCompany||'', e.assignedVehicle||'', e.visaStatus||'', e.basicSalary||0, e.netSalary||0, calcUAEGratuity(e.startDate,e.basicSalary,employeeGratuityEndDate(e)).toFixed(2), e.passportExpiryDate||'', e.drivingLicenseExpiryDate||'', e.hasActivePermit?'Yes':'No', e.permitCategory||'', e.permitExpiryDate||'', e.passportCollected?'Yes':'No', e.passportRequested?'Yes':'No', e.hasId?'Yes':'No', e.hasIdRequested?'Yes':'No', e.drivingLicense?'Yes':'No', e.drivingLicenseRequested?'Yes':'No', e.undertaking?'Yes':'No', e.undertakingRequested?'Yes':'No', e.labourPermit?'Yes':'No', e.labourPermitRequested?'Yes':'No']));
-  analyticsAction('employees', 'export_csv', { is_export:true, row_count: rows.length-1 });
-  downloadCSV('sarab-employees.csv', rows);
+  const scope=activeEmployeeScope();
+  const exportRows=activeEmployeeRows();
+  exportRows.forEach(e => rows.push([e.type||'SMG', e.name||'', employeeIsCurrentlyWorking(e)?'Yes':'No', e.startDate||'', employeeIsCurrentlyWorking(e)?'':(e.endDate||''), employeeTenureText(e.startDate,employeeGratuityEndDate(e)), e.assignedCompany||'', e.assignedVehicle||'', e.visaStatus||'', e.basicSalary||0, e.netSalary||0, calcUAEGratuity(e.startDate,e.basicSalary,employeeGratuityEndDate(e)).toFixed(2), e.passportExpiryDate||'', e.drivingLicenseExpiryDate||'', e.hasActivePermit?'Yes':'No', e.permitCategory||'', e.permitExpiryDate||'', e.passportCollected?'Yes':'No', e.passportRequested?'Yes':'No', e.hasId?'Yes':'No', e.hasIdRequested?'Yes':'No', e.drivingLicense?'Yes':'No', e.drivingLicenseRequested?'Yes':'No', e.undertaking?'Yes':'No', e.undertakingRequested?'Yes':'No', e.labourPermit?'Yes':'No', e.labourPermitRequested?'Yes':'No']));
+  analyticsAction('employees', 'export_csv', { is_export:true, row_count: rows.length-1, scope });
+  const fileScope=scope === 'All' ? 'all-employees' : `${scope.toLowerCase()}-employees`;
+  downloadCSV(`sarab-${fileScope}.csv`, rows);
 }
 
 function toggleEmployeeEndDate(){ const wrap = $('employeeEndDateWrap'); const current = $('empCurrentWorking'); if(wrap && current) wrap.style.display = current.checked ? 'none' : 'block'; }
