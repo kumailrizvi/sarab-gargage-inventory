@@ -47,6 +47,31 @@ function refreshTopUser(){
   if($('userRole')) $('userRole').textContent = profile.role;
 }
 
+function analyticsCapture(name, props={}){
+  try { window.sarabAnalytics?.capture?.(name, props); } catch(e) {}
+}
+function analyticsAction(module, action, props={}){
+  analyticsCapture('sarab_action', {
+    module,
+    action,
+    view: state.view || 'unknown',
+    ...props
+  });
+}
+function analyticsPage(view){
+  try { window.sarabAnalytics?.page?.(view); } catch(e) {}
+}
+function analyticsIdentifyCurrentUser(){
+  try {
+    if(!state.user?.id) return;
+    const profile = displayUserProfile();
+    window.sarabAnalytics?.identify?.(state.user.id, { role: profile.role || 'Unknown' });
+  } catch(e) {}
+}
+function analyticsReset(){
+  try { window.sarabAnalytics?.reset?.(); } catch(e) {}
+}
+
 const AED = new Intl.NumberFormat('en-AE', { style: 'currency', currency: 'AED' });
 const today = () => new Date().toISOString().slice(0, 10);
 const id = (prefix) => `${prefix}_${Date.now()}_${Math.random().toString(16).slice(2)}`;
@@ -280,6 +305,7 @@ async function updateJobStatus(jobId, newStatus){
   job.updatedAt = new Date().toISOString();
   await saveJobs();
   await logAction('Updated job status', 'Job Card', ensureJobCardId(job), `${job.plate || ''} → ${newStatus}`, job.doneBy || state.user?.name);
+  analyticsAction('job_card', 'status_changed', { record_type:'job_card', status:newStatus, is_locked:isJobLocked(job) });
   toast(`Job status changed to ${newStatus}`);
   const dialog = $('jobDialog');
   if(dialog && dialog.open){
@@ -542,7 +568,7 @@ function bindGlobal(){
 }
 function toggleAuth(mode){ $('loginTab').classList.toggle('active', mode==='login'); $('signupTab').classList.toggle('active', mode==='signup'); $('loginForm').classList.toggle('hidden', mode!=='login'); $('signupForm').classList.toggle('hidden', mode!=='signup'); }
 function showAuth(){ $('authScreen').classList.remove('hidden'); $('appShell').classList.add('hidden'); }
-function showApp(){ $('authScreen').classList.add('hidden'); $('appShell').classList.remove('hidden'); refreshTopUser(); render(); if(USE_SUPABASE){ markRemoteSnapshot(); startRemoteUpdateWatcher(); } }
+function showApp(){ $('authScreen').classList.add('hidden'); $('appShell').classList.remove('hidden'); refreshTopUser(); analyticsIdentifyCurrentUser(); analyticsPage(state.view || 'dashboard'); render(); if(USE_SUPABASE){ markRemoteSnapshot(); startRemoteUpdateWatcher(); } }
 async function login(e){
   e.preventDefault();
   const email=$('loginEmail').value.trim().toLowerCase(); const pass=$('loginPassword').value;
@@ -571,12 +597,14 @@ async function signup(e){
   const users=get(KEYS.users, []); if(users.some(u=>u.email.toLowerCase()===email)) return toast('This email already exists'); const user={id:id('u'),name,email,password,role:'Garage Inventory'}; users.push(user); set(KEYS.users, users); state.user={id:user.id,name:user.name,email:user.email,role:user.role}; set(KEYS.session,state.user); showApp();
 }
 async function logout(){
+  analyticsCapture('logout', { action:'logout' });
+  analyticsReset();
   if(USE_SUPABASE) await sb.auth.signOut();
   localStorage.removeItem(KEYS.session); state.user=null; showAuth();
 }
-function go(view){ state.view=view; document.querySelectorAll('.subnav').forEach(b=>b.classList.toggle('active', b.dataset.view===view)); document.querySelectorAll('.nav').forEach(b=>{ const v=b.dataset.view; const active = v===view || (v==='fleet' && ['fleet','fleetSummary','replacements','vehicleHistory','salik'].includes(view)) || (v==='inventory' && ['inventory','stockHistory'].includes(view)); b.classList.toggle('active', active || (v==='employees' && ['employees','employeeHistory','employeeTickets'].includes(view)) || (v==='job' && ['job','used'].includes(view))); }); $('sidebar').classList.remove('open'); render(); }
-function goInventory(stock='All'){ state.filters.stock=stock; state.view='inventory'; document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('active', b.dataset.view==='inventory')); $('sidebar').classList.remove('open'); render(); }
-function goJobs(){ state.view='used'; document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('active', b.dataset.view==='job')); document.querySelectorAll('.subnav').forEach(b=>b.classList.toggle('active', b.dataset.view==='job')); document.querySelectorAll('.subnav').forEach(b=>b.classList.toggle('active', b.dataset.view==='used')); $('sidebar').classList.remove('open'); render(); }
+function go(view){ state.view=view; analyticsPage(view); document.querySelectorAll('.subnav').forEach(b=>b.classList.toggle('active', b.dataset.view===view)); document.querySelectorAll('.nav').forEach(b=>{ const v=b.dataset.view; const active = v===view || (v==='fleet' && ['fleet','fleetSummary','replacements','vehicleHistory','salik'].includes(view)) || (v==='inventory' && ['inventory','stockHistory'].includes(view)); b.classList.toggle('active', active || (v==='employees' && ['employees','employeeHistory','employeeTickets'].includes(view)) || (v==='job' && ['job','used'].includes(view))); }); $('sidebar').classList.remove('open'); render(); }
+function goInventory(stock='All'){ state.filters.stock=stock; state.view='inventory'; analyticsPage('inventory'); document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('active', b.dataset.view==='inventory')); $('sidebar').classList.remove('open'); render(); }
+function goJobs(){ state.view='used'; analyticsPage('used'); document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('active', b.dataset.view==='job')); document.querySelectorAll('.subnav').forEach(b=>b.classList.toggle('active', b.dataset.view==='job')); document.querySelectorAll('.subnav').forEach(b=>b.classList.toggle('active', b.dataset.view==='used')); $('sidebar').classList.remove('open'); render(); }
 
 function defaultStaffName(){
   const name = String(state.user?.name || '').trim();
@@ -890,6 +918,7 @@ async function saveClient(e){
   state.selectedClient=name;
   await saveClients();
   await logAction(existing?'Updated client contract':'Added client','Clients', name, `Contract till ${client.contractEnd || '—'}`, state.user?.name);
+  analyticsAction('clients', existing ? 'client_updated' : 'client_created', { record_type:'client', is_edit:Boolean(existing) });
   toast(existing ? 'Client updated / contract amended' : 'Client added');
   render();
 }
@@ -914,6 +943,7 @@ async function deleteClient(clientId, name){
   await deleteRemoteRow('clients', existing.id);
   await logAction('Removed client','Clients', existing.name, `Linked fleet kept: ${vehicles}`, state.user?.name);
   if(clientKey(state.selectedClient)===clientKey(existing.name)) state.selectedClient='';
+  analyticsAction('clients', 'client_deleted', { record_type:'client', vehicle_count: vehicles });
   toast('Client removed');
   render();
 }
@@ -928,6 +958,7 @@ function exportClients(){
     const vehicles=clientVehicles(c.name); const inUse=vehicles.filter(v=>v.status==='In Use').length; const tickets=clientTickets(c.name).filter(t=>t.status!=='Resolved').length;
     rows.push([c.name,c.contractStart||'',c.contractEnd||'',c.contractEnd ? (new Date(c.contractEnd) < new Date(today()) ? 'Expired' : 'Active') : 'No date',c.contactPerson||'',c.phone||'',c.email||'',vehicles.length,inUse,clientRevenue(c.name),tickets,c.notes||'']);
   });
+  analyticsAction('clients', 'export_csv', { is_export:true, row_count: rows.length-1 });
   downloadCSV('sarab-clients.csv', rows);
 }
 
@@ -983,6 +1014,7 @@ function stockHistoryTable(rows){
 function exportStockHistory(){
   const rows=[['Date','Part','Serial Number','Vendor','Quantity Added','Old Buying Price AED','Buying Price AED','New Stock','Purchased / Logged By','Note']];
   stockHistoryEntries().forEach(r=>rows.push([r.date||'',r.partName||'',r.serial||'',r.vendor||'',r.qtyAdded||'',r.oldBuyingPrice||'',r.buyingPrice||'',r.newStock||'',r.staff||'',r.note||'']));
+  analyticsAction('stock_history', 'export_csv', { is_export:true, row_count: rows.length-1 });
   downloadCSV('sarab-stock-history.csv', rows);
 }
 function exportVendorsCSV(){ downloadCSV('sarab-vendors.csv', [['Vendor Name'], ...knownVendors().map(v=>[v])]); }
@@ -1234,6 +1266,7 @@ function expiryHTML(){
 function exportExpiryCSV(){
   const rows=[['Section','Action Needed','Owner / Vehicle / Employee','Expiry / Due Date','Days','Details']];
   actionNeededItems().forEach(x=>rows.push([x.module,x.type,x.owner,x.date,x.days,x.detail]));
+  analyticsAction('expiry', 'export_csv', { is_export:true, row_count: rows.length-1 });
   downloadCSV('sarab-expiry-action-needed.csv', rows);
 }
 
@@ -1459,6 +1492,7 @@ async function saveReplacementTable(){
   for(const cell of cells){ await saveReplacementCell(cell.dataset.vehicle, cell.dataset.day, cell.value); }
   await saveReplacements();
   state.replacementDirty=false;
+  analyticsAction('replacements', 'saved', { month, row_count: (state.replacements || []).filter(r=>r.month===month && !r.type && !r.kind).length });
   toast('Replacements saved');
 }
 function tickReplacementCell(btn){
@@ -1495,6 +1529,7 @@ function clearVisibleReplacementCells(){
   if(!state.replacementUndoStack) state.replacementUndoStack=[];
   state.replacementUndoStack.push(currentReplacementCellSnapshot());
   cells.forEach(cell=>{ cell.value=''; stageReplacementCellInput(cell); });
+  analyticsAction('replacements', 'clear_visible_cells', { month, visible_count: cells.length });
   toast('Visible replacement cells cleared. Click Save to keep it.');
 }
 
@@ -1551,6 +1586,7 @@ async function lockReplacementMonth(){
   } else {
     set(KEYS.replacements, state.replacements);
   }
+  analyticsAction('replacements', 'month_locked', { month, is_locked:true });
   toast(`Month ${month} locked for everyone`);
   render();
 }
@@ -1568,6 +1604,7 @@ async function unlockReplacementMonth(){
   } else {
     set(KEYS.replacements, state.replacements);
   }
+  analyticsAction('replacements', 'month_unlocked', { month, is_locked:false });
   toast(`Month ${month} unlocked for everyone`);
   render();
 }
@@ -1904,6 +1941,7 @@ async function saveFleetVehicle(e){
     await logAction('Changed vehicle client', 'Fleet', vehicle.plate, `${previousClient || '—'} → ${nextClient || '—'}`, state.user?.name);
   }
   await logAction(idx >= 0 ? 'Updated fleet vehicle' : 'Added fleet vehicle', 'Fleet', vehicle.plate, `${vehicle.modelNumber}${vehicle.year ? ' ' + vehicle.year : ''} · ${vehicle.status}`, state.user?.name);
+  analyticsAction('fleet', idx >= 0 ? 'vehicle_updated' : 'vehicle_created', { record_type:'vehicle', is_edit: idx >= 0, status: vehicle.status, category: vehicle.ownership || '' });
   toast('Fleet vehicle saved');
   render();
 }
@@ -1969,6 +2007,7 @@ async function deleteFleetVehicle(vehicleId){
   await saveVehicles();
   await deleteRemoteRow('vehicles', vehicleId);
   if(removed) await logAction('Deleted fleet vehicle', 'Fleet', removed.plate, removed.modelNumber, state.user?.name);
+  analyticsAction('fleet', 'vehicle_deleted', { record_type:'vehicle' });
   toast('Fleet vehicle deleted');
   render();
 }
@@ -2028,6 +2067,7 @@ function importFleetCSV(){
       await saveVehicles();
       await saveClients();
       await logAction('Imported fleet CSV','Fleet','CSV Import',`${imported} new, ${updated} updated, ${skipped} skipped`,state.user?.name);
+      analyticsAction('fleet', 'import_csv', { is_import:true, row_count: imported + updated, count: imported + updated });
       toast(`Fleet CSV imported: ${imported} new, ${updated} updated, ${skipped} skipped`);
       render();
     }catch(err){ console.error(err); toast('Could not import fleet CSV'); }
@@ -2036,6 +2076,7 @@ function importFleetCSV(){
 }
 
 function exportFleet(){
+  analyticsAction('fleet', 'export_csv', { is_export:true, row_count: state.vehicles.length });
   downloadCSV('sarab-fleet.csv', [
     ['Vehicle Model','Year','Registered Company','Vehicle Registration Expiry','Fuel Chip','Plate Code','Plate Number','Number Plate','Customer','Assigned Driver','Active Permit','Permit Category','Permit Expiry Date','Status','Vehicle Type','Vendor Name','Outsource Start Date','Outsource End Date','Outsource Rent Rate AED','Client Rate AED','Total AED','Notes'],
     ...state.vehicles.map(v=>{
@@ -2208,6 +2249,7 @@ async function saveTicket(e){
   state.tickets.unshift(ticket);
   await saveTickets();
   await logAction('Created ticket/request', 'Ticketing', ticket.ticketNo, `${ticket.plate} · ${ticket.category}`, ticket.requestedBy || state.user?.name);
+  analyticsAction('ticketing', 'ticket_created', { record_type:'ticket', category: ticket.category || '', status: ticket.status || '', priority: ticket.priority || '' });
   toast(`${ticket.ticketNo} saved`);
   state.ticketTab='tracker';
   render();
@@ -2219,6 +2261,7 @@ async function updateTicketStatus(ticketId, status){
   t.updatedAt = new Date().toISOString();
   await saveTickets();
   await logAction('Updated ticket status', 'Ticketing', t.ticketNo, `${t.plate || ''} → ${status}`, state.user?.name);
+  analyticsAction('ticketing', 'ticket_status_changed', { record_type:'ticket', status, category:t.category||'' });
   toast('Ticket status updated');
   render();
 }
@@ -2233,6 +2276,7 @@ async function escalateTicket(ticketId){
   t.updatedAt = new Date().toISOString();
   await saveTickets();
   await logAction('Escalated ticket/request', 'Ticketing', t.ticketNo, `${t.plate || ''} · ${t.category || ''}`, state.user?.name);
+  analyticsAction('ticketing', 'ticket_escalated', { record_type:'ticket', category:t.category||'', status:t.status||'' });
   toast(`${t.ticketNo} escalated`);
   render();
 }
@@ -2248,6 +2292,7 @@ async function deEscalateTicket(ticketId){
 ${note}`;
   await saveTickets();
   await logAction('De-escalated ticket/request', 'Ticketing', t.ticketNo, `${t.plate || ''} · ${t.category || ''}`, state.user?.name);
+  analyticsAction('ticketing', 'ticket_deescalated', { record_type:'ticket', category:t.category||'', status:t.status||'' });
   toast(`${t.ticketNo} de-escalated`);
   render();
 }
@@ -2258,6 +2303,7 @@ async function deleteTicket(ticketId){
   await saveTickets();
   await deleteRemoteRow('tickets', ticketId);
   if(t) await logAction('Deleted ticket/request', 'Ticketing', t.ticketNo, t.plate || '', state.user?.name);
+  analyticsAction('ticketing', 'ticket_deleted', { record_type:'ticket' });
   toast('Ticket deleted');
   render();
 }
@@ -2273,6 +2319,7 @@ function viewTicket(ticketId){
 }
 function closeTicketDialog(){ closeJobDialog(); }
 function exportTickets(){
+  analyticsAction('ticketing', 'export_csv', { is_export:true, row_count: state.tickets.length });
   downloadCSV('sarab-ticketing-requests.csv', [
     ['Ticket ID','Date','Status','Priority','Escalated','De-escalated At','Client','Plate','Vehicle','Category','Location','Requested By','Assigned To','Provider','SLA Days','Days Open','Description','Action / Notes'],
     ...state.tickets.map(t=>[t.ticketNo,t.date,t.status,t.priority,t.escalated ? 'Yes' : 'No',t.deEscalatedAt || '',t.client,t.plate,t.vehicle,t.category,t.location,t.requestedBy,t.assignedTo,t.provider,t.slaDays,ticketDaysOpen(t),t.description,t.action])
@@ -2484,11 +2531,12 @@ async function saveEmployee(ev){
   await saveEmployees();
   await logAction(existingId ? 'Updated employee' : 'Added employee', 'Employees', emp.name, type, state.user?.name);
   state.editingEmployeeId='';
+  analyticsAction('employees', existingId ? 'employee_updated' : 'employee_created', { record_type:'employee', is_edit:Boolean(existingId), category: type || '' });
   toast('Employee saved');
   render();
 }
 function editEmployee(empId){ const e = state.employees.find(x => x.id === empId); if(!e) return; state.employeeType = e.type || 'SMG'; state.editingEmployeeId = empId; render(); }
-async function removeEmployee(empId){ const e = state.employees.find(x => x.id === empId); if(!e) return; if(!confirm(`Remove ${e.name}?`)) return; state.employees = state.employees.filter(x => x.id !== empId); if(USE_SUPABASE) await deleteRemoteRow('employees', empId); await saveEmployees(); await logAction('Removed employee', 'Employees', e.name, e.type || '', state.user?.name); toast('Employee removed'); render(); }
+async function removeEmployee(empId){ const e = state.employees.find(x => x.id === empId); if(!e) return; if(!confirm(`Remove ${e.name}?`)) return; state.employees = state.employees.filter(x => x.id !== empId); if(USE_SUPABASE) await deleteRemoteRow('employees', empId); await saveEmployees(); await logAction('Removed employee', 'Employees', e.name, e.type || '', state.user?.name); analyticsAction('employees', 'employee_deleted', { record_type:'employee' }); toast('Employee removed'); render(); }
 
 function truthyCSV(value){
   const v = String(value ?? '').trim().toLowerCase();
@@ -2572,6 +2620,7 @@ function importEmployeesCSV(){
       }
       await saveEmployees();
       await logAction('Imported employee CSV','Employees','CSV Import',`${imported} new, ${updated} updated, ${skipped} skipped`,state.user?.name);
+      analyticsAction('employees', 'import_csv', { is_import:true, row_count: imported + updated, count: imported + updated });
       toast(`Employees CSV imported: ${imported} new, ${updated} updated, ${skipped} skipped`);
       render();
     }catch(err){ console.error(err); toast('Could not import employee CSV'); }
@@ -2581,6 +2630,7 @@ function importEmployeesCSV(){
 function exportEmployees(){
   const rows = [['Type','Name','Currently Working','Start Date','End Date','Total Tenure','Assigned Company','Assigned Vehicle','Visa Status','Basic Salary AED','Net Salary AED','Estimated Gratuity AED','Passport Expiry Date','Driving License Expiry Date','Active Permit','Permit Category','Permit Expiry Date','Passport Collected','Passport Requested','ID','ID Requested','Driving License','Driving License Requested','Undertaking','Undertaking Requested','Labour Part Time Permit','Labour Permit Requested']];
   state.employees.forEach(e => rows.push([e.type||'SMG', e.name||'', employeeIsCurrentlyWorking(e)?'Yes':'No', e.startDate||'', employeeIsCurrentlyWorking(e)?'':(e.endDate||''), employeeTenureText(e.startDate,employeeGratuityEndDate(e)), e.assignedCompany||'', e.assignedVehicle||'', e.visaStatus||'', e.basicSalary||0, e.netSalary||0, calcUAEGratuity(e.startDate,e.basicSalary,employeeGratuityEndDate(e)).toFixed(2), e.passportExpiryDate||'', e.drivingLicenseExpiryDate||'', e.hasActivePermit?'Yes':'No', e.permitCategory||'', e.permitExpiryDate||'', e.passportCollected?'Yes':'No', e.passportRequested?'Yes':'No', e.hasId?'Yes':'No', e.hasIdRequested?'Yes':'No', e.drivingLicense?'Yes':'No', e.drivingLicenseRequested?'Yes':'No', e.undertaking?'Yes':'No', e.undertakingRequested?'Yes':'No', e.labourPermit?'Yes':'No', e.labourPermitRequested?'Yes':'No']));
+  analyticsAction('employees', 'export_csv', { is_export:true, row_count: rows.length-1 });
   downloadCSV('sarab-employees.csv', rows);
 }
 
@@ -2695,6 +2745,7 @@ async function approveEmployeeTicket(ticketId){
   t.approvedBy=state.user?.name || 'Sarab Al Madina Team';
   await saveEmployeeTickets();
   await logAction('Approved employee ticket','Employees',t.employee,t.category,state.user?.name);
+  analyticsAction('employees', 'employee_ticket_approved', { record_type:'employee_ticket', category:t.category||'', status:t.status||'' });
   toast('Employee ticket approved');
   render();
 }
@@ -2717,7 +2768,7 @@ async function saveEmployeeTicket(ev){
   const row={ id: existingId||id('et'), employee:$('employeeTicketEmployee').value.trim(), category, date:$('employeeTicketDate').value||today(), status:$('employeeTicketStatus').value, approvalStatus, approvedAt: approvalStatus==='Approved' ? (existing?.approvedAt || new Date().toISOString()) : '', approvedBy: approvalStatus==='Approved' ? (existing?.approvedBy || state.user?.name || 'Sarab Al Madina Team') : '', leaveStartDate, leaveEndDate, returnToDutyDate, returnedAt:returnToDutyDate ? (existing?.returnedAt || new Date().toISOString()) : '', notes:$('employeeTicketNotes').value.trim(), updatedAt:new Date().toISOString(), createdAt: existingId ? (existing?.createdAt||new Date().toISOString()) : new Date().toISOString() };
   if(!row.employee) return toast('Choose or type employee');
   const ix=(state.employeeTickets||[]).findIndex(x=>x.id===row.id); if(ix>=0) state.employeeTickets[ix]=row; else { if(!state.employeeTickets) state.employeeTickets=[]; state.employeeTickets.unshift(row); }
-  await saveEmployeeTickets(); await logAction(existingId?'Updated employee ticket':'Added employee ticket','Employees',row.employee,row.category,state.user?.name); state.editingEmployeeTicketId=''; toast('Employee ticket saved'); render();
+  await saveEmployeeTickets(); await logAction(existingId?'Updated employee ticket':'Added employee ticket','Employees',row.employee,row.category,state.user?.name); analyticsAction('employees', existingId ? 'employee_ticket_updated' : 'employee_ticket_created', { record_type:'employee_ticket', is_edit:Boolean(existingId), category:row.category||'', status:row.status||'', result:row.approvalStatus||'' }); state.editingEmployeeTicketId=''; toast('Employee ticket saved'); render();
 }
 async function markReturnToDuty(ticketId){
   const t=(state.employeeTickets||[]).find(x=>x.id===ticketId);
@@ -2729,12 +2780,14 @@ async function markReturnToDuty(ticketId){
   t.status = 'Resolved';
   await saveEmployeeTickets();
   await logAction('Marked return to duty','Employees',t.employee,returned,state.user?.name);
+  analyticsAction('employees', 'return_to_duty_recorded', { record_type:'employee_ticket', category:t.category||'', status:t.status||'' });
   toast('Return to duty saved');
   render();
 }
 function editEmployeeTicket(id){ const t=(state.employeeTickets||[]).find(x=>x.id===id); if(!t) return; state.editingEmployeeTicketId=id; render(); }
-async function removeEmployeeTicket(id){ const t=(state.employeeTickets||[]).find(x=>x.id===id); if(!t || !confirm('Remove this employee ticket?')) return; state.employeeTickets=state.employeeTickets.filter(x=>x.id!==id); if(USE_SUPABASE) await deleteRemoteRow('employee_tickets', id); await saveEmployeeTickets(); toast('Ticket removed'); render(); }
-function exportEmployeeTicketsCSV(){ downloadCSV('sarab-employee-tickets.csv', [['Date','Employee','Category','Status','Approval Status','Approved At','Approved By','Leave Start Date','Leave End Date','Leave Duration','Return To Duty Date','Overstay Alert','Notes'], ...(state.employeeTickets||[]).map(t=>[t.date,t.employee,t.category,t.status,t.approvalStatus||'Pending Approval',t.approvedAt||'',t.approvedBy||'',t.leaveStartDate||'',t.leaveEndDate||'',leaveDurationText(t.leaveStartDate,t.leaveEndDate),t.returnToDutyDate||'',ticketLeaveOverstay(t)?`Yes - ${ticketOverstayDays(t)} day${ticketOverstayDays(t)===1?'':'s'}`:'No',t.notes])]); }
+async function removeEmployeeTicket(id){ const t=(state.employeeTickets||[]).find(x=>x.id===id); if(!t || !confirm('Remove this employee ticket?')) return; state.employeeTickets=state.employeeTickets.filter(x=>x.id!==id); if(USE_SUPABASE) await deleteRemoteRow('employee_tickets', id); await saveEmployeeTickets(); analyticsAction('employees', 'employee_ticket_deleted', { record_type:'employee_ticket' }); toast('Ticket removed'); render(); }
+function exportEmployeeTicketsCSV(){ analyticsAction('employees', 'export_employee_tickets_csv', { is_export:true, row_count: (state.employeeTickets||[]).length });
+  downloadCSV('sarab-employee-tickets.csv', [['Date','Employee','Category','Status','Approval Status','Approved At','Approved By','Leave Start Date','Leave End Date','Leave Duration','Return To Duty Date','Overstay Alert','Notes'], ...(state.employeeTickets||[]).map(t=>[t.date,t.employee,t.category,t.status,t.approvalStatus||'Pending Approval',t.approvedAt||'',t.approvedBy||'',t.leaveStartDate||'',t.leaveEndDate||'',leaveDurationText(t.leaveStartDate,t.leaveEndDate),t.returnToDutyDate||'',ticketLeaveOverstay(t)?`Yes - ${ticketOverstayDays(t)} day${ticketOverstayDays(t)===1?'':'s'}`:'No',t.notes])]); }
 
 function currentSalikMonth(){ return state.salikMonth || today().slice(0,7); }
 function salikLegacyMonth(){ return '2026-04'; }
@@ -2763,8 +2816,10 @@ function salikHTML(){
 }
 function salikTable(vehicles, month=currentSalikMonth()){ return `<div class="table-wrap"><table><tr><th>Plate</th><th>Vehicle</th><th>Client</th><th>Status</th><th>SALIK incurred</th><th>SALIK cross charged</th><th>Difference</th></tr><tbody>${vehicles.map(v=>{ const r=salikRowForVehicle(v, month); return `<tr><td><span class="fleet-plate">${esc(v.plate||'—')}</span></td><td><b>${esc(v.modelNumber||'Vehicle')}</b></td><td>${esc(fleetClientName(v))}</td><td>${esc(v.status||'—')}</td><td><input class="salik-input" data-vehicle="${esc(v.id)}" data-month="${esc(month)}" data-field="incurred" type="number" min="0" step="0.01" value="${Number(r.incurred||0)}" oninput="stageSalikInput(this)"></td><td><input class="salik-input" data-vehicle="${esc(v.id)}" data-month="${esc(month)}" data-field="crossCharged" type="number" min="0" step="0.01" value="${Number(r.crossCharged||0)}" oninput="stageSalikInput(this)"></td><td><b class="${Number(r.crossCharged||0)-Number(r.incurred||0)>=0?'green-text':'orange'}">${money(Number(r.crossCharged||0)-Number(r.incurred||0))}</b></td></tr>`; }).join('')}</tbody></table></div>`; }
 function stageSalikInput(input){ const vehicleId=input.dataset.vehicle; const field=input.dataset.field; const month=input.dataset.month || currentSalikMonth(); if(!state.salik) state.salik=[]; let r=state.salik.find(x=>x.vehicleId===vehicleId && (x.month || salikLegacyMonth())===month); if(!r){ r={id:`salik_${vehicleId}_${month}`,vehicleId,month,incurred:0,crossCharged:0}; state.salik.push(r); } r.month=month; r[field]=Number(input.value||0); r.updatedAt=new Date().toISOString(); }
-async function saveSalikTable(){ await saveSalik(); await logAction('Saved SALIK table','Fleet','SALIK',`Updated ${monthLabel(currentSalikMonth())} SALIK values`,state.user?.name); toast('SALIK saved'); render(); }
-function exportSalikCSV(){ const month=currentSalikMonth(); const rows=[['Month','Plate','Vehicle','Client','Status','SALIK Incurred AED','SALIK Cross Charged AED','Difference AED']]; state.vehicles.forEach(v=>{ const r=salikRowForVehicle(v, month); rows.push([month,v.plate||'',v.modelNumber||'',fleetClientName(v),v.status||'',Number(r.incurred||0),Number(r.crossCharged||0),Number(r.crossCharged||0)-Number(r.incurred||0)]); }); downloadCSV(`sarab-salik-${month}.csv`, rows); }
+async function saveSalikTable(){ await saveSalik(); await logAction('Saved SALIK table','Fleet','SALIK',`Updated ${monthLabel(currentSalikMonth())} SALIK values`,state.user?.name); analyticsAction('salik', 'saved', { month: currentSalikMonth(), vehicle_count: state.vehicles.length });
+  toast('SALIK saved'); render(); }
+function exportSalikCSV(){ const month=currentSalikMonth(); const rows=[['Month','Plate','Vehicle','Client','Status','SALIK Incurred AED','SALIK Cross Charged AED','Difference AED']]; state.vehicles.forEach(v=>{ const r=salikRowForVehicle(v, month); rows.push([month,v.plate||'',v.modelNumber||'',fleetClientName(v),v.status||'',Number(r.incurred||0),Number(r.crossCharged||0),Number(r.crossCharged||0)-Number(r.incurred||0)]); }); analyticsAction('salik', 'export_csv', { is_export:true, month, row_count: rows.length-1 });
+  downloadCSV(`sarab-salik-${month}.csv`, rows); }
 
 function importSalikCSV(){
   const month = currentSalikMonth();
@@ -2798,6 +2853,7 @@ function importSalikCSV(){
       }
       await saveSalik();
       await logAction('Imported SALIK CSV','Fleet','SALIK',`Imported ${updated} rows for ${monthLabel(month)}`,state.user?.name);
+      analyticsAction('salik', 'import_csv', { is_import:true, month, row_count: updated, count: updated });
       toast(`${updated} SALIK rows imported for ${monthLabel(month)}`);
       render();
     };
@@ -3060,11 +3116,12 @@ async function saveJob(e){
   await saveJobs();
   await saveParts();
   await logAction(oldJob ? 'Updated job card' : 'Created job card', 'Job Card', job.jobCardId, `${job.plate || ''} · ${job.description || 'Job card'} · ${lines.length} part line${lines.length===1?'':'s'}`, job.doneBy);
+  analyticsAction('job_card', oldJob ? 'job_updated' : 'job_created', { record_type:'job_card', is_edit:Boolean(oldJob), status: job.status, line_count: lines.length, has_custom_charges: customCharges.length > 0, has_labour: labour > 0, is_locked: job.status === 'Done Completed' });
   toast(job.status === 'Done Completed' ? 'Job card saved and locked because status is Done Completed.' : (oldJob ? 'Job card updated. Inventory adjusted.' : 'Job card saved. Inventory updated.'));
   go('used');
 }
 
-async function deleteJob(jobId){ const job=state.jobs.find(j=>j.id===jobId); if(job && !requireJobOverride(job, 'delete it')) return; if(!confirm('Delete this job and return the parts back to inventory?')) return; if(job) job.lines.forEach(l=>{ const p=state.parts.find(x=>x.id===l.partId); if(p) p.qty=Number(p.qty)+Number(l.qty); }); state.jobs=state.jobs.filter(j=>j.id!==jobId); await saveJobs(); await saveParts(); await deleteRemoteRow('jobs', jobId); if(job) await logAction('Deleted job card', 'Job Card', ensureJobCardId(job), `${job.plate || ''} · returned stock`, job.doneBy || state.user?.name); toast('Job deleted and stock returned'); render(); }
+async function deleteJob(jobId){ const job=state.jobs.find(j=>j.id===jobId); if(job && !requireJobOverride(job, 'delete it')) return; if(!confirm('Delete this job and return the parts back to inventory?')) return; if(job) job.lines.forEach(l=>{ const p=state.parts.find(x=>x.id===l.partId); if(p) p.qty=Number(p.qty)+Number(l.qty); }); state.jobs=state.jobs.filter(j=>j.id!==jobId); await saveJobs(); await saveParts(); await deleteRemoteRow('jobs', jobId); if(job) await logAction('Deleted job card', 'Job Card', ensureJobCardId(job), `${job.plate || ''} · returned stock`, job.doneBy || state.user?.name); analyticsAction('job_card', 'job_deleted', { record_type:'job_card', line_count: job?.lines?.length || 0 }); toast('Job deleted and stock returned'); render(); }
 function viewJob(jobId){ const j=state.jobs.find(x=>x.id===jobId); if(!j) return; $('jobDialogTitle').textContent=`${ensureJobCardId(j)} · ${j.plate} · ${j.car}`; $('jobDialogBody').innerHTML=`<div class="part-detail"><p><b>Job Card ID:</b> ${esc(ensureJobCardId(j))}</p><p><b>Date:</b> ${esc(j.date)}</p><p><b>Customer:</b> ${esc(j.customer||'N/A')}</p><p><b>Driver:</b> ${esc(j.driverName || '—')}</p><p><b>Vehicle status:</b> ${esc(j.vehicleStatus || '—')}</p><p><b>Job:</b> ${esc(j.description)}</p><p><b>Status:</b></p><div class="status-inline modal-status-edit">${statusPill(jobStatus(j))}${statusSelect(j.id, jobStatus(j))}</div><p><b>Done by:</b> ${esc(j.doneBy || '—')}</p><p><b>Parts used:</b></p>${j.lines.length?`<div class="table-wrap"><table><thead><tr><th>Part</th><th>Serial Number</th><th>Qty</th><th>Price</th></tr></thead><tbody>${j.lines.map(l=>`<tr><td>${esc(l.name)}</td><td>${esc(l.sku)}</td><td>${l.qty}</td><td>${money(l.price)}</td></tr>`).join('')}</tbody></table></div>`:'<p class="muted">No parts used.</p>'}${(j.customCharges||[]).length?`<p><b>Custom charges:</b></p><div class="table-wrap"><table><thead><tr><th>Description</th><th>Amount</th></tr></thead><tbody>${(j.customCharges||[]).map(c=>`<tr><td>${esc(c.name)}</td><td>${money(c.amount)}</td></tr>`).join('')}</tbody></table></div>`:''}<button type="button" class="mini-btn" onclick="loadJobCardForEdit('${j.id}'); closeJobDialog();">${isJobLocked(j) && !hasJobOverride(j.id) ? 'Unlock / Edit Job Card' : 'Edit Job Card'}</button><div class="summary-box"><span>Labor hours: ${Number(j.labourHours||0)}</span><span>Labor charge: ${money(j.labour)}</span><span>Custom charges: ${money((j.customCharges||[]).reduce((a,c)=>a+Number(c.amount||0),0))}</span><span>Total: ${money(j.total)}</span></div></div>`; $('jobDialog').showModal(); }
 function closeJobDialog(){ $('jobDialog').close(); }
 function viewPartUsage(partId){ const p=state.parts.find(x=>x.id===partId); const jobs=state.jobs.filter(j=>j.lines.some(l=>l.partId===partId)); $('jobDialogTitle').textContent=`Where used: ${p?.name || 'Part'}`; $('jobDialogBody').innerHTML=jobs.length?`<div class="table-wrap"><table><thead><tr><th>Job ID</th><th>Date</th><th>Plate</th><th>Car</th><th>Job</th><th>Status</th><th>Qty</th></tr></thead><tbody>${jobs.map(j=>{const line=j.lines.find(l=>l.partId===partId); return `<tr><td>${esc(j.date)}</td><td>${esc(j.plate)}</td><td>${esc(j.car)}</td><td>${esc(j.description)}</td><td>${statusPill(jobStatus(j))}${statusSelect(j.id, jobStatus(j))}</td><td>${line.qty}</td></tr>`}).join('')}</tbody></table></div>`:'<div class="empty">This part has not been used in any job yet.</div>'; $('jobDialog').showModal(); }
@@ -3083,6 +3140,7 @@ async function savePartFromForm(e){
   await saveParts();
   await logAction(existing ? 'Updated part' : 'Created part', 'Inventory', part.sku, `${part.name} · stock ${part.qty}`, state.user?.name);
   closePartDialog();
+  analyticsAction('inventory', existing ? 'part_updated' : 'part_created', { record_type:'part', is_edit:Boolean(existing) });
   toast('Part saved');
   render();
 }
@@ -3118,6 +3176,7 @@ async function saveRestock(e){
   await saveParts();
   await logAction('Stock Purchased', 'Stock History', p.sku, JSON.stringify({ partId:p.id, partName:p.name, serial:p.sku, vendor:vendor || p.supplier || '—', qtyAdded, oldBuyingPrice:oldPrice, buyingPrice, newStock:p.qty, note:`Restocked ${qtyAdded} unit${qtyAdded===1?'':'s'}` }), state.user?.name);
   closeRestockDialog();
+  analyticsAction('inventory', 'stock_restocked', { record_type:'part', operation:'restock', count: qtyAdded });
   toast('Stock added and stock history updated');
   render();
 }
@@ -3142,6 +3201,7 @@ async function deletePart(partId){
   await saveLogs();
   await deleteRemoteRow('parts', partId);
   for(const log of removedLogs){ await deleteRemoteRow('logs', log.id); }
+  analyticsAction('inventory', 'part_deleted', { record_type:'part' });
   toast('Part deleted from inventory and stock history');
   render();
 }
@@ -3153,6 +3213,7 @@ async function toggleOrdered(partId){
   if(Number(p.qty||0)>0) return toast('This part is still in stock');
   p.ordered=!Boolean(p.ordered);
   await saveParts();
+  analyticsAction('inventory', p.ordered ? 'part_marked_ordered' : 'part_marked_not_ordered', { record_type:'part' });
   toast(p.ordered ? 'Marked as ordered' : 'Marked as not ordered');
   render();
 }
@@ -3259,7 +3320,8 @@ function exportDashboardJobs(){
 }
 function lastUsedPlain(partId){ const j=state.jobs.find(job=>job.lines.some(l=>l.partId===partId)); return j ? j.date : 'Never'; }
 
-function exportInventory(){ downloadCSV('sarab-inventory.csv', [['Part Name','Serial Number','Category','Stock','Ordered?','Low Stock Alert','Location','Supplier','Fits','Buying Cost AED','Selling Price AED','Inventory Cost Value AED'], ...state.parts.map(p=>[p.name,p.sku,p.category,p.qty,p.ordered?'Yes':'No',p.threshold,p.location,p.supplier,p.fits,p.cost,p.price,Number(p.qty)*Number(p.cost)])]); }
+function exportInventory(){ analyticsAction('inventory', 'export_csv', { is_export:true, row_count: state.parts.length });
+  downloadCSV('sarab-inventory.csv', [['Part Name','Serial Number','Category','Stock','Ordered?','Low Stock Alert','Location','Supplier','Fits','Buying Cost AED','Selling Price AED','Inventory Cost Value AED'], ...state.parts.map(p=>[p.name,p.sku,p.category,p.qty,p.ordered?'Yes':'No',p.threshold,p.location,p.supplier,p.fits,p.cost,p.price,Number(p.qty)*Number(p.cost)])]); }
 
 function parseCSV(text){
   const rows=[];
@@ -3334,6 +3396,7 @@ function importInventoryCSV(){
         else { state.parts.unshift(part); imported++; }
       });
       await saveParts();
+      analyticsAction('inventory', 'import_csv', { is_import:true, row_count: imported + updated, count: imported + updated });
       toast(`CSV imported: ${imported} new, ${updated} updated, ${skipped} skipped`);
       render();
     }catch(err){ console.error(err); toast('Could not import CSV'); }
@@ -3365,6 +3428,7 @@ function exportJobs(){
       rows.push([ensureJobCardId(j),j.date,jobStatus(j),j.doneBy||'',j.customer,j.driverName||'',j.plate,j.car,j.vehicleStatus||'',j.description,'',0,0,0,customNames,customTotal,laborHours,laborCharge,jobTotal]);
     }
   });
+  analyticsAction('job_card', 'export_jobs_csv', { is_export:true, row_count: rows.length-1 });
   downloadCSV('sarab-jobs.csv', rows);
 }
 function exportUsage(){
@@ -3390,6 +3454,7 @@ function exportUsage(){
       rows.push([ensureJobCardId(j),j.date,jobStatus(j),j.doneBy||'',j.plate,j.car,j.vehicleStatus||'',j.description,'','',0,0,0,customNames,customTotal,laborCharge,jobTotal]);
     }
   });
+  analyticsAction('job_card', 'export_parts_used_csv', { is_export:true, row_count: rows.length-1 });
   downloadCSV('sarab-parts-used.csv', rows);
 }
 
