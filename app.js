@@ -2569,11 +2569,32 @@ function normalizeEmployeeType(value){
   return 'SMG';
 }
 function activeEmployeeScope(){
-  return ['SMG','Outsourced'].includes(state.employeeType) ? state.employeeType : 'All';
+  const activeTab = document.querySelector('.employee-tabs .tab.active');
+  const label = (activeTab?.textContent || '').trim().toLowerCase();
+  if(label.includes('outsourced')) return 'Outsourced';
+  if(label.includes('smg')) return 'SMG';
+  if(['SMG','Outsourced'].includes(state.employeeType)) return state.employeeType;
+  return 'All';
 }
-function activeEmployeeRows(){
-  const scope = activeEmployeeScope();
+function activeEmployeeRows(scopeOverride){
+  const scope = scopeOverride || activeEmployeeScope();
   return (state.employees || []).filter(e => scope === 'All' || (e.type || 'SMG') === scope);
+}
+function employeeExportColumnsForScope(scope){
+  const base = ['Type','Name','Currently Working','Start Date','End Date','Total Tenure','Assigned Company','Assigned Vehicle'];
+  const permit = ['Active Permit','Permit Category','Permit Expiry Date'];
+  if(scope === 'SMG') return [...base,'Visa Status','Basic Salary AED','Net Salary AED','Estimated Gratuity AED','Passport Expiry Date','Driving License Expiry Date',...permit,'Passport Collected','Passport Requested'];
+  if(scope === 'Outsourced') return [...base,...permit,'ID','ID Requested','Driving License','Driving License Requested','Undertaking','Undertaking Requested','Labour Part Time Permit','Labour Permit Requested'];
+  return [...base,'Visa Status','Basic Salary AED','Net Salary AED','Estimated Gratuity AED','Passport Expiry Date','Driving License Expiry Date',...permit,'Passport Collected','Passport Requested','ID','ID Requested','Driving License','Driving License Requested','Undertaking','Undertaking Requested','Labour Part Time Permit','Labour Permit Requested'];
+}
+function employeeExportRowForScope(e, scope){
+  const base = [e.type||'SMG', e.name||'', employeeIsCurrentlyWorking(e)?'Yes':'No', e.startDate||'', employeeIsCurrentlyWorking(e)?'':(e.endDate||''), employeeTenureText(e.startDate,employeeGratuityEndDate(e)), e.assignedCompany||'', e.assignedVehicle||''];
+  const permit = [e.hasActivePermit?'Yes':'No', e.permitCategory||'', e.permitExpiryDate||''];
+  const smg = [e.visaStatus||'', e.basicSalary||0, e.netSalary||0, calcUAEGratuity(e.startDate,e.basicSalary,employeeGratuityEndDate(e)).toFixed(2), e.passportExpiryDate||'', e.drivingLicenseExpiryDate||'', ...permit, e.passportCollected?'Yes':'No', e.passportRequested?'Yes':'No'];
+  const out = [...permit, e.hasId?'Yes':'No', e.hasIdRequested?'Yes':'No', e.drivingLicense?'Yes':'No', e.drivingLicenseRequested?'Yes':'No', e.undertaking?'Yes':'No', e.undertakingRequested?'Yes':'No', e.labourPermit?'Yes':'No', e.labourPermitRequested?'Yes':'No'];
+  if(scope === 'SMG') return [...base, ...smg];
+  if(scope === 'Outsourced') return [...base, ...out];
+  return [...base, e.visaStatus||'', e.basicSalary||0, e.netSalary||0, calcUAEGratuity(e.startDate,e.basicSalary,employeeGratuityEndDate(e)).toFixed(2), e.passportExpiryDate||'', e.drivingLicenseExpiryDate||'', ...permit, e.passportCollected?'Yes':'No', e.passportRequested?'Yes':'No', e.hasId?'Yes':'No', e.hasIdRequested?'Yes':'No', e.drivingLicense?'Yes':'No', e.drivingLicenseRequested?'Yes':'No', e.undertaking?'Yes':'No', e.undertakingRequested?'Yes':'No', e.labourPermit?'Yes':'No', e.labourPermitRequested?'Yes':'No'];
 }
 function importEmployeesCSV(){
   const input=document.createElement('input');
@@ -2657,10 +2678,10 @@ function importEmployeesCSV(){
   input.click();
 }
 function exportEmployees(){
-  const rows = [['Type','Name','Currently Working','Start Date','End Date','Total Tenure','Assigned Company','Assigned Vehicle','Visa Status','Basic Salary AED','Net Salary AED','Estimated Gratuity AED','Passport Expiry Date','Driving License Expiry Date','Active Permit','Permit Category','Permit Expiry Date','Passport Collected','Passport Requested','ID','ID Requested','Driving License','Driving License Requested','Undertaking','Undertaking Requested','Labour Part Time Permit','Labour Permit Requested']];
   const scope=activeEmployeeScope();
-  const exportRows=activeEmployeeRows();
-  exportRows.forEach(e => rows.push([e.type||'SMG', e.name||'', employeeIsCurrentlyWorking(e)?'Yes':'No', e.startDate||'', employeeIsCurrentlyWorking(e)?'':(e.endDate||''), employeeTenureText(e.startDate,employeeGratuityEndDate(e)), e.assignedCompany||'', e.assignedVehicle||'', e.visaStatus||'', e.basicSalary||0, e.netSalary||0, calcUAEGratuity(e.startDate,e.basicSalary,employeeGratuityEndDate(e)).toFixed(2), e.passportExpiryDate||'', e.drivingLicenseExpiryDate||'', e.hasActivePermit?'Yes':'No', e.permitCategory||'', e.permitExpiryDate||'', e.passportCollected?'Yes':'No', e.passportRequested?'Yes':'No', e.hasId?'Yes':'No', e.hasIdRequested?'Yes':'No', e.drivingLicense?'Yes':'No', e.drivingLicenseRequested?'Yes':'No', e.undertaking?'Yes':'No', e.undertakingRequested?'Yes':'No', e.labourPermit?'Yes':'No', e.labourPermitRequested?'Yes':'No']));
+  const exportRows=activeEmployeeRows(scope);
+  const rows = [employeeExportColumnsForScope(scope)];
+  exportRows.forEach(e => rows.push(employeeExportRowForScope(e, scope)));
   analyticsAction('employees', 'export_csv', { is_export:true, row_count: rows.length-1, scope });
   const fileScope=scope === 'All' ? 'all-employees' : `${scope.toLowerCase()}-employees`;
   downloadCSV(`sarab-${fileScope}.csv`, rows);
@@ -2965,7 +2986,11 @@ function bindPageEvents(){
   if($('jobOverviewStatus')) $('jobOverviewStatus').onchange=e=>{state.jobOverviewStatus=e.target.value; render();};
   if($('jobOverviewStaff')) $('jobOverviewStaff').onchange=e=>{state.jobOverviewStaff=e.target.value; render();};
   if($('jobOverviewDate')) $('jobOverviewDate').onchange=e=>{state.jobOverviewDate=e.target.value; render();};
-  document.querySelectorAll('.rep-cell').forEach(cell=>{ cell.oninput=()=>stageReplacementCellInput(cell); cell.onchange=()=>pickReplacementFromFleet(cell); });
+  document.querySelectorAll('.rep-cell').forEach(cell=>{
+    cell.oninput=()=>{ stageReplacementCellInput(cell); scheduleReplacementCellAutosave(cell); };
+    cell.onchange=()=>{ pickReplacementFromFleet(cell); scheduleReplacementCellAutosave(cell); };
+    cell.onblur=()=>{ if(state.replacementDirty) scheduleReplacementCellAutosave(cell); };
+  });
 
   if($('clientForm')) $('clientForm').onsubmit=saveClient;
   if($('activitySearch')) $('activitySearch').oninput=e=>{state.activityQuery=e.target.value; render();};
