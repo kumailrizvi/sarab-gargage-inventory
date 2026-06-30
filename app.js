@@ -187,7 +187,7 @@ function fleetDuplicate(vehicle){
 const JOB_STATUSES = ['Not Started','Pending','Work Being Done','Done Completed'];
 const REGISTERED_COMPANIES = ['MBR1','MBR2','Garage','AHU','Travel & Tourism','Property','Kitchen'];
 const EMPLOYEE_TYPES = ['SMG','Outsourced'];
-const EMPLOYEE_VISA_STATUS = ['MBR1','MBR2','Garage','AHU','Travel & Tourism','Property','Kitchen','Synergy'];
+const EMPLOYEE_VISA_STATUS = ['MBR1','MBR2','Garage','AHU','Travel & Tourism','Property','Kitchen'];
 const UAE_PERMIT_CATEGORIES = ['Abu Dhabi Permit','Dubai Permit','Sharjah Permit','Ajman Permit','Umm Al Quwain Permit','Ras Al Khaimah Permit','Fujairah Permit'];
 function extractYearFromModel(model=''){
   const match = String(model || '').match(/\b(19\d{2}|20\d{2})\b/);
@@ -1235,7 +1235,7 @@ function usedHTML(){
   ${plateHistoryPanelHTML()}
   <section class="panel spaced-panel"><div class="section-title"><h3>${plateQuery ? `Jobs Matching ${esc(plateQuery)}` : 'All Jobs'}</h3><small class="muted">${matchingJobs.length} job card${matchingJobs.length===1?'':'s'}</small></div>
   <div class="job-overview-filters"><input id="jobOverviewSearch" placeholder="Search job card, plate, staff, parts..." value="${esc(state.jobOverviewSearch||'')}" autocomplete="off"><select id="jobOverviewStatus"><option>All</option>${JOB_STATUSES.map(x=>`<option ${statusFilter===x?'selected':''}>${esc(x)}</option>`).join('')}</select><select id="jobOverviewStaff">${staffOptions.map(x=>`<option ${staffFilter===x?'selected':''}>${esc(x)}</option>`).join('')}</select><input id="jobOverviewDate" type="date" value="${esc(dateFilter)}"><button class="mini-btn" onclick="state.jobOverviewSearch='';state.jobOverviewStatus='All';state.jobOverviewStaff='All';state.jobOverviewDate='';render();">Reset</button></div>
-  ${matchingJobs.length?`<div class="table-wrap clean-table"><table class="jobs-clean-table"><thead><tr><th>Job Card</th><th>Vehicle</th><th>Job / Staff</th><th>Status</th><th>Parts</th><th>Actions</th></tr></thead><tbody>${matchingJobs.map(j=>`<tr><td><b>${esc(ensureJobCardId(j))}</b><br><small class="muted">${esc(j.date)}</small></td><td><b>${esc(j.plate || '—')}</b><br><small class="muted">${esc(j.car || 'No car')}</small><br><small class="muted">${esc(jobAssignedCompany(j) || '—')}</small></td><td><b>${esc(j.description || 'Job card')}</b><br><small class="muted">Done by: ${esc(j.doneBy || '—')}</small></td><td><div class="status-stack">${statusPill(jobStatus(j))}${statusSelect(j.id, jobStatus(j))}</div></td><td><small class="muted table-wrap-text">${compactPartsList(j)}</small></td><td><div class="action-wrap"><button class="mini-btn" onclick="viewPlateHistory('${esc(j.plate)}')">Plate History</button><button class="mini-btn" onclick="loadJobCardForEdit('${j.id}')">Edit</button><button class="mini-btn" onclick="viewJob('${j.id}')">Open</button><button class="mini-btn danger" onclick="deleteJob('${j.id}')">Delete / Return Stock</button></div></td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">No jobs found.</div>'}</section>
+  ${matchingJobs.length?`<div class="table-wrap clean-table"><table class="jobs-clean-table"><thead><tr><th>Job Card</th><th>Vehicle</th><th>Job / Staff</th><th>Status</th><th>Parts</th><th>Actions</th></tr></thead><tbody>${matchingJobs.map(j=>`<tr><td><b>${esc(ensureJobCardId(j))}</b><br><small class="muted">${esc(j.date)}</small></td><td><b>${esc(j.plate || '—')}</b><br><small class="muted">${esc(j.car || 'No car')}</small></td><td><b>${esc(j.description || 'Job card')}</b><br><small class="muted">Done by: ${esc(j.doneBy || '—')}</small></td><td><div class="status-stack">${statusPill(jobStatus(j))}${statusSelect(j.id, jobStatus(j))}</div></td><td><small class="muted table-wrap-text">${compactPartsList(j)}</small></td><td><div class="action-wrap"><button class="mini-btn" onclick="viewPlateHistory('${esc(j.plate)}')">Plate History</button><button class="mini-btn" onclick="loadJobCardForEdit('${j.id}')">Edit</button><button class="mini-btn" onclick="viewJob('${j.id}')">Open</button><button class="mini-btn danger" onclick="deleteJob('${j.id}')">Delete / Return Stock</button></div></td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">No jobs found.</div>'}</section>
   <section class="panel spaced-panel"><div class="section-title"><h3>${plateQuery ? `Part Usage for ${esc(plateQuery)}` : 'Part Usage Log'}</h3><small class="muted">${usage.length} line item${usage.length===1?'':'s'}</small></div>${usage.length?`<div class="table-wrap clean-table"><table class="usage-clean-table"><thead><tr><th>Job Card</th><th>Vehicle / Job</th><th>Part</th><th>Qty</th><th>Item Price</th><th>Charges</th><th>Status</th><th>Done By</th></tr></thead><tbody>${usage.map(u=>`<tr><td><b>${esc(u.jobCardId)}</b><br><small class="muted">${esc(u.date)}</small></td><td><b>${esc(u.plate)}</b><br><small class="muted">${esc(u.car)} · ${esc(u.job)}</small></td><td><b>${esc(u.name)}</b>${u.sku?`<br><small class="muted">${esc(u.sku)}</small>`:''}</td><td>${u.qty}</td><td>${money(u.price)}</td><td><div class="charge-stack"><span>Custom: ${money(u.customTotal)}</span><span>Labor: ${money(u.labour)}</span><b>Total: ${money(u.total)}</b></div></td><td><div class="status-stack">${statusPill(u.status)}${u.jobId ? statusSelect(u.jobId, u.status) : ''}</div></td><td>${esc(u.doneBy || '—')}</td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">No parts used yet.</div>'}</section>`;
 }
 
@@ -2569,11 +2569,32 @@ function normalizeEmployeeType(value){
   return 'SMG';
 }
 function activeEmployeeScope(){
-  return ['SMG','Outsourced'].includes(state.employeeType) ? state.employeeType : 'All';
+  const activeTab = document.querySelector('.employee-tabs .tab.active');
+  const label = (activeTab?.textContent || '').trim().toLowerCase();
+  if(label.includes('outsourced')) return 'Outsourced';
+  if(label.includes('smg')) return 'SMG';
+  if(['SMG','Outsourced'].includes(state.employeeType)) return state.employeeType;
+  return 'All';
 }
-function activeEmployeeRows(){
-  const scope = activeEmployeeScope();
+function activeEmployeeRows(scopeOverride){
+  const scope = scopeOverride || activeEmployeeScope();
   return (state.employees || []).filter(e => scope === 'All' || (e.type || 'SMG') === scope);
+}
+function employeeExportColumnsForScope(scope){
+  const base = ['Type','Name','Currently Working','Start Date','End Date','Total Tenure','Assigned Company','Assigned Vehicle'];
+  const permit = ['Active Permit','Permit Category','Permit Expiry Date'];
+  if(scope === 'SMG') return [...base,'Visa Status','Basic Salary AED','Net Salary AED','Estimated Gratuity AED','Passport Expiry Date','Driving License Expiry Date',...permit,'Passport Collected','Passport Requested'];
+  if(scope === 'Outsourced') return [...base,...permit,'ID','ID Requested','Driving License','Driving License Requested','Undertaking','Undertaking Requested','Labour Part Time Permit','Labour Permit Requested'];
+  return [...base,'Visa Status','Basic Salary AED','Net Salary AED','Estimated Gratuity AED','Passport Expiry Date','Driving License Expiry Date',...permit,'Passport Collected','Passport Requested','ID','ID Requested','Driving License','Driving License Requested','Undertaking','Undertaking Requested','Labour Part Time Permit','Labour Permit Requested'];
+}
+function employeeExportRowForScope(e, scope){
+  const base = [e.type||'SMG', e.name||'', employeeIsCurrentlyWorking(e)?'Yes':'No', e.startDate||'', employeeIsCurrentlyWorking(e)?'':(e.endDate||''), employeeTenureText(e.startDate,employeeGratuityEndDate(e)), e.assignedCompany||'', e.assignedVehicle||''];
+  const permit = [e.hasActivePermit?'Yes':'No', e.permitCategory||'', e.permitExpiryDate||''];
+  const smg = [e.visaStatus||'', e.basicSalary||0, e.netSalary||0, calcUAEGratuity(e.startDate,e.basicSalary,employeeGratuityEndDate(e)).toFixed(2), e.passportExpiryDate||'', e.drivingLicenseExpiryDate||'', ...permit, e.passportCollected?'Yes':'No', e.passportRequested?'Yes':'No'];
+  const out = [...permit, e.hasId?'Yes':'No', e.hasIdRequested?'Yes':'No', e.drivingLicense?'Yes':'No', e.drivingLicenseRequested?'Yes':'No', e.undertaking?'Yes':'No', e.undertakingRequested?'Yes':'No', e.labourPermit?'Yes':'No', e.labourPermitRequested?'Yes':'No'];
+  if(scope === 'SMG') return [...base, ...smg];
+  if(scope === 'Outsourced') return [...base, ...out];
+  return [...base, e.visaStatus||'', e.basicSalary||0, e.netSalary||0, calcUAEGratuity(e.startDate,e.basicSalary,employeeGratuityEndDate(e)).toFixed(2), e.passportExpiryDate||'', e.drivingLicenseExpiryDate||'', ...permit, e.passportCollected?'Yes':'No', e.passportRequested?'Yes':'No', e.hasId?'Yes':'No', e.hasIdRequested?'Yes':'No', e.drivingLicense?'Yes':'No', e.drivingLicenseRequested?'Yes':'No', e.undertaking?'Yes':'No', e.undertakingRequested?'Yes':'No', e.labourPermit?'Yes':'No', e.labourPermitRequested?'Yes':'No'];
 }
 function importEmployeesCSV(){
   const input=document.createElement('input');
@@ -2657,10 +2678,10 @@ function importEmployeesCSV(){
   input.click();
 }
 function exportEmployees(){
-  const rows = [['Type','Name','Currently Working','Start Date','End Date','Total Tenure','Assigned Company','Assigned Vehicle','Visa Status','Basic Salary AED','Net Salary AED','Estimated Gratuity AED','Passport Expiry Date','Driving License Expiry Date','Active Permit','Permit Category','Permit Expiry Date','Passport Collected','Passport Requested','ID','ID Requested','Driving License','Driving License Requested','Undertaking','Undertaking Requested','Labour Part Time Permit','Labour Permit Requested']];
   const scope=activeEmployeeScope();
-  const exportRows=activeEmployeeRows();
-  exportRows.forEach(e => rows.push([e.type||'SMG', e.name||'', employeeIsCurrentlyWorking(e)?'Yes':'No', e.startDate||'', employeeIsCurrentlyWorking(e)?'':(e.endDate||''), employeeTenureText(e.startDate,employeeGratuityEndDate(e)), e.assignedCompany||'', e.assignedVehicle||'', e.visaStatus||'', e.basicSalary||0, e.netSalary||0, calcUAEGratuity(e.startDate,e.basicSalary,employeeGratuityEndDate(e)).toFixed(2), e.passportExpiryDate||'', e.drivingLicenseExpiryDate||'', e.hasActivePermit?'Yes':'No', e.permitCategory||'', e.permitExpiryDate||'', e.passportCollected?'Yes':'No', e.passportRequested?'Yes':'No', e.hasId?'Yes':'No', e.hasIdRequested?'Yes':'No', e.drivingLicense?'Yes':'No', e.drivingLicenseRequested?'Yes':'No', e.undertaking?'Yes':'No', e.undertakingRequested?'Yes':'No', e.labourPermit?'Yes':'No', e.labourPermitRequested?'Yes':'No']));
+  const exportRows=activeEmployeeRows(scope);
+  const rows = [employeeExportColumnsForScope(scope)];
+  exportRows.forEach(e => rows.push(employeeExportRowForScope(e, scope)));
   analyticsAction('employees', 'export_csv', { is_export:true, row_count: rows.length-1, scope });
   const fileScope=scope === 'All' ? 'all-employees' : `${scope.toLowerCase()}-employees`;
   downloadCSV(`sarab-${fileScope}.csv`, rows);
@@ -2965,7 +2986,11 @@ function bindPageEvents(){
   if($('jobOverviewStatus')) $('jobOverviewStatus').onchange=e=>{state.jobOverviewStatus=e.target.value; render();};
   if($('jobOverviewStaff')) $('jobOverviewStaff').onchange=e=>{state.jobOverviewStaff=e.target.value; render();};
   if($('jobOverviewDate')) $('jobOverviewDate').onchange=e=>{state.jobOverviewDate=e.target.value; render();};
-  document.querySelectorAll('.rep-cell').forEach(cell=>{ cell.oninput=()=>stageReplacementCellInput(cell); cell.onchange=()=>pickReplacementFromFleet(cell); });
+  document.querySelectorAll('.rep-cell').forEach(cell=>{
+    cell.oninput=()=>{ stageReplacementCellInput(cell); scheduleReplacementCellAutosave(cell); };
+    cell.onchange=()=>{ pickReplacementFromFleet(cell); scheduleReplacementCellAutosave(cell); };
+    cell.onblur=()=>{ if(state.replacementDirty) scheduleReplacementCellAutosave(cell); };
+  });
 
   if($('clientForm')) $('clientForm').onsubmit=saveClient;
   if($('activitySearch')) $('activitySearch').oninput=e=>{state.activityQuery=e.target.value; render();};
