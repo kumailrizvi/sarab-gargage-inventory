@@ -185,9 +185,9 @@ function fleetDuplicate(vehicle){
   return state.vehicles.find(v => v.id !== vehicle.id && plateDuplicateKey(v.plate) === plateDuplicateKey(vehicle.plate));
 }
 const JOB_STATUSES = ['Not Started','Pending','Work Being Done','Done Completed'];
-const REGISTERED_COMPANIES = ['MBR1','MBR2','Garage','AHU','Travel & Tourism','Property','Kitchen'];
+const REGISTERED_COMPANIES = ['MBR1','MBR2','Garage','AHU','Travel & Tourism','Property','Kitchen', 'Synergy'];
 const EMPLOYEE_TYPES = ['SMG','Outsourced'];
-const EMPLOYEE_VISA_STATUS = ['MBR1','MBR2','Garage','AHU','Travel & Tourism','Property','Kitchen'];
+const EMPLOYEE_VISA_STATUS = ['MBR1','MBR2','Garage','AHU','Travel & Tourism','Property','Kitchen', 'Synergy'];
 const UAE_PERMIT_CATEGORIES = ['Abu Dhabi Permit','Dubai Permit','Sharjah Permit','Ajman Permit','Umm Al Quwain Permit','Ras Al Khaimah Permit','Fujairah Permit'];
 function extractYearFromModel(model=''){
   const match = String(model || '').match(/\b(19\d{2}|20\d{2})\b/);
