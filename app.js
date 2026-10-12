@@ -1253,7 +1253,7 @@ function usedHTML(){
   });
   const usage = usageRowsForJobs(matchingJobs);
   const staffOptions = ['All', ...new Set((state.jobs||[]).map(j=>j.doneBy||'—').filter(Boolean))];
-  return `<div class="page-head"><div><h1>Job Card Overview</h1><p class="muted">Search by number plate and review job cards and part usage in a cleaner layout.</p></div><div class="head-actions"><button class="btn light" onclick="exportUsage()">${I('download','icon-sm')} Export Parts Used</button><button class="btn primary" onclick="go('job')">Raise Job Card</button></div></div>
+  return `<div class="page-head"><div><h1>Job Card Overview</h1><p class="muted">Search by number plate and review job cards and part usage in a cleaner layout.</p></div><div class="head-actions"><button class="btn light" onclick="downloadJobsImportTemplate()">Download Template</button><button class="btn light" onclick="importJobsCSV()">Import CSV</button><button class="btn light" onclick="exportJobs()">Export Jobs CSV</button><button class="btn light" onclick="exportUsage()">${I('download','icon-sm')} Export Parts Used</button><button class="btn primary" onclick="go('job')">Raise Job Card</button></div></div>
   ${plateHistoryPanelHTML()}
   <section class="panel spaced-panel"><div class="section-title"><h3>${plateQuery ? `Jobs Matching ${esc(plateQuery)}` : 'All Jobs'}</h3><small class="muted">${matchingJobs.length} job card${matchingJobs.length===1?'':'s'}</small></div>
   <div class="job-overview-filters"><input id="jobOverviewSearch" placeholder="Search job card, plate, staff, parts..." value="${esc(state.jobOverviewSearch||'')}" autocomplete="off"><select id="jobOverviewStatus"><option>All</option>${JOB_STATUSES.map(x=>`<option ${statusFilter===x?'selected':''}>${esc(x)}</option>`).join('')}</select><select id="jobOverviewStaff">${staffOptions.map(x=>`<option ${staffFilter===x?'selected':''}>${esc(x)}</option>`).join('')}</select><input id="jobOverviewDate" type="date" value="${esc(dateFilter)}"><button class="mini-btn" onclick="state.jobOverviewSearch='';state.jobOverviewStatus='All';state.jobOverviewStaff='All';state.jobOverviewDate='';render();">Reset</button></div>
@@ -3479,6 +3479,102 @@ function importInventoryCSV(){
       toast(`CSV imported: ${imported} new, ${updated} updated, ${skipped} skipped`);
       render();
     }catch(err){ console.error(err); toast('Could not import CSV'); }
+  };
+  input.click();
+}
+function downloadJobsImportTemplate(){
+  downloadCSV('sarab-job-cards-import-template.csv', [
+    ['Job Card ID','Date','Job Card Status','Done By','Customer','Driver Name','Plate','Car','Vehicle Status','Job Description','Part','Qty','Item Price AED','Custom Charge','Custom Charge AED','Labor Hours','Labor Charge AED'],
+    ['HIST-0001','2026-05-09','Done Completed','Mechanic name','Customer name','','R 14534','Toyota Corolla','In Use','Oil change','Engine oil',1,100,'Car wash',20,1,50]
+  ]);
+}
+function prepareJobCardImport(text, existingJobs){
+  const rows=parseCSV(text.replace(/^\uFEFF/,''));
+  if(rows[0]?.length===1 && /^sep=,/i.test(rows[0][0])) rows.shift();
+  // Excel's sep=, line is parsed as two cells.
+  if(rows[0]?.[0]==='sep=') rows.shift();
+  if(rows.length<2) throw new Error('CSV is empty or missing job cards.');
+  const headers=rows.shift().map(normalizeHeader);
+  for(const field of ['Job Card ID','Date','Plate','Car','Job Description']){
+    if(!headers.includes(normalizeHeader(field))) throw new Error(`Missing column: ${field}`);
+  }
+  const key=value=>String(value||'').trim().toLowerCase();
+  const existing=new Set(existingJobs.map(j=>key(j.jobCardId)));
+  const groups=new Map(), skipped=new Set();
+  const number=(value, label)=>{
+    if(value==='') return 0;
+    const n=Number(String(value).replace(/,/g,''));
+    if(!Number.isFinite(n) || n<0) throw new Error(`${label} must be a non-negative number.`);
+    return n;
+  };
+  rows.forEach((cols,index)=>{
+    const obj={}; headers.forEach((h,i)=>obj[h]=cols[i]??'');
+    const value=name=>String(obj[normalizeHeader(name)]??'').trim();
+    const jobCardId=value('Job Card ID'), jobKey=key(jobCardId);
+    if(!jobKey) throw new Error(`Row ${index+2}: Job Card ID is required.`);
+    if(existing.has(jobKey)){ skipped.add(jobKey); return; }
+    const date=value('Date');
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date)) || new Date(date).toISOString().slice(0,10)!==date) throw new Error(`Row ${index+2}: use a valid YYYY-MM-DD date.`);
+    const status=value('Job Card Status')||'Done Completed';
+    if(!JOB_STATUSES.includes(status)) throw new Error(`Row ${index+2}: invalid job status.`);
+    if(!value('Plate') || !value('Car') || !value('Job Description')) throw new Error(`Row ${index+2}: Plate, Car and Job Description are required.`);
+    let job=groups.get(jobKey);
+    if(!job){
+      job={id:id('j'),jobCardId,date,status,customer:value('Customer')||'Walk-in',driverName:value('Driver Name'),phone:'',plate:value('Plate'),car:value('Car'),vehicleStatus:value('Vehicle Status')||'In Use',description:value('Job Description'),doneBy:value('Done By'),labour:0,labourHours:0,customCharges:[],lines:[],total:0,createdAt:`${date}T12:00:00.000Z`,updatedAt:new Date().toISOString(),historicalImport:true};
+      groups.set(jobKey,job);
+    } else {
+      for(const [field,prop] of [['Date','date'],['Plate','plate'],['Car','car'],['Job Description','description']]){
+        if(value(field)!==job[prop]) throw new Error(`Row ${index+2}: conflicting ${field} for ${jobCardId}.`);
+      }
+      if(status!==job.status) throw new Error(`Row ${index+2}: conflicting status for ${jobCardId}.`);
+    }
+    for(const [field,prop] of [['Labor Charge AED','labour'],['Labor Hours','labourHours']]){
+      if(value(field)!==''){
+        const n=number(value(field),field);
+        if(job[prop] && job[prop]!==n) throw new Error(`Conflicting ${field} for ${jobCardId}.`);
+        job[prop]=n;
+      }
+    }
+    if(value('Part')){
+      const qty=number(value('Qty'),'Qty'), price=number(value('Item Price AED'),'Item Price AED');
+      if(qty<=0) throw new Error(`Row ${index+2}: part Qty must be greater than zero.`);
+      // Historical lines remain manual: edits/deletions cannot return old stock.
+      job.lines.push({partId:'',manual:true,name:value('Part'),sku:'',qty,price});
+    }
+    if(value('Custom Charge') || value('Custom Charge AED')){
+      const charge={name:value('Custom Charge')||'Historical custom charge',amount:number(value('Custom Charge AED'),'Custom Charge AED')};
+      if(!job.customCharges.some(c=>c.name===charge.name && c.amount===charge.amount)) job.customCharges.push(charge);
+    }
+  });
+  const jobs=[...groups.values()];
+  jobs.forEach(j=>j.total=j.lines.reduce((sum,l)=>sum+l.qty*l.price,0)+j.labour+j.customCharges.reduce((sum,c)=>sum+c.amount,0));
+  return {jobs,skipped:skipped.size};
+}
+let jobImportInProgress=false;
+function importJobsCSV(){
+  if(jobImportInProgress) return toast('A job card import is already running');
+  const input=document.createElement('input'); input.type='file'; input.accept='.csv,text/csv';
+  input.onchange=async()=>{
+    const file=input.files?.[0]; if(!file || jobImportInProgress) return;
+    jobImportInProgress=true;
+    try{
+      const existing=USE_SUPABASE ? await fetchRows('jobs') : state.jobs;
+      const {jobs,skipped}=prepareJobCardImport(await file.text(),existing);
+      if(!jobs.length) return toast(`No new job cards. ${skipped} existing cards skipped.`);
+      if(!confirm(`Import ${jobs.length} missing job cards?\n${skipped} existing cards will be skipped.\nCurrent inventory quantities will stay unchanged.\nJob totals are calculated from the imported parts, labor and charges.`)) return;
+      if(USE_SUPABASE){
+        // Insert only the new cards; never overwrite shared job history.
+        const {error}=await sb.from('jobs').insert(jobs.map(j=>({id:j.id,data:j,created_at:j.createdAt})));
+        if(error) throw error;
+        state.jobs=await fetchRows('jobs');
+      } else {
+        const combined=[...jobs,...state.jobs]; set(KEYS.jobs,combined); state.jobs=combined;
+      }
+      markRemoteSnapshot();
+      analyticsAction('job_card','import_csv',{is_import:true,row_count:jobs.length,count:jobs.length});
+      toast(`Imported ${jobs.length} job cards; ${skipped} existing cards skipped`); render();
+    }catch(error){ console.error(error); alert(`Job card import could not finish: ${error.message||'Please try again.'}`); }
+    finally{ jobImportInProgress=false; }
   };
   input.click();
 }
