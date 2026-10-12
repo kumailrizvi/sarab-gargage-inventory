@@ -338,9 +338,32 @@ async function loadSupabaseSession(){
   } : null;
 }
 async function fetchRows(table, options={}){
-  const { data, error } = await sb.from(table).select('id,data').order(table === 'jobs' ? 'created_at' : 'updated_at', { ascending:false });
-  if(error){ console.error(error); if(!options.quiet) toast(`Could not load ${table}`); return []; }
-  return (data || []).map(r => ({ id:r.id, ...r.data }));
+  const pageSize = 1000;
+  const rows = [];
+  let total = null;
+  do {
+    const { data, error, count } = await sb.from(table)
+      .select('id,data', { count:'exact' })
+      .order(table === 'jobs' ? 'created_at' : 'updated_at', { ascending:false })
+      .order('id', { ascending:false })
+      .range(rows.length, rows.length + pageSize - 1);
+    if(error){
+      console.error(error);
+      if(!options.quiet) toast(`Could not load ${table}`);
+      // Never expose an incomplete history or seed over a failed required load.
+      if(rows.length || !options.quiet) throw error;
+      return [];
+    }
+    if(count !== null && count !== undefined) total = count;
+    const page = data || [];
+    if(!page.length){
+      if(total !== null && rows.length < total) throw new Error(`Incomplete load of ${table}`);
+      break;
+    }
+    rows.push(...page);
+    // Use the actual count, since the server may cap pages below pageSize.
+  } while(total === null || rows.length < total);
+  return rows.map(r => ({ id:r.id, ...r.data }));
 }
 async function loadRemoteData(){
   state.parts = await fetchRows('parts');
@@ -506,9 +529,8 @@ async function fetchRemoteSignature(){
   const tables = [['parts','parts'],['jobs','jobs'],['vehicles','vehicles'],['clients','clients'],['tickets','tickets'],['staff','staff'],['replacements','replacements'],['employees','employees'],['employeeTickets','employee_tickets'],['salik','salik']];
   const pieces = [];
   for(const [key, table] of tables){
-    const { data, error } = await sb.from(table).select('id,data');
-    if(error){ console.warn('Signature skipped table', table, error.message || error); continue; }
-    pieces.push(`${key}:${(data || []).map(r => JSON.stringify({id:r.id,...r.data})).sort().join('|')}`);
+    const rows = await fetchRows(table, { quiet:true });
+    pieces.push(`${key}:${stableDataSignature(rows)}`);
   }
   return pieces.join('||');
 }
